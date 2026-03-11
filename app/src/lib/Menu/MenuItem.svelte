@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type SvelteComponent from "svelte-material-icons/Check.svelte";
-  export let icon: typeof SvelteComponent | undefined = void 0;
+  import type { Component } from "svelte";
+  export let icon: Component | undefined = void 0;
   export let href: string | undefined = void 0;
   export let iconPlaceholder: boolean = false;
   export let target: string | undefined = void 0;

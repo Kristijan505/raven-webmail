@@ -7,8 +7,8 @@
   import MenuItem from "$lib/Menu/MenuItem.svelte";
   import Ripple from "$lib/Ripple.svelte";
   import { action, _post } from "$lib/util";
-  import SignOut from "svelte-material-icons/Logout.svelte";
-  import Account from "svelte-material-icons/AccountEditOutline.svelte";
+  import SignOut from "~icons/mdi/logout";
+  import Account from "~icons/mdi/account-edit-outline";
   import PortalPopup from "$lib/PortalPopup.svelte";
 import { locale } from "$lib/locale";
   

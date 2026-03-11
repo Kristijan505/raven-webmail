@@ -1,6 +1,4 @@
 <script lang="ts">
-	import { to_number } from "svelte/internal";
-
   export let html: string;
   export let onChange: ((html: string) => void) | null = null;
 
@@ -47,5 +45,5 @@
       <div class="line">{i + 1}</div>
     {/each}
   </div>
-  <textarea bind:value={html} on:input={() => onChange?.(html)} />
+  <textarea bind:value={html} on:input={() => onChange?.(html)}></textarea>
 </div>

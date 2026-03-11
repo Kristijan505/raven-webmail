@@ -13,7 +13,7 @@
   import MenuItem from "$lib/Menu/MenuItem.svelte";
   const { reloadMailboxes, mailboxes, drawerOpen: { narrow } } = getContext("dash") as DashContext;
 
-  import Dots from "svelte-material-icons/DotsVertical.svelte";
+  import Dots from "~icons/mdi/dots-vertical";
   import PortalPopup from "$lib/PortalPopup.svelte";
   import Dialog from "$lib/Dialog.svelte";
   import { _error, _message } from "$lib/Notify/notify";
@@ -80,9 +80,9 @@
     if(mailbox.total > 50) _message($locale.notifier.Deleting_process);
   })
 
-  import FolderEdit from "svelte-material-icons/FolderEditOutline.svelte";
-  import FolderDelete from "svelte-material-icons/FolderRemoveOutline.svelte";
-  import FolderClear from "svelte-material-icons/DeleteOutline.svelte";
+  import FolderEdit from "~icons/mdi/folder-edit-outline";
+  import FolderDelete from "~icons/mdi/folder-remove-outline";
+  import FolderClear from "~icons/mdi/delete-outline";
 import { locale } from "$lib/locale";
 </script>
 
@@ -190,7 +190,7 @@ import { locale } from "$lib/locale";
 <a 
   href="/mailbox/{mailbox.id}" 
   class="mailbox na btn-dark"
-  class:current={$page.path.startsWith(`/mailbox/${mailbox.id}`)} 
+  class:current={$page.url.pathname.startsWith(`/mailbox/${mailbox.id}`)} 
   class:menu-open={menuOpen}
   on:click={click}
   on:mouseenter={() => hover = true}

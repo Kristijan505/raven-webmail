@@ -1,7 +1,9 @@
-import fetch, { RequestInit } from "node-fetch";
 import { ApiError } from "./util";
 import { StatusCodes } from "http-status-codes";
 import { DISPLAY_ERRORS } from "./env";
+import { Readable } from "stream";
+
+const fromWeb = (Readable as any).fromWeb as ((stream: any) => NodeJS.ReadableStream);
 
 export const url = (u: string) => {
   return __RAVEN__.config.wildduck_api_url.replace(/\/$/, "") + u;
@@ -94,7 +96,10 @@ export const watch = async (userId: string, accessToken: string): Promise<NodeJS
   })
 
   if(res.ok) {
-    return res.body;
+    if(!res.body) {
+      throw new ApiError(502, "Invalid stream from backend");
+    }
+    return fromWeb(res.body as any);
   }
 
   if(res.status === StatusCodes.FORBIDDEN) {

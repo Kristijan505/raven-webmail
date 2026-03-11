@@ -1,33 +1,24 @@
-<script lang="ts" context="module">
-  import type { Load } from "@sveltejs/kit";
-  import { getPage } from "$lib/util";
-  export const load: Load = ({ page, fetch, session }) => {
-    // @ts-ignore
-    return getPage({ page, fetch, session });
-  };
-</script>
-
 <script lang="ts">
-  export let mailbox: Mailbox;
-  export let message: FullMessage;
-
-  $: browser && console.log({message});
-
   import type { FullMessage, Mailbox } from "$lib/types";
+  export let data: { mailbox: Mailbox; message: FullMessage };
+  let mailbox: Mailbox;
+  let message: FullMessage;
+
+  $: ({ mailbox, message } = data);
   
   import { action, isDrafts, isInbox, isJunk, isSent, isTrash, mailboxName, _delete, _put } from "$lib/util";
   
   import { messageHTML, purify, tooltip } from "$lib/actions";
   import TabTop from "$lib/Tab/TabTop.svelte";
   
-  import Delete from "svelte-material-icons/DeleteOutline.svelte";
-  import MarkUnseen from "svelte-material-icons/EmailOutline.svelte";
-  import MarkSeen from "svelte-material-icons/EmailOpenOutline.svelte";
-  import MarkSpam from "svelte-material-icons/AlertDecagramOutline.svelte";
-  import UnMarkSpam from "svelte-material-icons/EmailCheckOutline.svelte";
-  import Resend from "svelte-material-icons/EmailSendOutline.svelte";
-  import Reply from "svelte-material-icons/EmailReceiveOutline.svelte";
-  import GoBack from "svelte-material-icons/ArrowLeft.svelte";
+  import Delete from "~icons/mdi/delete-outline";
+  import MarkUnseen from "~icons/mdi/email-outline";
+  import MarkSeen from "~icons/mdi/email-open-outline";
+  import MarkSpam from "~icons/mdi/alert-decagram-outline";
+  import UnMarkSpam from "~icons/mdi/email-check-outline";
+  import Resend from "~icons/mdi/email-send-outline";
+  import Reply from "~icons/mdi/email-receive-outline";
+  import GoBack from "~icons/mdi/arrow-left";
   import Ripple from "$lib/Ripple.svelte";
   import { goto } from "$app/navigation";
   import { getContext } from "svelte";
@@ -45,7 +36,6 @@
   import { fly } from "svelte/transition";
   import { _forward, _replyAll } from "$lib/Compose/compose";
   import { locale } from "$lib/locale";
-  import { browser } from "$app/env";
   const { user, mailboxes } = getContext("dash") as DashContext;
 
   const seen = action(async () => {
@@ -276,7 +266,7 @@
             {message.text || ""}
           </div>
         {:else}
-          <div class="html" use:purify={{html, message}} />
+          <div class="html" use:purify={{html, message}}></div>
           <!--<div class="html" use:messageHTML={{ html, message }} />-->
         {/if}
       </div>

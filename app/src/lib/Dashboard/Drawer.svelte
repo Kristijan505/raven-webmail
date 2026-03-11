@@ -16,7 +16,7 @@
   }
 
   import DrawerMailbox from './DrawerMailbox.svelte';
-  import ComposeIcon from "svelte-material-icons/EmailEditOutline.svelte";
+  import ComposeIcon from "~icons/mdi/email-edit-outline";
   import Ripple from "$lib/Ripple.svelte";
 
   const compose = action(async () => {
@@ -36,16 +36,17 @@
     }
   }
 
-  import Menu from "svelte-material-icons/Menu.svelte"; 
+  import Menu from "~icons/mdi/menu"; 
 
   import { action, isDrafts, isNarrow, _post } from "$lib/util";
   import type { DashContext } from "./Dashboard.svelte";
   import { getContext, setContext } from "svelte";
-  import Plus from "svelte-material-icons/Plus.svelte";
+  import Plus from "~icons/mdi/plus";
   import Dialog from "$lib/Dialog.svelte";
   import Formy from "$lib/Formy/Formy.svelte";
   import TextField from "$lib/TextField.svelte";
-  import { Writable, writable } from "svelte/store";
+  import { writable } from "svelte/store";
+  import type { Writable } from "svelte/store";
   import { _blank } from '$lib/Compose/compose';
   import { _message } from '$lib/Notify/notify';
   import { locale } from '$lib/locale';
@@ -217,7 +218,7 @@
 
   <div class="overlay only-narrow" class:open={$narrow}  
     on:click={() => isNarrow() ? narrow.set(false) : wide.set(false)}
-  />
+  ></div>
 
 <div class="drawer" class:narrow-open={$narrow} class:wide-open={$wide}>
   

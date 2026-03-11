@@ -117,11 +117,13 @@
 
   let input: HTMLInputElement;
 
-  import { Draft, fileError, fileFile, fileLoaded, fileState, MessageFile } from "$lib/Compose/compose";
+  import { fileError, fileFile, fileLoaded, fileState } from "$lib/Compose/compose";
+  import type { Draft, MessageFile } from "$lib/Compose/compose";
+  import type { AxiosProgressEvent } from "axios";
 
   import { fly, scale } from "svelte/transition";
   import FileItem from "./FileItem.svelte";
-  import Clip from "svelte-material-icons/Paperclip.svelte"
+  import Clip from "~icons/mdi/paperclip"
   import Ripple from "$lib/Ripple.svelte";
   import CircularProgress from "$lib/CircularProgress.svelte";
   import { tooltip } from "$lib/actions";
@@ -147,7 +149,7 @@ import { locale } from "$lib/locale";
       draft.files = [...draft.files, item];
 
       const { id } = await upload(file, event => {
-        item[fileLoaded] = event.loaded;
+        item[fileLoaded] = event.loaded || 0;
         draft.files = [...draft.files];
       })
 
@@ -168,7 +170,7 @@ import { locale } from "$lib/locale";
     }
   }
 
-  const upload = async (file: File, onProgress: (event: ProgressEvent) => void) => {
+  const upload = async (file: File, onProgress: (event: AxiosProgressEvent) => void) => {
     const axios = (await import("axios")).default;
     const json = await axios.post(`/api/storage?filename=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type)}`, file, {
       headers: { "content-type": "application/binary" },
@@ -260,4 +262,3 @@ import { locale } from "$lib/locale";
   {/if}
 </x-upload>
   
-

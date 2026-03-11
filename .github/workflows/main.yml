@@ -10,14 +10,15 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [16.x, 17.x, 18.x]
+        node-version: [22.x, 24.x]
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: server Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
+          cache: npm
       - run: npm ci
       - run: npm run build:server
       - run: npm test
@@ -31,14 +32,16 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [16.x, 17.x, 18.x]
+        node-version: [22.x, 24.x]
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: app ${{ matrix.node-version }}
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
+          cache: npm
+          cache-dependency-path: app/package-lock.json
       
       - run: npm ci
       - run: npm run build

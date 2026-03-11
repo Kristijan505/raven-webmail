@@ -19,7 +19,7 @@
   import type { EditorContext } from "./Editor.svelte";
   const { cmd } = getContext("editor") as EditorContext;
 
-  import Size from "svelte-material-icons/FormatSize.svelte";
+  import Size from "~icons/mdi/format-size";
 
   export let open = false;
   const toggle = () => open = !open;

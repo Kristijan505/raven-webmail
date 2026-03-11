@@ -1,8 +1,3 @@
-<script lang="ts" context="module">
-  export const ssr = true;
-  export const router = false;
-</script>
-
 <script lang="ts">
   import { locale } from "$lib/locale";
   import Ripple from "$lib/Ripple.svelte";
@@ -26,7 +21,7 @@
 <div class="page">
   <h1>{$locale.Offline_title}</h1>
   <p>{$locale.Offline_message}</p>
-  <button href="/" class="btn-light btn-primary elev2" on:click={() => window.location.reload()}>
+  <button class="btn-light btn-primary elev2" on:click={() => window.location.reload()}>
     {$locale.Retry}
     <Ripple />
   </button>

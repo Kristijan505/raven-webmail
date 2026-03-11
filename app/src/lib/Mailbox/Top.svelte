@@ -9,16 +9,16 @@
 
   import type { Mailbox, Messages, Message } from "$lib/types";
 
-  import Refresh from "svelte-material-icons/Refresh.svelte";
-  import Delete from "svelte-material-icons/DeleteOutline.svelte";
-  import MarkUnSeen from "svelte-material-icons/EmailOutline.svelte";
-  import MarkSeen from "svelte-material-icons/EmailOpenOutline.svelte";
-  import MarkSpam from "svelte-material-icons/AlertDecagramOutline.svelte";
-  import UnMarkSpam from "svelte-material-icons/EmailCheckOutline.svelte";
-  import CheckAll from "svelte-material-icons/CheckboxMarked.svelte";
-  import CheckNone from "svelte-material-icons/CheckboxBlankOutline.svelte";
-  import CheckSome from "svelte-material-icons/CheckboxIntermediate.svelte";
-  import Check from "svelte-material-icons/Check.svelte";
+  import Refresh from "~icons/mdi/refresh";
+  import Delete from "~icons/mdi/delete-outline";
+  import MarkUnSeen from "~icons/mdi/email-outline";
+  import MarkSeen from "~icons/mdi/email-open-outline";
+  import MarkSpam from "~icons/mdi/alert-decagram-outline";
+  import UnMarkSpam from "~icons/mdi/email-check-outline";
+  import CheckAll from "~icons/mdi/checkbox-marked";
+  import CheckNone from "~icons/mdi/checkbox-blank-outline";
+  import CheckSome from "~icons/mdi/checkbox-intermediate";
+  import Check from "~icons/mdi/check";
   import Ripple from "$lib/Ripple.svelte";
   import { tooltip } from "$lib/actions";
   import { fade } from "svelte/transition";
@@ -31,7 +31,7 @@
   import type { MailboxContext } from "../Mailbox/Mailbox.svelte";
   import TabTop from "$lib/Tab/TabTop.svelte";
   import Dialog from "$lib/Dialog.svelte";
-  import DotsVertical from "svelte-material-icons/DotsVertical.svelte";
+  import DotsVertical from "~icons/mdi/dots-vertical";
   import PortalPopup from "$lib/PortalPopup.svelte";
   import Menu from "$lib/Menu/Menu.svelte";
   import MenuItem from "$lib/Menu/MenuItem.svelte";

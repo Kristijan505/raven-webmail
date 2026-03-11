@@ -43,13 +43,17 @@
     ];
 
     return () => {
-      run_all(off)
+      runAll(off)
     } 
   })
 
   import { fade } from 'svelte/transition';
   import { add, portal } from "./actions";
-import { run_all } from 'svelte/internal';
+  const runAll = (handlers: Array<() => void>) => {
+    for (const handler of handlers) {
+      handler();
+    }
+  };
 
 
 	const calculate = (node: HTMLElement) => {
@@ -92,7 +96,7 @@ import { run_all } from 'svelte/internal';
     return {
       destroy: () => {
         clearInterval(interval);
-        run_all(off);
+        runAll(off);
       }
     }
   }

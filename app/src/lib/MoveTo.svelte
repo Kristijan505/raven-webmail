@@ -59,7 +59,7 @@
   }
 
 
-  import MoveTo from "svelte-material-icons/FolderMoveOutline.svelte";
+  import MoveTo from "~icons/mdi/folder-move-outline";
   import PortalPopup from "./PortalPopup.svelte";
   import { isJunk, isTrash, isInbox, mailboxIcon, mailboxName, isSent } from "./util";
   import { getContext } from "svelte";

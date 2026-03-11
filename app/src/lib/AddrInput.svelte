@@ -58,7 +58,7 @@
 </style>
 
 <script>
-  import Close from "svelte-material-icons/Close.svelte";
+  import Close from "~icons/mdi/close";
 
   export let name = "";
   export let id = ""

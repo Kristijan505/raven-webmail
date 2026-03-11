@@ -15,7 +15,7 @@
     value = helper;
   }
 
-  import Close from "svelte-material-icons/Close.svelte";
+  import Close from "~icons/mdi/close";
 
   const keypress = (event: KeyboardEvent) => {
     
@@ -51,7 +51,7 @@
     return true;
   }
   
-  import type Context from "./formy/Formy.svelte";
+  import type Context from "./Formy/Formy.svelte";
   const formy = getContext("formy") as Context | undefined;
   onMount(() => formy && formy.register(doValidate));
 

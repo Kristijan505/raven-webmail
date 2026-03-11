@@ -1,6 +1,6 @@
 <script lang="ts">
   import { navigating } from  "$app/stores";
-  import { browser } from "$app/env";
+  import { browser } from "$app/environment";
 
   let frame: number;
 
@@ -49,4 +49,4 @@
   }
 </style>
 
-<div class="navigating" bind:this={el} />
+<div class="navigating" bind:this={el}></div>

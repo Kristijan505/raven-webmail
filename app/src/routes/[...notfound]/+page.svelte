@@ -1,12 +1,5 @@
 <script lang="ts">
   import Ripple from "$lib/Ripple.svelte";
-  import type { Load } from "@sveltejs/kit";
-  
-  export const load: Load = () => {
-    return {
-      status: 404,
-    }
-  }
 </script>
 
 <style>

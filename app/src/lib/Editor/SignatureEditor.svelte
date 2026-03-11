@@ -28,9 +28,10 @@
 
   setContext("editor", context);
 
-  import css from "./iframe.css";
+  import css from "./iframe.css?raw";
   import { setContext } from "svelte";
-  import { Writable, writable } from "svelte/store";
+  import { writable } from "svelte/store";
+  import type { Writable } from "svelte/store";
   import SignatureBar from "./SignatureBar.svelte";
 	import CodeEditor from "./CodeEditor.svelte";
   

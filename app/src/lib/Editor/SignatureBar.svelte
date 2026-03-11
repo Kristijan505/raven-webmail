@@ -4,18 +4,18 @@
   import type { EditorContext } from "./SignatureEditor.svelte";
   const { all, any, cmd, has } = getContext("editor") as EditorContext;
 
-  import Bold from "svelte-material-icons/FormatBold.svelte";
-  import Underline from "svelte-material-icons/FormatUnderline.svelte";
-  import Italic from "svelte-material-icons/FormatItalic.svelte";
-  import JustifyLeft from "svelte-material-icons/FormatAlignLeft.svelte";
-  import JustifyRight from "svelte-material-icons/FormatAlignRight.svelte";
-  import JustifyCenter from "svelte-material-icons/FormatAlignCenter.svelte";
-  import ListBulleted from "svelte-material-icons/FormatListBulleted.svelte";
-  import ListNumbered from "svelte-material-icons/FormatListNumbered.svelte";
-  import Undo from "svelte-material-icons/Undo.svelte";
-  import Redo from "svelte-material-icons/Redo.svelte";
-  import RemoveFormat from "svelte-material-icons/FormatClear.svelte";
-  import Xml from "svelte-material-icons/Xml.svelte";
+  import Bold from "~icons/mdi/format-bold";
+  import Underline from "~icons/mdi/format-underline";
+  import Italic from "~icons/mdi/format-italic";
+  import JustifyLeft from "~icons/mdi/format-align-left";
+  import JustifyRight from "~icons/mdi/format-align-right";
+  import JustifyCenter from "~icons/mdi/format-align-center";
+  import ListBulleted from "~icons/mdi/format-list-bulleted";
+  import ListNumbered from "~icons/mdi/format-list-numbered";
+  import Undo from "~icons/mdi/undo";
+  import Redo from "~icons/mdi/redo";
+  import RemoveFormat from "~icons/mdi/format-clear";
+  import Xml from "~icons/mdi/xml";
 
   import FontSize from "./FontSize.svelte";
   import FontFamily from "./FontFamily.svelte";
@@ -50,14 +50,6 @@
   x-commands::-webkit-scrollbar {
     height: 2px;
   } 
-
-  x-send-up {
-    display: flex;
-    flex-direction: row;
-    margin-inline-start: auto;
-    align-items: center;
-    flex: none;
-  }
 
   x-toolbar :global(x-command-group) {
     display: flex;
@@ -111,42 +103,6 @@
     font-size: 1.4em;
   }
   
-  .send {
-    background-color: rgb(66, 115, 232);
-    color: #fff;
-    border-radius: 0.25rem;
-    transition: background-color 300ms ease;
-    font-size: 0.9rem;
-    padding: 0.5rem 0.75rem;
-    margin: 1rem 1rem 1rem auto;
-    position: relative;
-    flex: none;
-  }
-
-  .send:hover {
-    background-color: rgb(80, 123, 225);
-  }
-
-  .send-label {
-    transition: transform 250ms ease;
-  }
-
-  .sending > .send-label {
-    transform: scale(0) translateY(50%);
-  }
-  
-  
-  .sending-progress {
-    position: absolute;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    --progress-color: #fff;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-  }
 </style>
 
 <x-toolbar>

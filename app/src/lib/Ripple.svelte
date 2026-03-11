@@ -194,4 +194,4 @@
   }
 </style>
 
-<div class="ripple" bind:this={el} />
+<div class="ripple" bind:this={el}></div>

@@ -9,8 +9,9 @@
   $: showCc = current?.[kShowCc] || current?.bcc?.length;
   $: showBcc = current?.[kShowBcc] || current?.cc?.length;
 
-  import { Draft, kSent, save } from "./compose";
+  import { kSent, save } from "./compose";
   import { crossin, crossout } from "./compose";
+  import type { Draft } from "./compose";
   
   import { onMount } from "svelte";
   import { add } from "$lib/actions";
@@ -65,20 +66,25 @@
     return () => {
       if(!saved) dosave(current, ++token);
       clearTimeout(timer);
-      run_all(off);
+      runAll(off);
     }
   })
 
   import Ripple from "$lib/Ripple.svelte";
-  import Close from "svelte-material-icons/Close.svelte";
-  import Minimize from "svelte-material-icons/ColorHelper.svelte";
-  import NotSaved from "svelte-material-icons/CircleSmall.svelte";
+  import Close from "~icons/mdi/close";
+  import Minimize from "~icons/mdi/color-helper";
+  import NotSaved from "~icons/mdi/circle-small";
   import { kShowBcc, kShowCc } from "./compose";
   import { clone, equals } from "$lib/util";
-  import { run_all } from "svelte/internal";
 import { locale } from "$lib/locale";
 
-  const savingSlide = (node: HTMLElement, options: {}) => {
+  const runAll = (handlers: Array<() => void>) => {
+    for (const handler of handlers) {
+      handler();
+    }
+  };
+
+  const savingSlide = (node: HTMLElement, options: {} = {}) => {
     const style = getComputedStyle(node);
     const width = parseInt(style.width) + parseFloat(style.marginInlineEnd); + parseFloat(style.marginInlineStart);
     return {
@@ -248,7 +254,7 @@ import { locale } from "$lib/locale";
 </style>
 
 <div class="window" in:crossin={{key: current}} out:crossout={{key: current}}>
-  <div class="window-top" on:click={onMinimize} on:auxclick={onRemove}>
+  <div class="window-top" on:click={onMinimize} on:auxclick={() => onRemove()}>
     <div class="window-title">
       <div class="saving">
         {#if !saved}

@@ -6,7 +6,7 @@ import https from "https";
 import http from "http";
 
 import { readFileSync } from "fs";
-import chalk from "chalk";
+import pc from "picocolors";
 import { SVELTEKIT_DEV, SVELTEKIT_PORT } from "./env";
 import { sveltekitDevProxy } from "./sveltekit-dev-proxy";
 
@@ -20,7 +20,7 @@ const createServer = (config: Config, app: http.RequestListener) => {
       cert = readFileSync(config.ssl_certificate);
       key = readFileSync(config.ssl_certificate_key);
     } catch(e: any) {
-      console.warn(`Error loading ssl key and cert: ${chalk.yellow(e.message)}`);
+      console.warn(`Error loading ssl key and cert: ${pc.yellow(e.message)}`);
       process.exit(1);
     }
 
@@ -40,6 +40,11 @@ export const start = async (config: Config) => {
   global.__RAVEN__ = { config };
 
   const app = express();
+  app.disable("x-powered-by");
+
+  if(config.trust_proxy != null) {
+    app.set("trust proxy", config.trust_proxy);
+  }
 
   config.compression && app.use(compression());
 
@@ -55,5 +60,5 @@ export const start = async (config: Config) => {
 
   const server = createServer(config, app);
   server.listen(config.port);
-  console.log(`> ${chalk.yellow(config.ssl ? "https" : "http")} server listening at port ${chalk.yellow(config.port)}`);
+  console.log(`> ${pc.yellow(config.ssl ? "https" : "http")} server listening at port ${pc.yellow(String(config.port))}`);
 }

@@ -63,7 +63,7 @@
     }
   }))
 
-  import Plus from "svelte-material-icons/Plus.svelte";
+  import Plus from "~icons/mdi/plus";
   import Ripple from "$lib/Ripple.svelte";
   import { action, _get } from "$lib/util";
   import CircularProgress from "$lib/CircularProgress.svelte";
@@ -124,14 +124,19 @@
       clearTimeout(timer);
       clearTimeout(timer2);
       clearTimeout(timer3);
-      run_all(off);
+      runAll(off);
     }
   })
 
   import { cubicOut } from "svelte/easing";
-  import { run_all } from "svelte/internal";
   import { fly } from "svelte/transition";
 import { locale } from "$lib/locale";
+
+  const runAll = (handlers: Array<() => void>) => {
+    for (const handler of handlers) {
+      handler();
+    }
+  };
 
   const customSlide = (node: HTMLElement, { delay = 0, duration = 400, easing = cubicOut } = {}) => {
     const height = node.getBoundingClientRect().height;

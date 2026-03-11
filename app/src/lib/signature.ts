@@ -1,4 +1,4 @@
-import { browser } from "$app/env";
+import { browser } from "$app/environment";
 import { writable } from "svelte/store";
 
 import { RAVEN_SIGNATURE_META_KEY } from "../../../server/src/metadata";

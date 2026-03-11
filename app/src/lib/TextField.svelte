@@ -96,8 +96,8 @@
     }
   };
 
-  import ArrowRight from "svelte-material-icons/ArrowRight.svelte";
-  import OpenInNew from "svelte-material-icons/OpenInNew.svelte";
+  import ArrowRight from "~icons/mdi/arrow-right";
+  import OpenInNew from "~icons/mdi/open-in-new";
   import { isMail } from "$lib/util";
   import type { Context } from "./Formy/Formy.svelte";
   import ValidationError from "./Formy/ValidationError.svelte";
@@ -214,7 +214,7 @@
       {readonly}
       {disabled}
       {spellcheck}
-      max-length={maxlength}
+      maxlength={maxlength}
       on:input={handleChange}
       on:input
       on:focus={() => validationError = null}
@@ -239,7 +239,7 @@
       {disabled}
       {rows}
       {spellcheck}
-      max-length={maxlength}
+      maxlength={maxlength}
       on:input={handleChange}
       on:input
       on:focus
@@ -248,7 +248,7 @@
       on:keypress
       on:keydown
       on:keyup
-      style={resize ? `resize: " ${resize}` : ''} />
+      style={resize ? `resize: " ${resize}` : ''}></textarea>
     {#if label != null}
       <span class="label">{label}</span>
     {/if}

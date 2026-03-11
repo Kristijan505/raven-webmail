@@ -1,5 +1,7 @@
 import { Router } from "express"
-import fetch, { Headers, Response } from "node-fetch";
+import { Readable } from "stream";
+
+const fromWeb = (Readable as any).fromWeb as ((stream: any) => NodeJS.ReadableStream);
 
 export const sveltekitDevProxy = (port: number) => {
   
@@ -32,8 +34,9 @@ export const sveltekitDevProxy = (port: number) => {
         back = await fetch(url, {
           method: req.method,
           headers: reqHeaders,
-          body: req
-        })
+          body: req as any,
+          duplex: "half" as any,
+        } as any)
       }
 
       const resHeaders: Record<string, string | string[]> = {};
@@ -46,7 +49,11 @@ export const sveltekitDevProxy = (port: number) => {
       }
 
       res.writeHead(back.status, resHeaders);
-      back.body.pipe(res);
+      if(back.body) {
+        fromWeb(back.body as any).pipe(res);
+      } else {
+        res.end();
+      }
 
     } catch(e) {
       next(e);

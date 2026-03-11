@@ -1,28 +1,19 @@
-<script lang="ts" context="module">
-  import type { Load } from "@sveltejs/kit";
-  import { getPage } from "$lib/util";
-  export const load: Load = async ({ page, fetch, session }) => {
-    // @ts-ignore
-    return await getPage({ page, fetch, session });
-  };
-</script>
-
 <script lang="ts">
-  export let query: string;
-  //export let success: true;
-  export let results: Message[];
-  export let nextCursor: string | null;
-  //export let prevCursor: string | null;
-  //export let page: number;
-  export let total: number;
+  import type { DashContext } from "$lib/Dashboard/Dashboard.svelte";
+  import type { Mailbox, Message } from "$lib/types";
+  export let data: { query: string; results: Message[]; nextCursor: string | null; total: number };
+
+  let query: string;
+  let results: Message[];
+  let nextCursor: string | null;
+  let total: number;
+
+  $: ({ query, results, nextCursor, total } = data);
 
   let selection: Message[] = [];
   let scrolled = false;
 
-  import type { DashContext } from "$lib/Dashboard/Dashboard.svelte";
-  import type { Mailbox, Message } from "$lib/types";
-
-  import { getContext } from "svelte";
+  import { getContext, setContext } from "svelte";
   const { mailboxes } = getContext("dash") as DashContext;
 
   const map = (mailboxes: Mailbox[]) => {
@@ -63,19 +54,18 @@
   })
 
   const prev = action(async () => {
-    await goto(`/search?query=${encodeURIComponent(query)}&now=${Date.now()}`, { replaceState: true, keepfocus: true });
+    await goto(`/search?query=${encodeURIComponent(query)}&now=${Date.now()}`, { replaceState: true, keepFocus: true });
   });
 
   const context: MailboxContext = { next, prev };
   setContext("search", context);
 
-  import Plus from "svelte-material-icons/Plus.svelte";
+  import Plus from "~icons/mdi/plus";
   import Ripple from "$lib/Ripple.svelte";
   import { action, _get } from "$lib/util";
   import CircularProgress from "$lib/CircularProgress.svelte";
 
   import { cubicOut } from "svelte/easing";
-  import { setContext } from "svelte/internal";
   import { fly } from "svelte/transition";
   import SearchResult from "$lib/Search/SearchResult.svelte";
   import SearchTop from "$lib/Search/SearchTop.svelte";

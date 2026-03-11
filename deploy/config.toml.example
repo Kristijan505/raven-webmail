@@ -1,0 +1,22 @@
+port=8635
+ssl=false
+secret_token="replace-with-long-random-value"
+mongodb_url="mongodb://mongo:27017/raven-webmail"
+wildduck_api_url="http://wildduck:8080"
+wildduck_api_token="replace-with-wildduck-api-token"
+compression=false
+
+# set this when behind reverse proxy (Traefik/Nginx/Caddy)
+trust_proxy=1
+json_body_limit="1mb"
+
+session_name="raven.sid"
+session_resave=false
+session_rolling=false
+session_cookie_max_age_ms=604800000
+session_cookie_http_only=true
+session_cookie_same_site="lax"
+
+# keep this true for HTTPS deployments behind proxy
+session_cookie_secure=true
+# session_cookie_domain="webmail.example.com"

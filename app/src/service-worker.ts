@@ -1,11 +1,11 @@
-import { build, files, timestamp } from "$service-worker";
+import { build, files, version } from "$service-worker";
 import { registerRoute, setCatchHandler, setDefaultHandler } from "workbox-routing";
 import { StaleWhileRevalidate, CacheFirst, NetworkOnly } from "workbox-strategies";
 import { CacheableResponsePlugin } from 'workbox-cacheable-response';
 import { matchPrecache, precacheAndRoute } from "workbox-precaching";
 import { ExpirationPlugin } from "workbox-expiration";
 
-const revision = timestamp.toString(32);
+const revision = version;
 
 precacheAndRoute(build.map(url => ({ url, revision: "0" })));
 precacheAndRoute(files.map(url => ({ url, revision })));

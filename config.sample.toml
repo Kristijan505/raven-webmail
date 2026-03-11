@@ -35,6 +35,32 @@ wildduck_api_token="same as in wildduck config"
 # set this to false if you use a reverse proxy like nginx
 compression=false 
 
+# trust proxy hops when behind a reverse proxy (example: true or 1)
+# @boolean|number (optional default=false)
+# trust_proxy=true
+
+# max JSON request size accepted by /api (example "1mb", "5mb")
+# @string|number (optional default="1mb")
+# json_body_limit="1mb"
+
+# express-session cookie and store settings
+# @string (optional default="raven.sid")
+# session_name="raven.sid"
+# @boolean (optional default=false)
+# session_resave=false
+# @boolean (optional default=false)
+# session_rolling=false
+# @number (optional default=604800000, 7 days)
+# session_cookie_max_age_ms=604800000
+# @boolean (optional default=true)
+# session_cookie_http_only=true
+# @string (optional default="lax", one of "lax" | "strict" | "none")
+# session_cookie_same_site="lax"
+# @boolean (optional default depends on ssl=true/false)
+# session_cookie_secure=true
+# @string (optional)
+# session_cookie_domain="mail.example.com"
+
 # extra locales directories
 # @string[] (optional)
 # by removing this comment you can add custom locales

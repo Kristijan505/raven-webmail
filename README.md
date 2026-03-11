@@ -29,6 +29,35 @@ raven start [-c --config="./config.toml"]
 
 ---
 
+### Docker deployment (hardened)
+
+Use the files in `./deploy`:
+
+```sh
+cd deploy
+cp .env.example .env
+cp config.toml.example config.toml
+# edit config.toml values
+
+docker compose -f docker-compose.raven.yml build
+docker compose -f docker-compose.raven.yml up -d
+```
+
+Operational helpers:
+
+```sh
+# unauthenticated checks
+RAVEN_BASE_URL="http://127.0.0.1:8635" ./scripts/smoke.sh
+
+# save rollback snapshot
+./scripts/release-snapshot.sh redcode/raven-webmail:hardening-lts
+
+# run CVE scan
+./scripts/scan-trivy.sh redcode/raven-webmail:hardening-lts
+```
+
+---
+
 ### Localization
 ###### User locale is detected from Accept-Language http header
 
@@ -85,7 +114,7 @@ Please if you create a locale for your language make a PR or an issue and I will
 ### Development
 `./src` contains server side and cli typescript code that get compiled to `./dist`
 
-note that server code gets compiled with `ttsc` (typescript with transformers) instead of `tsc` to get runtime type checking in the io between client and server
+server code gets compiled with `tsc`; runtime input/config validation is handled explicitly in server code.
 
 `./app` contains the webmail [SvelteKit](https://kit.svelte.dev) app
 

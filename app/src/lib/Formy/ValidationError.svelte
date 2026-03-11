@@ -61,7 +61,7 @@
 
 <div class="anchor-out">
   <div class="anchor-in">
-    <label class="validation-error" for={attrFor} bind:this={messageElement} on:click transition:fly|local={{ y: -25, duration: 300 }}>
+    <label class="validation-error" for={attrFor} bind:this={messageElement} transition:fly|local={{ y: -25, duration: 300 }}>
       <div class="message">{message}</div>
       <div class="arrow">
         <svg viewBox="0 0 100 100" preserveAspectRatio="none">

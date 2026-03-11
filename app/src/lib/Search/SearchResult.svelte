@@ -28,11 +28,11 @@
   import Ripple from "$lib/Ripple.svelte";
   import type { Message, Mailbox } from "$lib/types";
 
-  import NotSelected from "svelte-material-icons/CheckboxBlankOutline.svelte";
-  import Selected from "svelte-material-icons/CheckboxMarked.svelte";
-  import NotFlagged from "svelte-material-icons/StarOutline.svelte";
-  import Flagged from "svelte-material-icons/Star.svelte";
-  import Paperclip from "svelte-material-icons/Paperclip.svelte";
+  import NotSelected from "~icons/mdi/checkbox-blank-outline";
+  import Selected from "~icons/mdi/checkbox-marked";
+  import NotFlagged from "~icons/mdi/star-outline";
+  import Flagged from "~icons/mdi/star";
+  import Paperclip from "~icons/mdi/paperclip";
   
   import { action, isDrafts, mailboxName, messageDate, _put } from "$lib/util";
   import { _open } from "$lib/Compose/compose";

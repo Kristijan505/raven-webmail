@@ -14,7 +14,7 @@
   import Popup from "./Popup.svelte";
   import Ripple from "./Ripple.svelte";
 
-  import Triangle from "svelte-material-icons/Triangle.svelte";
+  import Triangle from "~icons/mdi/triangle";
 
   const set = (v: any) => {
     if(v === value) return;

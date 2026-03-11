@@ -6,17 +6,17 @@
   import type { EditorContext } from "./Editor.svelte";
   const { all, any, cmd, has } = getContext("editor") as EditorContext;
 
-  import Bold from "svelte-material-icons/FormatBold.svelte";
-  import Underline from "svelte-material-icons/FormatUnderline.svelte";
-  import Italic from "svelte-material-icons/FormatItalic.svelte";
-  import JustifyLeft from "svelte-material-icons/FormatAlignLeft.svelte";
-  import JustifyRight from "svelte-material-icons/FormatAlignRight.svelte";
-  import JustifyCenter from "svelte-material-icons/FormatAlignCenter.svelte";
-  import ListBulleted from "svelte-material-icons/FormatListBulleted.svelte";
-  import ListNumbered from "svelte-material-icons/FormatListNumbered.svelte";
-  import Undo from "svelte-material-icons/Undo.svelte";
-  import Redo from "svelte-material-icons/Redo.svelte";
-  import RemoveFormat from "svelte-material-icons/FormatClear.svelte";
+  import Bold from "~icons/mdi/format-bold";
+  import Underline from "~icons/mdi/format-underline";
+  import Italic from "~icons/mdi/format-italic";
+  import JustifyLeft from "~icons/mdi/format-align-left";
+  import JustifyRight from "~icons/mdi/format-align-right";
+  import JustifyCenter from "~icons/mdi/format-align-center";
+  import ListBulleted from "~icons/mdi/format-list-bulleted";
+  import ListNumbered from "~icons/mdi/format-list-numbered";
+  import Undo from "~icons/mdi/undo";
+  import Redo from "~icons/mdi/redo";
+  import RemoveFormat from "~icons/mdi/format-clear";
 
   import FontSize from "./FontSize.svelte";
   import FontFamily from "./FontFamily.svelte";
@@ -27,7 +27,8 @@
   import { getContext } from "svelte";
   import CircularProgress from "$lib/CircularProgress.svelte";
   import { scale } from "svelte/transition";
-  import { Draft, kSent, send } from "$lib/Compose/compose";
+  import { kSent, send } from "$lib/Compose/compose";
+  import type { Draft } from "$lib/Compose/compose";
   import { action } from "$lib/util";
   import { _message } from "$lib/Notify/notify";
   import { locale } from "$lib/locale";

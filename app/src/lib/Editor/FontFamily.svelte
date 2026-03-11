@@ -16,7 +16,7 @@
   import type { EditorContext } from "./Editor.svelte";
   const { cmd } = getContext("editor") as EditorContext;
 
-  import FontFamily from "svelte-material-icons/FormatFont.svelte";
+  import FontFamily from "~icons/mdi/format-font";
 
   import Popup from "$lib/PortalPopup.svelte";
   import Menu from "$lib/Menu/Menu.svelte"

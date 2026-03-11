@@ -1,15 +1,8 @@
-<script lang="ts" context="module">
-  import { getPage, _put } from "$lib/util";
-  import type { Load } from "@sveltejs/kit";
-  export const load: Load = async ({ page, fetch, session }) => {
-    // @ts-ignore
-    return await getPage({ page, fetch, session })
-  }
-</script>
-
 <script lang="ts">
-  export let user: User;
   import type { User } from '$lib/types';
+  export let data: { user: User };
+  let user: User;
+  $: ({ user } = data);
 
   import { signature } from "$lib/signature";
 
@@ -44,6 +37,7 @@
 	import TransitionPage from '$lib/TransitionPage.svelte';
 	import SignatureEditor from '$lib/Editor/SignatureEditor.svelte';
 	import { get } from "svelte/store";
+  import { _put } from "$lib/util";
 </script>
 
 <style>
@@ -54,11 +48,6 @@
 		overflow-x: hidden;
 		overflow-y: auto;
 		height: 100%;
-	}
-
-	.bottom-space {
-		height: 7em;
-		flex: none;
 	}
 
 	.main {

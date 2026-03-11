@@ -2,14 +2,15 @@
   export let file: MessageFile;
   export let onRemove: () => void;
 
-  import Error from "svelte-material-icons/AlertCircle.svelte";
-  import Success from "svelte-material-icons/CheckCircleOutline.svelte";
-  import Remove from "svelte-material-icons/Close.svelte";  
+  import Error from "~icons/mdi/alert-circle";
+  import Success from "~icons/mdi/check-circle-outline";
+  import Remove from "~icons/mdi/close";  
   import { url } from "$lib/fileIcons";
   import { quadOut } from "svelte/easing"; 
   import Ripple from "$lib/Ripple.svelte";
   import { tooltip } from "$lib/actions";
-  import { fileError, fileLoaded, fileState, MessageFile } from "$lib/Compose/compose";
+  import { fileError, fileLoaded, fileState } from "$lib/Compose/compose";
+  import type { MessageFile } from "$lib/Compose/compose";
 import { locale } from "$lib/locale";
 
   const out = (node: HTMLElement, params: any) => {
@@ -107,7 +108,7 @@ import { locale } from "$lib/locale";
   </x-icon>
   <x-name>{file.filename}</x-name>
   {#if file[fileState] === "uploading"}
-    <x-progress style="width: {(file[fileLoaded] / file.size) * 100}%"/>
+    <x-progress style="width: {(file[fileLoaded] / file.size) * 100}%"></x-progress>
   {:else if file[fileState] === "complete" || file[fileState] == null}
     <x-state class="complete">
       <Success />

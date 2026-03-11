@@ -114,8 +114,8 @@
 
   export let onDateSelected: (date: Date) => void = () => {};
 
-  import ChevronLeft from "svelte-material-icons/ChevronLeft.svelte";
-  import ChevronRight from "svelte-material-icons/ChevronRight.svelte";
+  import ChevronLeft from "~icons/mdi/chevron-left";
+  import ChevronRight from "~icons/mdi/chevron-right";
   import Ripple from "./Ripple.svelte";
 
   const weekDays = [

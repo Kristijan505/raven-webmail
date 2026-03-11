@@ -4,10 +4,10 @@
   import { fly } from "svelte/transition";
   import { flip } from "svelte/animate";
 
-  import successIcon from "svelte-material-icons/CheckCircleOutline.svelte";
-  import errorIcon from "svelte-material-icons/CloseCircleOutline.svelte";
-  import infoIcon from "svelte-material-icons/InformationOutline.svelte";
-  import warningIcon from "svelte-material-icons/AlertOutline.svelte";
+  import successIcon from "~icons/mdi/check-circle-outline";
+  import errorIcon from "~icons/mdi/close-circle-outline";
+  import infoIcon from "~icons/mdi/information-outline";
+  import warningIcon from "~icons/mdi/alert-outline";
 
   const icons = {
     success: successIcon,

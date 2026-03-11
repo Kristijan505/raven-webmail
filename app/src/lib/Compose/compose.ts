@@ -1,4 +1,5 @@
 import Compose from "./Compose.svelte";
+import { mount, unmount } from "svelte";
 
 export type Draft = {
   key: number
@@ -75,16 +76,21 @@ export const [crossin, crossout] = crossfade({
   fallback: (node) => fly(node, { duration: 300, y: 20 }),
 });
 
-let compose: Compose | null = null;
+let compose: any = null;
 
 export const getComposer = () => {
-  if(compose == null) compose = new Compose({ target: document.body });
+  if(compose == null) {
+    compose = mount(Compose, {
+      target: document.body,
+      props: {}
+    });
+  }
   return compose
 } 
 
 export const destroyComposer = () => {
   if(compose != null) {
-    compose.$destroy();
+    unmount(compose);
     compose = null;
   }
 }

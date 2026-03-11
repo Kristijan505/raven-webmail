@@ -36,7 +36,7 @@
   })
 
   import Ripple from "$lib/Ripple.svelte";
-  import Close from "svelte-material-icons/Close.svelte";
+  import Close from "~icons/mdi/close";
   import Window from "./Window.svelte";
   import { flip } from "svelte/animate";
   import { fade } from "svelte/transition";
@@ -59,7 +59,7 @@
 
   const sanitize = (src: string | string[] | null) => {
     if(src instanceof Array) src = src.join("");
-    const div = DOMPurify.sanitize(src || "", { RETURN_DOM: true });
+    const div = DOMPurify.sanitize(src || "", { RETURN_DOM: true }) as HTMLElement;
     const toRemove = div.querySelectorAll("style, link, script, meta, object, head, title");
     for(let i = 0; i < toRemove.length; i++) {
       const el = toRemove[i];
@@ -302,7 +302,7 @@
               <Close />
               <Ripple />
             </div>
-            <div class="tab-sender" in:crossin={{key: tab}} out:crossout={{key: tab}} />
+            <div class="tab-sender" in:crossin={{key: tab}} out:crossout={{key: tab}}></div>
           </div>
         {/if}
       </div>
@@ -311,7 +311,7 @@
 {/if}
 
 {#if current}
-  <div class="overlay" transition:fade|local={{duration: 300}} on:click={() => current = null} />
+  <div class="overlay" transition:fade|local={{duration: 300}} on:click={() => current = null}></div>
   {#key current.key}
     <Window bind:current onMinimize={() => current = null} onRemove={() => removeTab(current)} />
   {/key}

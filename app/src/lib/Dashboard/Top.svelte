@@ -1,9 +1,9 @@
 <script lang="ts">
   export let username: string;
   import { page } from "$app/stores";
-  let q = ($page.path === "/search" && $page.query.get("query")) || "";
+  let q = ($page.url.pathname === "/search" && $page.url.searchParams.get("query")) || "";
 
-  import Menu from "svelte-material-icons/Menu.svelte";
+  import Menu from "~icons/mdi/menu";
   import AccountButton from "./AccountButton.svelte";
 
   import { getContext } from "svelte";
@@ -11,7 +11,7 @@
   import Ripple from "$lib/Ripple.svelte";
   const { toggle } = getContext("dash") as DashContext;
 
-  import Magnify from "svelte-material-icons/Magnify.svelte";
+  import Magnify from "~icons/mdi/magnify";
   import { goto } from "$app/navigation";
   import { locale } from "$lib/locale";
 
@@ -21,7 +21,7 @@
       let _q = q.trim();
       if(_q) {
         try {
-          await goto(`/search?query=${encodeURIComponent(_q)}`, { keepfocus: true, replaceState: location.pathname === "/search" })
+          await goto(`/search?query=${encodeURIComponent(_q)}`, { keepFocus: true, replaceState: location.pathname === "/search" })
         } finally {
           searching = false;
         }

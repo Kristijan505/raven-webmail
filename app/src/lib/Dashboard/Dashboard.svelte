@@ -15,10 +15,11 @@
 <script lang="ts">
   export let user: User;
   export let username: string;
-  let _mailboxes: Mailbox[];
+  let _mailboxes: Mailbox[] = [];
   export { _mailboxes as mailboxes };
 
-  const mailboxes = writable(sortMailboxes(_mailboxes));
+  const mailboxes = writable<Mailbox[]>([]);
+  $: $mailboxes = sortMailboxes(_mailboxes);
   
   const reloadMailboxes = async () => {
     const json = await _get("/api/mailboxes");
@@ -54,16 +55,26 @@
   import Drawer from "./Drawer.svelte";
   import Top from "./Top.svelte";
   import { isNarrow, sortMailboxes, watchAuth, _get } from "$lib/util";
+  import { goto } from "$app/navigation";
   import { Counters, Exists, Expunge } from "$lib/events";
-  import { run_all } from "svelte/internal";
   import { fly } from "svelte/transition";
   import { destroyComposer } from "$lib/Compose/compose";
 
+  const runAll = (handlers: Array<() => void>) => {
+    for (const handler of handlers) {
+      handler();
+    }
+  };
+
   onMount(() => {
+    if (!user?.id) {
+      goto("/login");
+      return;
+    }
+
     const stream = new EventSource("/api/updates");
     stream.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      console.log(data);
       if(data.command === "COUNTERS") {
         Counters.dispatch(data);
       } else if (data.command === "EXISTS") {
@@ -88,7 +99,7 @@
     ]
 
     return () => {
-      run_all(off)
+      runAll(off)
     }
   })
 </script>

@@ -1,25 +1,42 @@
 import { Request, Router } from "express"
-import { assertType } from "typescript-is";
 import { validate, handler, ApiError, pageHandler } from "./util";
 import { authenticate, del, get, post, put, url, watch } from "./client";
 import { json } from "body-parser";
 import { StatusCodes } from "http-status-codes";
-import fetch from "node-fetch";
 import { DISPLAY_ERRORS } from "./env";
 import qs from "qs";
 import { Config } from "./config";
 import * as i18n from "./i18n/i18n";
 import { RAVEN_SIGNATURE_META_KEY } from "./metadata";
+import { Readable } from "stream";
+import { z } from "zod";
+
+const fromWeb = (Readable as any).fromWeb as ((stream: any) => NodeJS.ReadableStream);
+const LoginSchema = z.object({
+  username: z.string().min(1),
+  password: z.string().min(1),
+});
+const SignatureSchema = z.object({
+  html: z.string(),
+});
 
 export const api = (config: Config) => {
   const api = Router();
 
-  api.use(json());
+  api.use(json({ limit: config.json_body_limit || "1mb" }));
 
   api.use(i18n.middleware(config));
 
+  api.get("/healthz", handler(async (_req, res) => {
+    res.json({
+      ok: true,
+      uptime_s: Math.floor(process.uptime()),
+      ts: new Date().toISOString(),
+    });
+  }))
+
   api.post("/login", handler(async (req, res) => {
-    const { username, password } = validate(() => assertType<{ username: string, password: string }>(req.body));
+    const { username, password } = validate(() => LoginSchema.parse(req.body));
     const v = await authenticate(username, password);
     req.session.authentication = v;
     req.session.save(() => {
@@ -86,7 +103,7 @@ export const api = (config: Config) => {
   }))
 
   api.put("/signature", handler(async (req, res) => {
-    const { html } = assertType<{ html: string }>(req.body);
+    const { html } = validate(() => SignatureSchema.parse(req.body));
     const body = { metaData: {[RAVEN_SIGNATURE_META_KEY]: html } };
     const json = await put(`/users/${userId(req)}`, token(req), body);
     res.json(json);
@@ -171,7 +188,11 @@ export const api = (config: Config) => {
       const contentLength = back.headers.get("content-length");
       if(contentType) res.setHeader("content-type", contentType);
       if(contentLength) res.setHeader("content-length", contentLength);
-      back.body.pipe(res)
+      if(back.body) {
+        fromWeb(back.body as any).pipe(res);
+      } else {
+        res.end();
+      }
     } else {
       res.status(back.status);
       res.end("Cannot GET attachment");
@@ -198,8 +219,9 @@ export const api = (config: Config) => {
     const back = await fetch(url(`/users/${userId(req)}/storage${query(req)}`), {
       method: "POST",
       headers: headers,
-      body: req,
-    }).catch(e => {
+      body: req as any,
+      duplex: "half" as any,
+    } as any).catch(e => {
       throw new ApiError(502, DISPLAY_ERRORS ? String(e?.message) : "Bad Gateway");
     })
 
@@ -302,4 +324,3 @@ export const query = (req: Request): string => {
     return req.url.slice(i);
   }
 }
-

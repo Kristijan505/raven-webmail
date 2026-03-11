@@ -20,7 +20,7 @@
   import type { EditorContext } from "./Editor.svelte";
   const { cmd, has } = getContext("editor") as EditorContext;
 
-  import Fill from "svelte-material-icons/FormatColorFill.svelte"
+  import Fill from "~icons/mdi/format-color-fill"
   import ColorGroup from "./ColorGroup.svelte";
   import Popup from "$lib/PortalPopup.svelte";
   import { tooltip } from "$lib/actions";

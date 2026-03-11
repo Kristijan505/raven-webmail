@@ -1,8 +1,8 @@
 <script lang="ts">
   import TextField from "./TextField.svelte";
   
-  import VisibilityOn from "svelte-material-icons/Eye.svelte";
-  import VisibilityOff from "svelte-material-icons/EyeOff.svelte";
+  import VisibilityOn from "~icons/mdi/eye";
+  import VisibilityOff from "~icons/mdi/eye-off";
 
   export let value: string = "";
   export let textFieldProps: Record<string, any> = {};

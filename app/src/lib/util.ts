@@ -1,4 +1,5 @@
 import type { Mailbox } from "$lib/types";
+import { redirect } from "@sveltejs/kit";
 
 export class HttpError extends Error {
   status: number
@@ -18,12 +19,12 @@ export const mailboxName = (mailbox: Mailbox) => {
   return mailbox.name;
 }
 
-import Inbox from "svelte-material-icons/InboxOutline.svelte";
-import Trash from "svelte-material-icons/DeleteOutline.svelte";
-import Sent from "svelte-material-icons/SendOutline.svelte";
-import Junk from "svelte-material-icons/AlertDecagramOutline.svelte";
-import Drafts from "svelte-material-icons/FileDocumentEditOutline.svelte";
-import Other from "svelte-material-icons/FolderOutline.svelte";
+import Inbox from "~icons/mdi/inbox-outline";
+import Trash from "~icons/mdi/delete-outline";
+import Sent from "~icons/mdi/send-outline";
+import Junk from "~icons/mdi/alert-decagram-outline";
+import Drafts from "~icons/mdi/file-document-edit-outline";
+import Other from "~icons/mdi/folder-outline";
 
 export const mailboxIcon = (mailbox: Mailbox) => {
   if(mailbox.path === "INBOX") return Inbox;
@@ -46,71 +47,67 @@ export const isSent = (mailbox: Mailbox) => mailbox.specialUse === "\\Sent";
 export const isDrafts = (mailbox: Mailbox) => mailbox.specialUse === "\\Drafts";
 export const isTrash = (mailbox: Mailbox) => mailbox.specialUse === "\\Trash";
 
-export const sortMailboxes = (mailboxes: Mailbox[]): Mailbox[] => {
-  const inbox = mailboxes.find(isInbox)!;
-  const drafts = mailboxes.find(isDrafts)!; 
-  const sent = mailboxes.find(isSent)!; 
-  const junk = mailboxes.find(isJunk)!;
-  const trash = mailboxes.find(isTrash)!;
+export const sortMailboxes = (mailboxes: Mailbox[] = []): Mailbox[] => {
+  const all = Array.isArray(mailboxes) ? mailboxes : [];
 
-  const folders = mailboxes.filter(item => !isInbox(item) && item.specialUse == null);
-  
+  const inbox = all.find(isInbox);
+  const drafts = all.find(isDrafts);
+  const sent = all.find(isSent);
+  const junk = all.find(isJunk);
+  const trash = all.find(isTrash);
+
+  const folders = all.filter(item => !isInbox(item) && item.specialUse == null);
+
   const res: Mailbox[] = [
-    inbox, ...folders, drafts, sent, junk, trash,
-  ].filter(Boolean);
+    inbox,
+    ...folders,
+    drafts,
+    sent,
+    junk,
+    trash,
+  ].filter((item): item is Mailbox => Boolean(item));
 
-  for(const item of mailboxes) {
-    if(!res.includes(item)) res.push(item);
+  for (const item of all) {
+    if (!res.includes(item)) res.push(item);
   }
 
   return res;
 }
 
 
-import type { Load } from "@sveltejs/kit";
-import { browser } from "$app/env";
+type GetPageOptions = {
+  fetch: typeof globalThis.fetch;
+  path?: string;
+  url?: URL;
+};
 
-export const getPage: Load = async ({page,  fetch, session}) => {
-  
-  let query = page.query?.toString() || "";
-  query = query ? `?${query}` : "";
+export const getPage = async ({ fetch, path, url }: GetPageOptions) => {
+  const pathAndQuery = path || (url ? `/api/pages${url.pathname}${url.search}` : "");
+  const res = await fetch(pathAndQuery).catch(() => {
+    throw new HttpError(500, "Cannot connect to server");
+  });
 
-  const pathAndQuery = typeof page === "string" ? page : `/api/pages${page.path}${query}`;
-  
-  if(browser) {
-    const res = await fetch(pathAndQuery);
-    return await res.json();
-  }
-  
-  const headers: HeaderInit = {};
-  const url = `http://raven${pathAndQuery}`;
+  const body: any = await res.json().catch(() => {
+    throw new HttpError(res.status, "Invalid JSON response from server");
+  });
 
-  const data = sessMap.get(session) || {};
-  
-  if(data.cookie) {
-    headers.cookie = data.cookie;
+  // Legacy page endpoint format uses JSON redirect payloads.
+  if (body?.redirect) {
+    throw redirect(Number(body.status) || 302, body.redirect);
   }
 
-  if(data.userAgent) {
-    headers["user-agent"] = data.userAgent;
+  if (body?.error) {
+    const message = typeof body.error === "string"
+      ? body.error
+      : body.error?.message || "Unknown page error";
+    throw new HttpError(Number(body.status) || res.status, message);
   }
-  
-  const res = await fetch(url, { headers });
-  const body: any = await res.json();
-  
-  const cookieStr = res.headers.get("set-cookie");
-  if(!cookieStr) return body;
-  
-  const cookies = cookieStr.split(",").map(item => item.trim());
-  if(cookies.length === 0) return body;
-  
-  return {
-    ...(body || {}),
-    headers: {
-      ...(body?.headers || {}),
-      "set-cookie": cookies,
-    }
+
+  if (!res.ok) {
+    throw new HttpError(res.status, `Cannot get page, invalid response status code: ${res.status}`);
   }
+
+  return body?.props ?? body;
 }
 
 
@@ -243,8 +240,6 @@ export const isWide = () => {
 }
 
 import { goto } from "$app/navigation";
-import type { HeaderInit } from "node-fetch";
-import { sessMap } from  "../sessMap";
 import { _error } from "./Notify/notify";
 import { get } from "svelte/store";
 import { locale } from "./locale";

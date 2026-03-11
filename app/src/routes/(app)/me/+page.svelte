@@ -1,21 +1,14 @@
-<script lang="ts" context="module">
-  import { getPage } from "$lib/util";
-  import type { Load } from "@sveltejs/kit";
-  export const load: Load = async ({ page, fetch, session }) => {
-    // @ts-ignore
-    return await getPage({ page, fetch, session })
-  }
-</script>
-
 <script lang="ts">
-  export let user: User;
   import type { User } from '$lib/types';
+  export let data: { user: User };
+  let user: User | null = null;
+  $: user = data?.user ?? null;
 
-	$: name = user.name || 'Unnamed';
+	$: name = user?.name || 'Unnamed';
 	$: letter = name[0] || '';
 
-	import LockReset from 'svelte-material-icons/LockReset.svelte';
-	import DrawPen from 'svelte-material-icons/Draw.svelte';
+	import LockReset from '~icons/mdi/lock-reset';
+	import DrawPen from '~icons/mdi/draw';
 	import CircularGraph from '$lib/CircularGraph.svelte';
 	import MenuItem from '$lib/Menu/MenuItem.svelte';
 	import Password from '$lib/Password.svelte';
@@ -23,7 +16,7 @@
   import Ripple from '$lib/Ripple.svelte';
   import { action, _put } from '$lib/util';
 
-  import AccountEdit from "svelte-material-icons/AccountEditOutline.svelte";
+  import AccountEdit from "~icons/mdi/account-edit-outline";
   import TextField from "$lib/TextField.svelte";
   import { _message } from "$lib/Notify/notify";
   import { locale } from "$lib/locale";
@@ -55,8 +48,12 @@
   })
 
   let nameOpen = false;
-  let newName = user.name || "";
+  let newName = "";
+  $: if (!nameOpen) {
+    newName = user?.name || "";
+  }
   const editName = action(async () => {
+    if (!user) return;
     if(!newName?.trim()) return;
     await _put("/api/me", { name: newName });
     user.name = newName
@@ -193,6 +190,7 @@
 </svelte:head>
 
 <TransitionPage>
+  {#if user}
   <div class="account">
     <div class="main">
       <div class="letter elev3">{letter}</div>
@@ -384,11 +382,12 @@
       </div>
     </div>
 
-    <div class="bottom-space" />
+    <div class="bottom-space"></div>
   </div>
+  {/if}
   </TransitionPage>
 
-{#if passwordDialogOpen}
+{#if user && passwordDialogOpen}
 	<Dialog onClose={() => passwordDialogOpen = false} width="500px" title={$locale.Update_your_password}>
 		<form class="password-dialog" on:submit|preventDefault={updatePassword}>
 			<div class="field">
@@ -411,7 +410,7 @@
 	</Dialog>
 {/if}
 
-{#if nameOpen}
+{#if user && nameOpen}
   <Dialog title={$locale.Edit_your_name} onClose={() => nameOpen = false} width="500px">
     <form class="password-dialog" on:submit|preventDefault={editName}>
 			<div class="field">

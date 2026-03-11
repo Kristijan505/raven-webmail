@@ -1,7 +1,7 @@
 import { program as cmd } from "commander";
 const pkg = require("../../package.json");
 
-import chalk from "chalk";
+import pc from "picocolors";
 import fs from "fs";
 import path from "path";
 
@@ -13,18 +13,18 @@ const { mkdir } = promises;
 import * as config from "./config";
 
 const createConfig = (opts: {output: string}) => {
-  console.log("> Creating config file in " + chalk.yellow(opts.output));
+  console.log("> Creating config file in " + pc.yellow(opts.output));
   const sample = path.resolve(__dirname, "../../config.sample.toml");
   const dest = path.resolve(process.cwd(), opts.output);
   if(fs.existsSync(dest)) {
-    console.error(chalk.red(`> Aborting: file ${dest} already exists`))
+    console.error(pc.red(`> Aborting: file ${dest} already exists`))
     return process.exit(1);
   }
 
   fs.copyFileSync(sample, dest);
-  console.log("> Config file created in " + chalk.yellow(dest));
+  console.log("> Config file created in " + pc.yellow(dest));
   console.log("> Before start edit the settings as needed")
-  console.log("> Then run " + chalk.yellow("raven start") + " in the config directory")
+  console.log("> Then run " + pc.yellow("raven start") + " in the config directory")
 }
 
 const start = async (opts: {config: string}) => {
@@ -41,7 +41,7 @@ const createLocale = async (opts: {config: string, code: string}) => {
 
   const conf = config.load(path.resolve(process.cwd(), opts.config));
   if(conf.extra_locales_dirs == null || conf.extra_locales_dirs.length === 0) {
-    console.error(chalk.red(`> You must add a directory to ${chalk.yellow("config.extra_locale_dirs")} before running this`))
+    console.error(pc.red(`> You must add a directory to ${pc.yellow("config.extra_locale_dirs")} before running this`))
     return process.exit(1);
   }
 
@@ -49,12 +49,12 @@ const createLocale = async (opts: {config: string, code: string}) => {
   await mkdir(dir, { recursive: true });
   const file = path.join(dir, opts.code + ".json");
   if(fs.existsSync(file)) {
-    console.error(chalk.red(`> Aborting: file ${chalk.yellow(file)} already exists`))
+    console.error(pc.red(`> Aborting: file ${pc.yellow(file)} already exists`))
     return process.exit(1);
   }
 
   fs.writeFileSync(file, JSON.stringify(en, null, 2));
-  console.log("> locale file created into " + chalk.yellow(file));
+  console.log("> locale file created into " + pc.yellow(file));
 }
 
 cmd.version(pkg.version);

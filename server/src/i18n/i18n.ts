@@ -14,7 +14,7 @@ export type Locales = Record<string, Locale>;
 import en from "./src/en";
 import es from "./src/es";
 import it from "./src/it";
-import chalk from "chalk";
+import pc from "picocolors";
 
 declare module "express" {
   interface Request {
@@ -66,7 +66,7 @@ const normalize = (code: string, src: Record<string, any>): Locale => {
   const keys = deepkeys(src);
   for(const key of keys) {
     if(!baseKeys.includes(key)) {
-      console.warn(`> [WARN] Locale ${chalk.yellow(code)} unknown key ${chalk.yellow(key)} ignoring`)
+      console.warn(`> [WARN] Locale ${pc.yellow(code)} unknown key ${pc.yellow(key)} ignoring`)
     }
   }
 
@@ -77,14 +77,14 @@ const normalize = (code: string, src: Record<string, any>): Locale => {
         // @ts-ignore
         return src;
       } else {
-        console.warn(`> [WARN] Locale ${chalk.yellow(code)} key ${chalk.yellow(path.join("."))} is not a string, setting it to default`)
+        console.warn(`> [WARN] Locale ${pc.yellow(code)} key ${pc.yellow(path.join("."))} is not a string, setting it to default`)
         return base;
       }
     }
 
     if(typeof base === "object") {
       if(typeof src !== "object" || src === null) {
-        console.warn(`> [WARN] Locale ${chalk.yellow(code)} key ${chalk.yellow(path.join("."))} is not an object, setting it to default`)
+        console.warn(`> [WARN] Locale ${pc.yellow(code)} key ${pc.yellow(path.join("."))} is not an object, setting it to default`)
         return clone(base);
       }
     }
@@ -116,7 +116,7 @@ const normalize = (code: string, src: Record<string, any>): Locale => {
 export const loadLocales = (config: Config): Locales => {
   
   if(!config.extra_locales_dirs?.length) {
-    return { en, es };
+    return { en, es, it };
   }
 
   const locales: Locales = Object.create(null);
@@ -129,7 +129,7 @@ export const loadLocales = (config: Config): Locales => {
         const code = name.replace(/\.json$/i, "");
         if(locales[code]) continue;
         const filepath = join(dir, name);
-        console.log(`> loading locale ${chalk.yellow(code)} from ${chalk.yellow(filepath)}`)
+        console.log(`> loading locale ${pc.yellow(code)} from ${pc.yellow(filepath)}`)
         const source = readFileSync(filepath, "utf-8");
         const locale = JSON.parse(source);
         if(typeof locale !== "object" || locale == null) {
@@ -140,34 +140,39 @@ export const loadLocales = (config: Config): Locales => {
       }
     }
   } catch(e: any) {
-    console.warn(chalk.red(`Error loading custom locales: ${e.message}`))
+    console.warn(pc.red(`Error loading custom locales: ${e.message}`))
     console.error(e);
     process.exit(1);
   }
 
   if(locales.en == null) {
-    console.log(`> adding locale ${chalk.yellow("en")} from source`);
+    console.log(`> adding locale ${pc.yellow("en")} from source`);
     locales.en = en;
   }
 
   if(locales.es == null) {
-    console.log(`> adding locale ${chalk.yellow("es")} from source`);
+    console.log(`> adding locale ${pc.yellow("es")} from source`);
     locales.es = es;
   }
 
   if(locales.it == null) {
-    console.log(`> adding locale ${chalk.yellow("it")} from source`);
+    console.log(`> adding locale ${pc.yellow("it")} from source`);
     locales.it = it;  
   }
 
-  console.log(`> locales loaded, available locales: ${Object.keys(locales).map(s => chalk.yellow(s)).join(", ")}`);
+  console.log(`> locales loaded, available locales: ${Object.keys(locales).map(s => pc.yellow(s)).join(", ")}`);
 
   return locales
 }
 
 export const getLocaleForAcceptLang = (acceptLang: string | null | undefined, locales: Locales): { lang: string, locale: Locale } => {
   if(acceptLang == null) return { lang: "en", locale: locales.en };
-  const langs = parse(acceptLang);
+  let langs: ReturnType<typeof parse>;
+  try {
+    langs = parse(acceptLang);
+  } catch(_e) {
+    return { lang: "en", locale: locales.en };
+  }
   for(const lang of langs) {
     if(lang.region) {
       const key = `${lang.code}-${lang.region}`;
@@ -189,7 +194,12 @@ export const middleware = (config: Config) => {
   i18n.use((req: Request, res: Response, next: NextFunction) => {
     let acceptLanguage = String(req.query["accept-language"] || "");
     if(!acceptLanguage) {
-      acceptLanguage = req.headers["accept-language"] || "";
+      const header = req.headers["accept-language"] as string | string[] | undefined;
+      if(typeof header === "string") {
+        acceptLanguage = header;
+      } else if(Array.isArray(header)) {
+        acceptLanguage = header.join(",");
+      }
     }
     const { lang, locale } = getLocaleForAcceptLang(acceptLanguage, locales);  
     req.lang = lang;

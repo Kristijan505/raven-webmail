@@ -5,8 +5,8 @@
   export let onChange: (v: boolean) => void = () => {};
   import Ripple from "./Ripple.svelte";
   import {fade} from "svelte/transition";
-  import On from "svelte-material-icons/CheckboxMarked.svelte";
-  import Off from "svelte-material-icons/CheckboxBlankOutline.svelte";
+  import On from "~icons/mdi/checkbox-marked";
+  import Off from "~icons/mdi/checkbox-blank-outline";
 
   let lastValue = checked;
   $: onChecked(checked);

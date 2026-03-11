@@ -5,7 +5,7 @@
 
   import type { Mailbox, FullMessage } from "./types";
 
-  import Paperclip from "svelte-material-icons/Paperclip.svelte";
+  import Paperclip from "~icons/mdi/paperclip";
   import { url } from "$lib/fileIcons";
 
   import PortalPopup from "$lib/PortalPopup.svelte";
@@ -69,7 +69,7 @@ import { locale } from "./locale";
               <a href="/api/mailboxes/{mailbox.id}/messages/{message.id}/attachments/{attach.id}"
                 class="na item btn-dark"
                 download={attach.filename}>
-                <div class="img" style="background-image: url({url(attach.filename)})" />
+                <div class="img" style="background-image: url({url(attach.filename)})"></div>
                 <div class="name">
                   {attach.filename}
                 </div>
