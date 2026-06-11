@@ -6,7 +6,7 @@ const locale: Locale = {
   daily: "dnevno",
   by_minute: "po minuti",
 
-  Compose: "Sastavi",
+  Compose: "Nova poruka",
   "Search...": "Pretraži...",
 
   Username: "Korisničko ime",
@@ -82,11 +82,11 @@ const locale: Locale = {
   "To:": "Prima:",
   "Subject:": "Predmet:",
   "Sent:": "Poslano:",
-  "Cc:": "Cc:",
-  "Bcc:": "Bcc:",
+  "Cc:": "Kopija:",
+  "Bcc:": "Skrivena kopija:",
 
-  Cc: "Cc",
-  Bcc: "Bcc",
+  Cc: "Kopija",
+  Bcc: "Skrivena kopija",
   New_message: "Nova poruka",
   Undo: "Poništi",
   Redo: "Ponovi",
