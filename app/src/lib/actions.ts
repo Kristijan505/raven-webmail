@@ -142,6 +142,10 @@ export const messageHTML = (node: HTMLElement, opts: string | { html: string, me
   const fragment = dompurify.sanitize(html, {
     RETURN_DOM_FRAGMENT: true,
     ALLOWED_URI_REGEXP: /^(mailto|https?|cid|tel|attachment):/i,
+    // Allow data: URIs ONLY on <img> so embedded base64 images (common in
+    // newsletters) render. Safe: an <img> never executes script, and the body
+    // is in a no-allow-scripts sandboxed iframe regardless.
+    ADD_DATA_URI_TAGS: ["img"],
   });
 
   for(const $a of [].slice.call(fragment.querySelectorAll("a"))) {
@@ -165,6 +169,8 @@ export const messageHTML = (node: HTMLElement, opts: string | { html: string, me
       const cid = m[2];
       const att = message?.attachments?.find(att => att.id === cid);
       if(att) $img.setAttribute("src", `/api/mailboxes/${message!.mailbox}/messages/${message!.id}/attachments/${att.id}`);
+    } else if(/^data:/i.test(src)) {
+      // Embedded base64 image — no network, no tracking; render as-is.
     } else if(src) {
       if(loadRemote) {
         // Routed through our SSRF-guarded server proxy: the sender sees the
