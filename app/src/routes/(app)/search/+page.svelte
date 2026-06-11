@@ -3,12 +3,26 @@
   import type { Mailbox, Message } from "$lib/types";
   export let data: { query: string; results: Message[]; nextCursor: string | null; total: number };
 
-  let query: string;
-  let results: Message[];
-  let nextCursor: string | null;
-  let total: number;
+  // Local, mutable copy of the loaded data. `SearchTop` / `SearchResult`
+  // mutate `results` and `selection` through `bind:` (delete, move) and
+  // `next()` appends paged results. Re-deriving these from `data` on every
+  // reactive pass would re-run on each child mutation and overwrite the
+  // optimistic change with the stale server value (deletions reappearing
+  // until refresh). Only re-sync when SvelteKit delivers a fresh `data`
+  // object (new query or an explicit refresh via `prev()`).
+  let query = data.query;
+  let results = data.results;
+  let nextCursor = data.nextCursor;
+  let total = data.total;
+  let lastData = data;
 
-  $: ({ query, results, nextCursor, total } = data);
+  $: if (data !== lastData) {
+    lastData = data;
+    query = data.query;
+    results = data.results;
+    nextCursor = data.nextCursor;
+    total = data.total;
+  }
 
   let selection: Message[] = [];
   let scrolled = false;
