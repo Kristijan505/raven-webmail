@@ -151,7 +151,10 @@ const locale: Locale = {
   "Take_me_to_my_inbox": "Vai alla posta in arrivo",
 
   "Toggle_code_view": "Codice on/off",
-  "Edit_your_signature": "Modifica la tua firma"
+  "Edit_your_signature": "Modifica la tua firma",
+
+  "Remote_images_hidden": "Le immagini remote sono nascoste per proteggere la tua privacy.",
+  "Load_images": "Carica immagini"
 }
 
 export default locale;

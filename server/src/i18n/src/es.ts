@@ -150,6 +150,9 @@ const locale: Locale = {
 
   Toggle_code_view: "Vista de código",
   Edit_your_signature: "Editar mi firma",
+
+  Remote_images_hidden: "Las imágenes remotas están ocultas para proteger tu privacidad.",
+  Load_images: "Cargar imágenes",
 }
 
 export default locale;

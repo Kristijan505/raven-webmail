@@ -296,8 +296,8 @@
         {:else}
           {#if hasRemoteImages && !loadRemote}
             <div class="remote-images">
-              <span>Remote images are hidden to protect your privacy.</span>
-              <button class="btn-light" on:click={() => loadRemote = true}>Load images</button>
+              <span>{$locale.Remote_images_hidden}</span>
+              <button class="btn-light" on:click={() => loadRemote = true}>{$locale.Load_images}</button>
             </div>
           {/if}
           {#key loadRemote}

@@ -63,7 +63,7 @@ export default {
   Discard_drafts: "Discard drafts",
 
   Common_actions: "Common actions",
-  Edit_your_name: "Editar your name",
+  Edit_your_name: "Edit your name",
   Update_your_password: "Update your password",
   
   Storage: "Storage",
@@ -132,10 +132,10 @@ export default {
   This_action_is_permanent_all_messages_will_be_deleted: "This action is permanent, all messages will be deleted",
 
   This_mailbox_is_empty: "This mailbox is empty",
-  There_are_no_search_results_for_this_query: "There_are_no_search_results_for_this_query", 
+  There_are_no_search_results_for_this_query: "There are no search results for this query",
 
   Folder_name: "Folder name",
-  New_name: "Nuevo nombre",
+  New_name: "New name",
 
   Retry: "Retry",
   Offline_title: "Oops! looks that you are offline",
@@ -146,4 +146,7 @@ export default {
 
   Toggle_code_view: "Toggle code view",
   Edit_your_signature: "Edit your signature",
+
+  Remote_images_hidden: "Remote images are hidden to protect your privacy.",
+  Load_images: "Load images",
 }

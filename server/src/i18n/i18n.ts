@@ -14,6 +14,7 @@ export type Locales = Record<string, Locale>;
 import en from "./src/en";
 import es from "./src/es";
 import it from "./src/it";
+import hr from "./src/hr";
 import pc from "picocolors";
 
 declare module "express" {
@@ -116,7 +117,7 @@ const normalize = (code: string, src: Record<string, any>): Locale => {
 export const loadLocales = (config: Config): Locales => {
   
   if(!config.extra_locales_dirs?.length) {
-    return { en, es, it };
+    return { en, es, it, hr };
   }
 
   const locales: Locales = Object.create(null);
@@ -158,6 +159,11 @@ export const loadLocales = (config: Config): Locales => {
   if(locales.it == null) {
     console.log(`> adding locale ${pc.yellow("it")} from source`);
     locales.it = it;  
+  }
+
+  if(locales.hr == null) {
+    console.log(`> adding locale ${pc.yellow("hr")} from source`);
+    locales.hr = hr;
   }
 
   console.log(`> locales loaded, available locales: ${Object.keys(locales).map(s => pc.yellow(s)).join(", ")}`);
