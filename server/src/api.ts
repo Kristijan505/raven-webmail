@@ -11,6 +11,7 @@ import { RAVEN_SIGNATURE_META_KEY } from "./metadata";
 import { Readable } from "stream";
 import * as dns from "dns/promises";
 import * as net from "net";
+import rateLimit from "express-rate-limit";
 import { z } from "zod";
 
 const fromWeb = (Readable as any).fromWeb as ((stream: any) => NodeJS.ReadableStream);
@@ -40,7 +41,7 @@ const MeSchema = z.object({
 // above /users/{sessionUserId}/ to another user's data (cross-user IDOR) or
 // inject query parameters. Rejecting separators and percent-encoding the rest
 // neutralizes both vectors.
-const seg = (value: string | string[] | undefined): string => {
+export const seg = (value: string | string[] | undefined): string => {
   if (
     typeof value !== "string" ||
     value.length === 0 ||
@@ -115,7 +116,7 @@ const isPrivateIpv4 = (ip: string): boolean => {
   );
 };
 
-const isPrivateIp = (ip: string): boolean => {
+export const isPrivateIp = (ip: string): boolean => {
   const fam = net.isIP(ip);
   if (fam === 4) return isPrivateIpv4(ip);
   if (fam === 6) {
@@ -130,7 +131,7 @@ const isPrivateIp = (ip: string): boolean => {
   return true; // not a valid IP literal -> unsafe
 };
 
-const assertPublicHttpUrl = async (raw: string): Promise<URL> => {
+export const assertPublicHttpUrl = async (raw: string): Promise<URL> => {
   let u: URL;
   try { u = new URL(raw); } catch { throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid image url"); }
   if (u.protocol !== "http:" && u.protocol !== "https:") {
@@ -149,6 +150,19 @@ const assertPublicHttpUrl = async (raw: string): Promise<URL> => {
   return u;
 };
 
+// Brute-force / credential-stuffing protection for the login endpoint. Only
+// failed attempts count (skipSuccessfulRequests), so legitimate users are never
+// locked out; keyed by client IP (honors trust proxy).
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  skipSuccessfulRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { trustProxy: false },
+  message: { error: { status: 429, message: "Too many login attempts, please try again later" } },
+});
+
 export const api = (config: Config) => {
   const api = Router();
 
@@ -166,7 +180,7 @@ export const api = (config: Config) => {
     });
   }))
 
-  api.post("/login", handler(async (req, res) => {
+  api.post("/login", loginLimiter, handler(async (req, res) => {
     const { username, password } = validate(() => LoginSchema.parse(req.body));
     const v = await authenticate(username, password);
     // Rotate the session id at the privilege boundary to defeat session fixation.
