@@ -135,19 +135,22 @@ import { locale } from "$lib/locale";
 
   const add = async (file: File) => {
     loading++;
-    try {
-      let item: MessageFile = {
-        id: void 0,
-        size: file.size,
-        contentType: file.type,
-        filename: file.name,
-        [fileState]: "uploading",
-        [fileFile]: file,
-        [fileLoaded]: 0,
-      }
-      
-      draft.files = [...draft.files, item];
+    // `item` (the rendered MessageFile) must be declared outside the try block so
+    // the catch can flip ITS state to "error" — the old code mutated the raw File
+    // object instead, leaving failed uploads stuck on "uploading" forever.
+    const item: MessageFile = {
+      id: void 0,
+      size: file.size,
+      contentType: file.type,
+      filename: file.name,
+      [fileState]: "uploading",
+      [fileFile]: file,
+      [fileLoaded]: 0,
+    }
 
+    draft.files = [...draft.files, item];
+
+    try {
       const { id } = await upload(file, event => {
         item[fileLoaded] = event.loaded || 0;
         draft.files = [...draft.files];
@@ -162,9 +165,9 @@ import { locale } from "$lib/locale";
       draft.files = [...draft.files];
       loading--;
     } catch(e: any) {
-      file[fileState] = "error";
-      file[fileError] = String(e?.message);
-      delete file[fileFile];
+      item[fileState] = "error";
+      item[fileError] = String(e?.message);
+      delete item[fileFile];
       draft.files = [...draft.files];
       loading--;
     }

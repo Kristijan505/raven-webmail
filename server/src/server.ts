@@ -46,6 +46,35 @@ export const start = async (config: Config) => {
     app.set("trust proxy", config.trust_proxy);
   }
 
+  // Security headers (defense-in-depth). The app renders untrusted email HTML, so a
+  // CSP, frame-ancestors and nosniff matter here; email bodies are additionally
+  // isolated in a sandboxed (no-allow-scripts) iframe. 'unsafe-inline' is required
+  // for SvelteKit's inline bootstrap; Google Fonts are allow-listed for the UI.
+  // SSR is disabled, so these must be set at the Express layer (not svelte.config).
+  app.use((req, res, next) => {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Frame-Options", "DENY");
+    res.setHeader("Referrer-Policy", "no-referrer");
+    res.setHeader("Content-Security-Policy", [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline'",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "font-src 'self' https://fonts.gstatic.com data:",
+      "img-src 'self' data: blob:",
+      "connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com",
+      "frame-src 'self'",
+      "worker-src 'self'",
+      "object-src 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "frame-ancestors 'none'",
+    ].join("; "));
+    if(req.secure) {
+      res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+    }
+    next();
+  });
+
   config.compression && app.use(compression());
 
   app.use("/api", session(config), api(config));

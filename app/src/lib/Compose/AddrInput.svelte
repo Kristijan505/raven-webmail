@@ -58,6 +58,7 @@
 
 <script>
   import Close from "~icons/mdi/close";
+  import { isMail } from "$lib/util";
 
   export let name = "";
   export let id = ""
@@ -68,7 +69,7 @@
 
   const add = () => {
     const address = value.trim();
-    if( address ) {
+    if( address && isMail(address) ) {
       if (!addrs.some(a => a.address === address)) {
         addrs = [...addrs, {address, name: ""}];
         value = "";

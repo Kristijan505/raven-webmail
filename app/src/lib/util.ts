@@ -9,6 +9,24 @@ export class HttpError extends Error {
   }
 }
 
+// Normalize the various server error shapes into one thrown HttpError:
+// handler() returns { error: { status, message } }, pageHandler() returns
+// { error: "<string>" } or { status, redirect }. The old code assumed
+// json.error.message always existed, so string-shaped errors surfaced as a
+// blank toast. Also follows an explicit server redirect (e.g. expired session).
+const throwIfError = (res: Response, json: any): void => {
+  if(json?.redirect) {
+    goto(json.redirect);
+    throw new HttpError(res.status, "Redirecting");
+  }
+  if(json?.error) {
+    const message = typeof json.error === "string"
+      ? json.error
+      : (json.error?.message || "Request failed");
+    throw new HttpError(res.status, message);
+  }
+}
+
 export const mailboxName = (mailbox: Mailbox) => {
   const l = get(locale);
   if(mailbox.path === "INBOX") return l.mailboxes.Inbox;
@@ -131,9 +149,7 @@ export const _get = async (url: string) => {
     throw new HttpError(res.status, "Invalid JSON response from server");
   })
 
-  if(json.error) {
-    throw new HttpError(res.status, json.error.message);
-  }
+  throwIfError(res, json);
 
   return json;
 }
@@ -149,9 +165,7 @@ export const _delete = async (url: string) => {
     throw new HttpError(res.status, "Invalid JSON response from server");
   })
 
-  if(json.error) {
-    throw new HttpError(res.status, json.error.message);
-  }
+  throwIfError(res, json);
 
   return json;
 }
@@ -169,9 +183,7 @@ export const _post = async (url: string, body: any) => {
     throw new HttpError(res.status, "Invalid JSON response from server");
   })
 
-  if(json.error) {
-    throw new HttpError(res.status, json.error.message);
-  }
+  throwIfError(res, json);
 
   return json;
 }
@@ -189,9 +201,7 @@ export const _put = async (url: string, body: any) => {
     throw new HttpError(res.status, "Invalid JSON response from server");
   })
 
-  if(json.error) {
-    throw new HttpError(res.status, json.error.message);
-  }
+  throwIfError(res, json);
 
   return json;
 }

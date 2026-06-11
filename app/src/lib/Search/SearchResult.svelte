@@ -4,7 +4,7 @@
       return `To: ${message.to[0]?.name || message.to[0]?.address || ""}`;
     }
 
-    return message.from.name || message.from.address || "";
+    return message.from?.name || message.from?.address || "";
   }  
 
   import { toString } from "diacritic-regex";
@@ -20,7 +20,7 @@
   $: selected = selection.some(m => m.mailbox === message.mailbox && m.id === message.id)
 
   const toggleSelection = () => {
-    const v = selection.filter(m => m.id !== message.id);
+    const v = selection.filter(m => !(m.mailbox === message.mailbox && m.id === message.id));
     if(selected) selection = v;
     else selection = [...v, message];
   }

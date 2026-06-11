@@ -1,4 +1,4 @@
-import { Request, Router } from "express"
+import { Request, RequestHandler, Router } from "express"
 import { validate, handler, ApiError, pageHandler } from "./util";
 import { authenticate, del, get, post, put, url, watch } from "./client";
 import { json } from "body-parser";
@@ -20,12 +20,66 @@ const SignatureSchema = z.object({
   html: z.string(),
 });
 
+// Profile fields the webmail is allowed to update. zod strips every other key,
+// so a client cannot mass-assign sensitive WildDuck user fields (quota,
+// disabled, spamLevel, ...) by sending them in the PUT /me body.
+const MeSchema = z.object({
+  name: z.string().min(1).optional(),
+  existingPassword: z.string().optional(),
+  password: z.string().optional(),
+});
+
+// Encode a single user-controlled URL path segment before interpolating it into
+// the upstream WildDuck URL. Express decodes %2F/%3F/%26 inside a path param and
+// the WHATWG URL parser collapses ../, which together let a crafted id climb
+// above /users/{sessionUserId}/ to another user's data (cross-user IDOR) or
+// inject query parameters. Rejecting separators and percent-encoding the rest
+// neutralizes both vectors.
+const seg = (value: string | string[] | undefined): string => {
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    /[\/\\]/.test(value) ||   // smuggled separators (e.g. decoded %2F) enable traversal
+    value === "." || value === ".."   // dot-segments the URL parser would collapse
+  ) {
+    throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid path parameter");
+  }
+  return encodeURIComponent(value);
+};
+
+// Defense-in-depth CSRF guard for state-changing requests. SameSite=lax is the
+// primary protection, but it is operator-overridable to "none"; this rejects any
+// unsafe-method request whose Origin doesn't match the host. Requests with no
+// Origin header (same-origin navigations, non-browser clients) pass through and
+// remain gated by the session cookie.
+const enforceSameOrigin: RequestHandler = (req, res, next) => {
+  const method = req.method.toUpperCase();
+  if (method === "GET" || method === "HEAD" || method === "OPTIONS") {
+    return next();
+  }
+  const origin = req.get("origin");
+  if (!origin) return next();
+  let originHost: string | null = null;
+  try {
+    originHost = new URL(origin).host;
+  } catch {
+    originHost = null;
+  }
+  if (originHost === null || originHost !== req.get("host")) {
+    res.status(StatusCodes.FORBIDDEN).json({ error: { status: 403, message: "Cross-origin request blocked" } });
+    return;
+  }
+  return next();
+};
+
 export const api = (config: Config) => {
   const api = Router();
 
   api.use(json({ limit: config.json_body_limit || "1mb" }));
 
   api.use(i18n.middleware(config));
+
+  api.use(enforceSameOrigin);
 
   api.get("/healthz", handler(async (_req, res) => {
     res.json({
@@ -38,21 +92,28 @@ export const api = (config: Config) => {
   api.post("/login", handler(async (req, res) => {
     const { username, password } = validate(() => LoginSchema.parse(req.body));
     const v = await authenticate(username, password);
+    // Rotate the session id at the privilege boundary to defeat session fixation.
+    await new Promise<void>((resolve, reject) => {
+      req.session.regenerate(err => err ? reject(err) : resolve());
+    });
     req.session.authentication = v;
-    req.session.save(() => {
-      res.json({})
-      // see /auth comment
-      // Auth.dispatch({ sid: req.sessionID, username: v.username });
-    })
+    await new Promise<void>((resolve, reject) => {
+      req.session.save(err => err ? reject(err) : resolve());
+    });
+    res.json({});
   }))
 
   api.post("/logout", handler(async (req, res) => {
-    req.session.authentication = null;
-    req.session.save(() => {
-      res.json({})
-      // see /auth comment
-      // Auth.dispatch({ sid: req.sessionID, username: null })
-    })
+    // Destroy the server-side session record and clear the cookie so the
+    // session id cannot be reused after logout (and so a fixated id is dropped).
+    await new Promise<void>((resolve) => {
+      req.session.destroy(() => resolve());
+    });
+    res.clearCookie(config.session_name || "raven.sid", {
+      path: "/",
+      domain: config.session_cookie_domain || undefined,
+    });
+    res.json({});
   }))
 
   /**
@@ -98,7 +159,8 @@ export const api = (config: Config) => {
   }))
 
   api.put("/me", handler(async (req, res) => {
-    const json = await put(`/users/${userId(req)}`, token(req), req.body);
+    const body = validate(() => MeSchema.parse(req.body));
+    const json = await put(`/users/${userId(req)}`, token(req), body);
     res.json(json);
   }))
 
@@ -122,48 +184,48 @@ export const api = (config: Config) => {
   }))
 
   api.delete("/mailboxes/:mailbox", handler(async (req, res) => {
-    await del(`/users/${userId(req)}/mailboxes/${req.params.mailbox}`, token(req));
+    await del(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}`, token(req));
     res.json({});
   }))
 
   api.put("/mailboxes/:mailbox", handler(async (req, res) => {
-    const json = await put(`/users/${userId(req)}/mailboxes/${req.params.mailbox}`, token(req), req.body);
+    const json = await put(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}`, token(req), req.body);
     res.json(json);
   }))
 
   api.get("/mailboxes/:mailbox/messages", handler(async (req, res) => {
-    const body = await get(`/users/${userId(req)}/mailboxes/${req.params.mailbox}/messages${query(req)}`, token(req));
+    const body = await get(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages${query(req)}`, token(req));
     res.json(body);
   }))
 
   api.put("/mailboxes/:mailbox/messages", handler(async (req, res) => {
-    const json = await put(`/users/${userId(req)}/mailboxes/${req.params.mailbox}/messages`, token(req), req.body);
+    const json = await put(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages`, token(req), req.body);
     res.json(json);
   }))
 
   api.post("/mailboxes/:mailbox/messages", handler(async (req, res) => {
-    const json = await post(`/users/${userId(req)}/mailboxes/${req.params.mailbox}/messages`, token(req), req.body);
+    const json = await post(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages`, token(req), req.body);
     res.json(json);
   }))
 
   api.delete("/mailboxes/:mailbox/messages", handler(async (req, res) => {
-    await del(`/users/${userId(req)}/mailboxes/${req.params.mailbox}/messages`, token(req));
+    await del(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages`, token(req));
     res.json({});
   }))
 
   api.get("/mailboxes/:mailbox/messages/:message", handler(async (req, res) => {
-    const body = await get(`/users/${userId(req)}/mailboxes/${req.params.mailbox}/messages/${req.params.message}`, token(req));
+    const body = await get(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages/${seg(req.params.message)}`, token(req));
     res.json(body);
   }))
 
   api.delete("/mailboxes/:mailbox/messages/:message", handler(async (req, res) => {
-    const body = await del(`/users/${userId(req)}/mailboxes/${req.params.mailbox}/messages/${req.params.message}`, token(req));
+    const body = await del(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages/${seg(req.params.message)}`, token(req));
     res.json(body);
   }))
 
   api.put("/mailboxes/:mailbox/messages/:message/flag", handler(async (req, res) => {
     const value = !!req.body.value;
-    const body = await put(`/users/${userId(req)}/mailboxes/${req.params.mailbox}/messages`, token(req), {
+    const body = await put(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages`, token(req), {
       message: req.params.message,
       flagged: value,
     })
@@ -172,12 +234,12 @@ export const api = (config: Config) => {
   }))
 
   api.post("/mailboxes/:mailbox/messages/:message/submit", handler(async (req, res) => {
-    const body = await post(`/users/${userId(req)}/mailboxes/${req.params.mailbox}/messages/${req.params.message}/submit`, token(req), req.body);
+    const body = await post(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages/${seg(req.params.message)}/submit`, token(req), req.body);
     res.json(body);
   }))
 
   api.get("/mailboxes/:mailbox/messages/:message/attachments/:attachment", handler(async (req, res) => {
-    const back = await fetch(url(`/users/${userId(req)}/mailboxes/${req.params.mailbox}/messages/${req.params.message}/attachments/${req.params.attachment}`), {
+    const back = await fetch(url(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages/${seg(req.params.message)}/attachments/${seg(req.params.attachment)}`), {
       headers: { "x-access-token": token(req) }
     }).catch(e => {
       throw new ApiError(502, DISPLAY_ERRORS ? String(e?.message) : "Bad Gateway");
@@ -188,6 +250,17 @@ export const api = (config: Config) => {
       const contentLength = back.headers.get("content-length");
       if(contentType) res.setHeader("content-type", contentType);
       if(contentLength) res.setHeader("content-length", contentLength);
+      // Never let an attacker-supplied attachment (e.g. text/html or SVG) render
+      // as a document in our own origin: force a download disposition and stop
+      // content-type sniffing. Inline <img> embedding of cid images still works
+      // because subresource loads ignore Content-Disposition.
+      res.setHeader("x-content-type-options", "nosniff");
+      const disposition = back.headers.get("content-disposition");
+      if(disposition && /filename/i.test(disposition)) {
+        res.setHeader("content-disposition", disposition.replace(/^\s*inline/i, "attachment"));
+      } else {
+        res.setHeader("content-disposition", "attachment");
+      }
       if(back.body) {
         fromWeb(back.body as any).pipe(res);
       } else {
@@ -280,8 +353,8 @@ export const api = (config: Config) => {
     const {limit = "50"} = req.query;
 
     const [ mailbox, messages ] = await Promise.all([
-      get(`/users/${userId(req)}/mailboxes/${req.params.mailbox}`, token(req)),
-      get(`/users/${userId(req)}/mailboxes/${req.params.mailbox}/messages?${qs.stringify({limit})}`, token(req))
+      get(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}`, token(req)),
+      get(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages?${qs.stringify({limit})}`, token(req))
     ])
 
     res.json({ props: { mailbox, messages }})
@@ -290,8 +363,8 @@ export const api = (config: Config) => {
   pages.get("/mailbox/:mailbox/message/:message", pageHandler(async (req, res) => {
     
     const [ mailbox, message ] = await Promise.all([
-      get(`/users/${userId(req)}/mailboxes/${req.params.mailbox}`, token(req)),
-      get(`/users/${userId(req)}/mailboxes/${req.params.mailbox}/messages/${req.params.message}?markAsSeen=true`, token(req)) 
+      get(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}`, token(req)),
+      get(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages/${seg(req.params.message)}?markAsSeen=true`, token(req)) 
     ]);
 
     res.json({ props: { message, mailbox }})

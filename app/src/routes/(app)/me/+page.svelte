@@ -1,8 +1,11 @@
 <script lang="ts">
   import type { User } from '$lib/types';
   export let data: { user: User };
-  let user: User | null = null;
-  $: user = data?.user ?? null;
+  let user: User | null = data?.user ?? null;
+  let lastData = data;
+  // Re-sync only when SvelteKit delivers a fresh `data` object, so the optimistic
+  // `user.name = ...` edit in editName() isn't re-derived away (see mailbox/search).
+  $: if (data !== lastData) { lastData = data; user = data?.user ?? null; }
 
 	$: name = user?.name || 'Unnamed';
 	$: letter = name[0] || '';

@@ -10,11 +10,17 @@
     mailboxes: Mailbox[];
   };
 
-  let user: User;
-  let username: string;
-  let mailboxes: Mailbox[];
+  let user: User = data.user;
+  let username: string = data.username;
+  let mailboxes: Mailbox[] = data.mailboxes;
+  let lastData = data;
 
-  $: ({ user, username, mailboxes } = data);
+  // Re-sync only on a fresh `data` object (real navigation/load), never on a
+  // child bind: write-back — matches the guard used in mailbox/search +page.
+  $: if (data !== lastData) {
+    lastData = data;
+    ({ user, username, mailboxes } = data);
+  }
 
   onMount(() => {
     signature.set(user?.metaData?.[RAVEN_SIGNATURE_META_KEY] || "");

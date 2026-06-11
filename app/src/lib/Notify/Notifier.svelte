@@ -8,6 +8,7 @@
   import errorIcon from "~icons/mdi/close-circle-outline";
   import infoIcon from "~icons/mdi/information-outline";
   import warningIcon from "~icons/mdi/alert-outline";
+  import DOMPurify from "dompurify";
 
   const icons = {
     success: successIcon,
@@ -101,7 +102,7 @@
       {/if}
       <div class="message-content {message.html != null ? 'html' : 'text'}">
         {#if message.html != null}
-          {@html message.html}
+          {@html DOMPurify.sanitize(message.html)}
         {:else}
           {message.text}
         {/if}

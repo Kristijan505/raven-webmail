@@ -8,7 +8,7 @@
   
   import { action, isDrafts, isInbox, isJunk, isSent, isTrash, mailboxName, _delete, _put } from "$lib/util";
   
-  import { messageHTML, purify, tooltip } from "$lib/actions";
+  import { messageHTML, tooltip } from "$lib/actions";
   import TabTop from "$lib/Tab/TabTop.svelte";
   
   import Delete from "~icons/mdi/delete-outline";
@@ -164,7 +164,7 @@
 
       <div class="action-group">
         <div class="action btn-dark"
-          use:tooltip={message.seen ? $locale.Mark_as_seen : $locale.Mark_as_not_seen}
+          use:tooltip={message.seen ? $locale.Mark_as_not_seen : $locale.Mark_as_seen}
           on:click={seen}
         >
           {#if message.seen}
@@ -266,8 +266,7 @@
             {message.text || ""}
           </div>
         {:else}
-          <div class="html" use:purify={{html, message}}></div>
-          <!--<div class="html" use:messageHTML={{ html, message }} />-->
+          <div class="html" use:messageHTML={{ html, message }}></div>
         {/if}
       </div>
     </div>

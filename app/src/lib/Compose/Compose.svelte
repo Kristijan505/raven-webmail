@@ -82,7 +82,7 @@
         "Subject: " + s(ref.subject),      
         "Date: " + s(new Date(ref.date).toUTCString())
       ].filter(Boolean).join("<br />") + "<br/>".repeat(4) +
-      ref.html?.join("") || "";
+      (ref.html?.join("") || "");
   }
 
   export const blank = async (drafts: Mailbox) => {

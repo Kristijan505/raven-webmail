@@ -142,50 +142,59 @@ export const messageHTML = (node: HTMLElement, opts: string | { html: string, me
     RETURN_DOM_FRAGMENT: true,
     ALLOWED_URI_REGEXP: /^(mailto|https?|cid|tel|attachment):/i,
   });
-  
+
   for(const $a of [].slice.call(fragment.querySelectorAll("a"))) {
     const a = $a as HTMLAnchorElement;
     a.target = "_blank";
+    a.rel = "noopener noreferrer external nofollow";
   }
 
   for(const $el of [].slice.call(fragment.querySelectorAll("style, link, script, meta, object, head, title")) as HTMLElement[]) {
     $el.remove();
   }
 
-  if(message) {
-    const imgs = [].slice.call(fragment.querySelectorAll("img")) as HTMLImageElement[];
-    for(const img of imgs) {
-      const src = img.getAttribute("src");
-      if(!src) continue;
-      const m = src.trim().match(/^(cid|attachment):(.+)/i);
-      if(m) {
-        img.removeAttribute("src");
-        const cid = m[2];
-        if(!cid) continue;
-        const att = message.attachments?.find(att => att.id === cid);
-        if(!att) continue;
-        img.setAttribute("src", `/api/mailboxes/${message.mailbox}/messages/${message.id}/attachments/${att.id}`)
-      }
+  for(const $img of [].slice.call(fragment.querySelectorAll("img")) as HTMLImageElement[]) {
+    const src = ($img.getAttribute("src") || "").trim();
+    const m = src.match(/^(cid|attachment):(.+)/i);
+    if(m) {
+      // Inline attachment image -> same-origin attachment proxy.
+      $img.removeAttribute("src");
+      const cid = m[2];
+      const att = message?.attachments?.find(att => att.id === cid);
+      if(att) $img.setAttribute("src", `/api/mailboxes/${message!.mailbox}/messages/${message!.id}/attachments/${att.id}`);
+    } else if(src) {
+      // Remote image -> blocked by default (defeats tracking pixels / IP leak).
+      $img.removeAttribute("src");
     }
   }
 
+  // Render the untrusted email body inside a sandboxed iframe WITHOUT
+  // allow-scripts: even if DOMPurify is ever bypassed, scripts cannot run and
+  // the email's CSS cannot clickjack the real app UI. allow-same-origin is kept
+  // only so we can inject the fragment and measure height; it grants no script
+  // capability on its own.
   const iframe = document.createElement("iframe");
-  
   iframe.setAttribute("sandbox", "allow-same-origin");
+  iframe.style.width = "100%";
+  iframe.style.border = "none";
+  iframe.style.display = "block";
   iframe.srcdoc = "";
   iframe.onload = () => {
-
     const doc = iframe.contentDocument;
+    if(!doc) return;
+    doc.body.style.margin = "0";
     doc.body.appendChild(fragment);
 
-    const win = iframe.contentWindow;
-    const resize = () => {  
-      node.style.height = `${doc.documentElement.scrollHeight}px`;
+    const resize = () => {
+      iframe.style.height = `${doc.documentElement.scrollHeight}px`;
     };
 
-    win.onresize = resize;
-
     resize();
+    iframe.contentWindow?.addEventListener("resize", resize);
+    for(const $img of [].slice.call(doc.images) as HTMLImageElement[]) {
+      $img.addEventListener("load", resize);
+      $img.addEventListener("error", resize);
+    }
   }
 
   node.appendChild(iframe);
@@ -210,26 +219,24 @@ export const purify = (node: HTMLElement, opts?: string | { html: string, messag
   for(const $a of [].slice.call(fragment.querySelectorAll("a"))) {
     const a = $a as HTMLAnchorElement;
     a.target = "_blank";
-    a.relList?.add("external");
+    a.rel = "noopener noreferrer external nofollow";
   }
 
   for(const $el of [].slice.call(fragment.querySelectorAll("style, link, script, meta, object, head, title")) as HTMLElement[]) {
     $el.parentNode?.removeChild($el);
   }
 
-  if(message) {
-    const imgs = [].slice.call(fragment.querySelectorAll("img")) as HTMLImageElement[];
-    for(const img of imgs) {
-      const src = img.getAttribute("src");
-      if(!src) continue;
-      const m = src.trim().match(/^(cid|attachment):(.+)/i);
-      if(!m) continue;
-      img.removeAttribute("src");
+  for(const $img of [].slice.call(fragment.querySelectorAll("img")) as HTMLImageElement[]) {
+    const src = ($img.getAttribute("src") || "").trim();
+    const m = src.match(/^(cid|attachment):(.+)/i);
+    if(m) {
+      $img.removeAttribute("src");
       const cid = m[2];
-      if(!cid) continue;
-      const att = message.attachments?.find(att => att.id === cid);
-      if(!att) continue;
-      img.setAttribute("src", `/api/mailboxes/${message.mailbox}/messages/${message.id}/attachments/${att.id}`)
+      const att = message?.attachments?.find(att => att.id === cid);
+      if(att) $img.setAttribute("src", `/api/mailboxes/${message!.mailbox}/messages/${message!.id}/attachments/${att.id}`);
+    } else if(src) {
+      // Remote image -> blocked by default (tracking-pixel / IP-leak defense).
+      $img.removeAttribute("src");
     }
   }
 

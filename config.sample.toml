@@ -14,9 +14,11 @@ ssl=false
 # @string (required if ssl=true)
 # ssl_certificate_key="/path/to/ssl/key.pem"
 
-# secret token (change it will invalidate sessions)
-# @string (required)
-secret_token="some super secret value"
+# secret token used to sign session cookies — MUST be a long random string.
+# Generate one with: openssl rand -hex 32   (min 32 chars; changing it invalidates sessions)
+# `raven create-config` fills this in automatically with a random value.
+# @string (required, min 32 characters)
+secret_token="CHANGE_ME"
 
 # mongodb url
 # @string (required)

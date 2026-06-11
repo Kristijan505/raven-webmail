@@ -4,7 +4,7 @@
       return `To: ${message.to[0]?.name || message.to[0]?.address || ""}`;
     }
 
-    return message.from.name || message.from.address || "";
+    return message.from?.name || message.from?.address || "";
   }  
 </script>
 

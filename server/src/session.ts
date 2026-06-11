@@ -6,7 +6,12 @@ const MongoStore = MongoSession(ExpressSession);
 
 export const session = (config: Config) => {
   const maxAge = config.session_cookie_max_age_ms ?? 7 * 24 * 60 * 60 * 1000;
-  const secure = config.session_cookie_secure ?? config.ssl;
+  const trustProxy = config.trust_proxy != null;
+  // When TLS is terminated at a reverse proxy (trust_proxy set, ssl=false), tie the
+  // Secure flag to the forwarded protocol ("auto") instead of leaving it off, so the
+  // session cookie is never issued over a plaintext hop. Direct TLS => always secure.
+  const secure: boolean | "auto" =
+    config.session_cookie_secure ?? (config.ssl ? true : trustProxy ? "auto" : false);
 
   return ExpressSession({
     name: config.session_name || "raven.sid",
@@ -14,6 +19,7 @@ export const session = (config: Config) => {
     saveUninitialized: false,
     resave: config.session_resave ?? false,
     rolling: config.session_rolling ?? false,
+    proxy: trustProxy ? true : undefined,
     unset: "destroy",
     cookie: {
       maxAge,
