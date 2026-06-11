@@ -22,7 +22,7 @@
   import Ripple from "$lib/Ripple.svelte";
   import { tooltip } from "$lib/actions";
   import { fade } from "svelte/transition";
-  import { action, isDrafts, isInbox, isJunk, isSent, isTrash, mailboxName, _delete, _put } from "$lib/util";
+  import { action, isDrafts, isInbox, isJunk, isSent, isTrash, mailboxName, plural, _delete, _put } from "$lib/util";
 
   import MoveTo from "$lib/MoveTo.svelte";
   import { getContext } from "svelte";
@@ -260,11 +260,7 @@ import { locale } from "$lib/locale";
     </div>
 
     <div class="total">
-      {#if mailbox.total === 1}
-        1 {$locale.message}
-      {:else}
-        {mailbox.total} {$locale.messages}
-      {/if}
+      {mailbox.total} {plural(mailbox.total, $locale.message_count)}
     </div>
   {:else if selection.length !== 0}
     <div class="only-when-selection" in:fade|local={{ duration: 200 }}>
@@ -306,12 +302,7 @@ import { locale } from "$lib/locale";
       <div class="selection-info">
         <Check />
         <span>
-          {selection.length}
-          {#if selection.length === 1}
-            {$locale.message}
-          {:else}
-            {$locale.messages}
-          {/if}
+          {selection.length} {plural(selection.length, $locale.message_count)}
         </span>
       </div>
     </div>

@@ -74,8 +74,11 @@ export default {
   Sent: "Sent",
   Forwarded: "Forwarded",
 
-  messages: "messages",
-  message: "message",
+  message_count: {
+    one: "message",
+    few: "messages",
+    other: "messages",
+  },
 
   "To:": "To:",
   "Subject:": "Subject:",

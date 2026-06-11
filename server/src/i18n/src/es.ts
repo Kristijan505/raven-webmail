@@ -78,8 +78,11 @@ const locale: Locale = {
   Sent: "Enviados",
   Forwarded: "Redirigidos",
 
-  messages: "mensajes",
-  message: "mensaje",
+  message_count: {
+    one: "mensaje",
+    few: "mensajes",
+    other: "mensajes",
+  },
 
   "To:": "Para:",
   "Subject:": "Asunto:",

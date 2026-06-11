@@ -76,8 +76,11 @@ const locale: Locale = {
   Sent: "Poslano",
   Forwarded: "Proslijeđeno",
 
-  messages: "poruka",
-  message: "poruka",
+  message_count: {
+    one: "poruka",
+    few: "poruke",
+    other: "poruka",
+  },
 
   "To:": "Prima:",
   "Subject:": "Predmet:",

@@ -17,7 +17,7 @@
 	import Password from '$lib/Password.svelte';
 	import Dialog from '$lib/Dialog.svelte';
   import Ripple from '$lib/Ripple.svelte';
-  import { action, _put } from '$lib/util';
+  import { action, plural, _put } from '$lib/util';
 
   import AccountEdit from "~icons/mdi/account-edit-outline";
   import TextField from "$lib/TextField.svelte";
@@ -352,10 +352,10 @@
             {Math.round((user.limits.recipients.used / user.limits.recipients.allowed) * 100)}%
           </div>
           <div class="used">
-            {user.limits.recipients.used} {user.limits.recipients.used === 1 ? $locale.message : $locale.messages}
+            {user.limits.recipients.used} {plural(user.limits.recipients.used, $locale.message_count)}
           </div>
           <div class="total">
-            {$locale.of} {user.limits.recipients.allowed} {user.limits.recipients.allowed === 1 ? $locale.message : $locale.messages}
+            {$locale.of} {user.limits.recipients.allowed} {plural(user.limits.recipients.allowed, $locale.message_count)}
           </div>
         </div>
       </div>
@@ -376,10 +376,10 @@
             {Math.round((user.limits.forwards.used / user.limits.forwards.allowed) * 100)}%
           </div>
           <div class="used">
-            {user.limits.forwards.used} {user.limits.forwards.used === 1 ? $locale.messages : $locale.messages}
+            {user.limits.forwards.used} {plural(user.limits.forwards.used, $locale.message_count)}
           </div>
           <div class="total">
-            {$locale.of} {user.limits.forwards.allowed} {user.limits.forwards.allowed === 1 ? $locale.message : $locale.messages}
+            {$locale.of} {user.limits.forwards.allowed} {plural(user.limits.forwards.allowed, $locale.message_count)}
           </div>
         </div>
       </div>

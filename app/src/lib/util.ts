@@ -252,7 +252,20 @@ export const isWide = () => {
 import { goto } from "$app/navigation";
 import { _error } from "./Notify/notify";
 import { get } from "svelte/store";
-import { locale } from "./locale";
+import { lang, locale } from "./locale";
+
+// Pick the grammatically correct plural form for `count` in the active language
+// using the platform CLDR rules (Croatian: 1 -> one, 2-4 -> few, else other;
+// English/Spanish/Italian: 1 -> one, else other).
+export const plural = (count: number, forms: { one: string; few: string; other: string }): string => {
+  let category: string;
+  try {
+    category = new Intl.PluralRules(get(lang)).select(count);
+  } catch {
+    category = count === 1 ? "one" : "other";
+  }
+  return (forms as Record<string, string | undefined>)[category] ?? forms.other;
+};
 import { intertab } from "./intertab";
 
 /*
