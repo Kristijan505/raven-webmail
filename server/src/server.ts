@@ -11,6 +11,8 @@ import { SVELTEKIT_DEV, SVELTEKIT_PORT } from "./env";
 import { sveltekitDevProxy } from "./sveltekit-dev-proxy";
 
 import compression from "compression";
+import pinoHttp from "pino-http";
+import { logger } from "./logger";
 
 const createServer = (config: Config, app: http.RequestListener) => {
   if(config.ssl) {
@@ -45,6 +47,13 @@ export const start = async (config: Config) => {
   if(config.trust_proxy != null) {
     app.set("trust proxy", config.trust_proxy);
   }
+
+  // Structured request logging with a per-request id (req.id / req.log). Skips the
+  // health check to avoid noise; the /api handlers log unhandled errors via req.log.
+  app.use(pinoHttp({
+    logger,
+    autoLogging: { ignore: (req) => req.url === "/api/healthz" },
+  }));
 
   // Security headers (defense-in-depth). The app renders untrusted email HTML, so a
   // CSP, frame-ancestors and nosniff matter here; email bodies are additionally

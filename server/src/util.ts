@@ -31,8 +31,9 @@ export const pageHandler = (fn: (req: Request, res: Response, next: NextFunction
       }
 
       const status = Number(e?.status) || 500;
+      (req as any).log?.error({ err: e }, "unhandled error in /api page handler");
       const message = DISPLAY_ERRORS ? String(e?.message) : "Internal server error";
-      
+
       return res.status(status).json({
         status,
         error: message,
@@ -59,8 +60,9 @@ export const handler = (fn: (req: Request, res: Response, next: NextFunction) =>
       }
 
       const status = Number(e?.status) || 500;
+      (req as any).log?.error({ err: e }, "unhandled error in /api handler");
       const message = DISPLAY_ERRORS ? String(e?.message) : "Internal server error";
-          
+
       return res
         .status(status)
         .json({ error: { status, message } })
