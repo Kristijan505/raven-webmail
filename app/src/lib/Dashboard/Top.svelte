@@ -15,6 +15,7 @@
   import Magnify from "~icons/mdi/magnify";
   import { goto } from "$app/navigation";
   import { locale } from "$lib/locale";
+  import { clickable } from "$lib/actions";
 
   let searching = false;
   const onkeypress = async (event: KeyboardEvent) => {
@@ -113,7 +114,7 @@
 </style>
 
 <div class="top">
-  <div class="menu btn-light" on:click={toggle}>
+  <div class="menu btn-light" use:clickable on:click={toggle}>
     <Menu />
     <Ripple />
   </div>

@@ -41,7 +41,10 @@
   class:noplaceholder={!icon && !iconPlaceholder}
   {href}
   {target}
+  role={href ? undefined : "button"}
+  tabindex={href ? undefined : 0}
   on:click
+  on:keydown={(e) => { if(!href && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); e.currentTarget.click(); } }}
   on:pointerdown
   {download}
  >

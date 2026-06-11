@@ -9,6 +9,7 @@
   import Check from "~icons/mdi/check";
   import { lang, locale } from "$lib/locale";
   import { action, _get } from "$lib/util";
+  import { clickable } from "$lib/actions";
 
   const LANGS = [
     { code: "en", name: "English" },
@@ -54,7 +55,7 @@
 </style>
 
 <div class="wrap">
-  <div class="lang-btn btn-dark" class:hover={open} on:click={() => open = !open}>
+  <div class="lang-btn btn-dark" class:hover={open} use:clickable={"Language"} on:click={() => open = !open}>
     <Globe />
     <Ripple />
   </div>

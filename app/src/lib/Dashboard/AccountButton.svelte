@@ -11,6 +11,7 @@
   import Account from "~icons/mdi/account-edit-outline";
   import PortalPopup from "$lib/PortalPopup.svelte";
 import { locale } from "$lib/locale";
+import { clickable } from "$lib/actions";
   
   const signOut = action(async () => {
     await _post("/api/logout", {})
@@ -43,7 +44,7 @@ import { locale } from "$lib/locale";
 </style>
 
 <div class="wrap">
-  <div class="btn-dark account-btn" class:hover={open} on:click={() => open = !open}>
+  <div class="btn-dark account-btn" class:hover={open} use:clickable on:click={() => open = !open}>
     {username}
     <Ripple />
   </div>

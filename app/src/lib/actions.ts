@@ -5,6 +5,30 @@ export const add = (target: EventTarget, event: string, fn: EventListener, optio
   }
 }
 
+// Make a non-semantic clickable element keyboard-operable for assistive tech:
+// adds role="button", makes it focusable (tabindex), and activates the existing
+// on:click on Enter/Space. An optional string sets an aria-label.
+export const clickable = (node: HTMLElement, label?: string) => {
+  if(!node.hasAttribute("role")) node.setAttribute("role", "button");
+  if(!node.hasAttribute("tabindex")) node.setAttribute("tabindex", "0");
+  if(label) node.setAttribute("aria-label", label);
+  const onKeydown = (event: KeyboardEvent) => {
+    if(event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      node.click();
+    }
+  };
+  node.addEventListener("keydown", onKeydown);
+  return {
+    update(newLabel?: string) {
+      if(newLabel) node.setAttribute("aria-label", newLabel);
+    },
+    destroy() {
+      node.removeEventListener("keydown", onKeydown);
+    },
+  };
+}
+
 export const intersect = (node: Element) => {
   if (typeof IntersectionObserver !== "undefined") {
     const observer = new IntersectionObserver(entries => {
