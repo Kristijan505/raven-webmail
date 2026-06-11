@@ -131,12 +131,13 @@ export const clickOut = (node: Node) => {
 import dompurify from "dompurify";
 import type { FullMessage, Message } from "./types";
 
-export const messageHTML = (node: HTMLElement, opts: string | { html: string, message: FullMessage }) => {
-  
+export const messageHTML = (node: HTMLElement, opts: string | { html: string, message: FullMessage, loadRemote?: boolean }) => {
+
   let html = typeof opts === "string" ? opts : opts?.html || "";
   html = html.trim();
 
   const message = typeof opts === "string" ? null : opts.message;
+  const loadRemote = typeof opts === "string" ? false : !!opts.loadRemote;
 
   const fragment = dompurify.sanitize(html, {
     RETURN_DOM_FRAGMENT: true,
@@ -165,8 +166,15 @@ export const messageHTML = (node: HTMLElement, opts: string | { html: string, me
       const att = message?.attachments?.find(att => att.id === cid);
       if(att) $img.setAttribute("src", `/api/mailboxes/${message!.mailbox}/messages/${message!.id}/attachments/${att.id}`);
     } else if(src) {
-      // Remote image -> blocked by default (defeats tracking pixels / IP leak).
-      $img.removeAttribute("src");
+      if(loadRemote) {
+        // Routed through our SSRF-guarded server proxy: the sender sees the
+        // server's IP, not the user's, and it loads from our own origin.
+        $img.setAttribute("src", `/api/proxy-image?url=${encodeURIComponent(src)}`);
+      } else {
+        // Hidden by default (no broken-image glyph); user opts in via "Load images".
+        $img.removeAttribute("src");
+        $img.style.display = "none";
+      }
     }
   }
 

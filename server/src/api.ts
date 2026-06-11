@@ -9,6 +9,8 @@ import { Config } from "./config";
 import * as i18n from "./i18n/i18n";
 import { RAVEN_SIGNATURE_META_KEY } from "./metadata";
 import { Readable } from "stream";
+import * as dns from "dns/promises";
+import * as net from "net";
 import { z } from "zod";
 
 const fromWeb = (Readable as any).fromWeb as ((stream: any) => NodeJS.ReadableStream);
@@ -75,6 +77,76 @@ const enforceSameOrigin: RequestHandler = (req, res, next) => {
     return;
   }
   return next();
+};
+
+// --- Remote image proxy (SSRF-guarded) --------------------------------------
+// Email image URLs are attacker-controlled, so the proxy MUST refuse to fetch
+// internal/loopback/link-local/private addresses (e.g. http://wildduck:8080,
+// http://169.254.169.254 cloud metadata, http://127.0.0.1). We resolve the host
+// and reject any non-public IP before fetching, and re-validate across redirects.
+
+const ipv4ToInt = (ip: string): number | null => {
+  const parts = ip.split(".");
+  if (parts.length !== 4) return null;
+  let n = 0;
+  for (const p of parts) {
+    if (!/^\d{1,3}$/.test(p)) return null;
+    const o = Number(p);
+    if (o > 255) return null;
+    n = n * 256 + o;
+  }
+  return n >>> 0;
+};
+
+const isPrivateIpv4 = (ip: string): boolean => {
+  const n = ipv4ToInt(ip);
+  if (n === null) return true; // unparseable -> treat as unsafe
+  const inRange = (base: string, bits: number) => {
+    const b = ipv4ToInt(base)!;
+    const mask = (0xffffffff << (32 - bits)) >>> 0;
+    return (n & mask) === (b & mask);
+  };
+  return (
+    inRange("0.0.0.0", 8) || inRange("10.0.0.0", 8) || inRange("100.64.0.0", 10) ||
+    inRange("127.0.0.0", 8) || inRange("169.254.0.0", 16) || inRange("172.16.0.0", 12) ||
+    inRange("192.0.0.0", 24) || inRange("192.0.2.0", 24) || inRange("192.168.0.0", 16) ||
+    inRange("198.18.0.0", 15) || inRange("198.51.100.0", 24) || inRange("203.0.113.0", 24) ||
+    inRange("224.0.0.0", 4) || inRange("240.0.0.0", 4)
+  );
+};
+
+const isPrivateIp = (ip: string): boolean => {
+  const fam = net.isIP(ip);
+  if (fam === 4) return isPrivateIpv4(ip);
+  if (fam === 6) {
+    const lower = ip.toLowerCase();
+    const mapped = lower.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
+    if (mapped) return isPrivateIpv4(mapped[1]);
+    if (lower === "::1" || lower === "::") return true;
+    if (/^fe[89ab]/.test(lower)) return true; // fe80::/10 link-local
+    if (lower.startsWith("fc") || lower.startsWith("fd")) return true; // fc00::/7 ULA
+    return false;
+  }
+  return true; // not a valid IP literal -> unsafe
+};
+
+const assertPublicHttpUrl = async (raw: string): Promise<URL> => {
+  let u: URL;
+  try { u = new URL(raw); } catch { throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid image url"); }
+  if (u.protocol !== "http:" && u.protocol !== "https:") {
+    throw new ApiError(StatusCodes.BAD_REQUEST, "Unsupported image url scheme");
+  }
+  const host = u.hostname.replace(/^\[/, "").replace(/\]$/, "");
+  let ips: string[];
+  if (net.isIP(host)) {
+    ips = [host];
+  } else {
+    const records = await dns.lookup(host, { all: true }).catch(() => null);
+    if (!records || records.length === 0) throw new ApiError(StatusCodes.BAD_REQUEST, "Cannot resolve image host");
+    ips = records.map(r => r.address);
+  }
+  if (ips.some(isPrivateIp)) throw new ApiError(StatusCodes.BAD_REQUEST, "Image host not allowed");
+  return u;
 };
 
 export const api = (config: Config) => {
@@ -315,6 +387,56 @@ export const api = (config: Config) => {
     }
 
     res.status(back.status).json(json);
+  }))
+
+  api.get("/proxy-image", handler(async (req, res) => {
+    // Require an authenticated session so this can never be used as an open proxy.
+    if (req.session.authentication == null) {
+      throw new ApiError(StatusCodes.FORBIDDEN, "Forbidden");
+    }
+
+    let current = await assertPublicHttpUrl(String(req.query.url || ""));
+    let upstream: Awaited<ReturnType<typeof fetch>> | null = null;
+
+    // Follow up to 3 redirects, re-validating each hop against private ranges.
+    for (let i = 0; i < 4; i++) {
+      upstream = await fetch(current.toString(), {
+        method: "GET",
+        redirect: "manual",
+        headers: { "user-agent": "RavenImageProxy/1.0", accept: "image/*" },
+        signal: AbortSignal.timeout(8000),
+      }).catch(() => { throw new ApiError(StatusCodes.BAD_GATEWAY, "Cannot fetch image"); });
+
+      if (upstream.status >= 300 && upstream.status < 400) {
+        const location = upstream.headers.get("location");
+        if (!location) break;
+        current = await assertPublicHttpUrl(new URL(location, current).toString());
+        continue;
+      }
+      break;
+    }
+
+    if (!upstream || !upstream.ok) {
+      throw new ApiError(StatusCodes.BAD_GATEWAY, "Cannot fetch image");
+    }
+
+    const contentType = upstream.headers.get("content-type") || "";
+    if (!/^image\//i.test(contentType)) {
+      throw new ApiError(StatusCodes.UNSUPPORTED_MEDIA_TYPE, "Not an image");
+    }
+    const contentLength = Number(upstream.headers.get("content-length") || "0");
+    if (contentLength > 10 * 1024 * 1024) {
+      throw new ApiError(StatusCodes.BAD_GATEWAY, "Image too large");
+    }
+
+    res.setHeader("content-type", contentType);
+    res.setHeader("x-content-type-options", "nosniff");
+    res.setHeader("cache-control", "private, max-age=86400");
+    if (upstream.body) {
+      fromWeb(upstream.body as any).pipe(res);
+    } else {
+      res.end();
+    }
   }))
 
   const pages = Router();

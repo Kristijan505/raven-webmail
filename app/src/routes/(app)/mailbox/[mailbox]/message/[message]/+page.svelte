@@ -25,6 +25,16 @@
   import MoveTo from "$lib/MoveTo.svelte";
 
   $: html = message.html?.join("").trim();
+
+  let loadRemote = false;
+  let shownKey = `${message.mailbox}-${message.id}`;
+  // Reset the "load remote images" opt-in when switching to another message.
+  $: {
+    const key = `${message.mailbox}-${message.id}`;
+    if (key !== shownKey) { shownKey = key; loadRemote = false; }
+  }
+  $: hasRemoteImages = /<img\b[^>]*\bsrc\s*=\s*["']?\s*https?:/i.test(html || "");
+
   let scrolled = false;
   const onScroll = (event: Event) => {
     let target = event.target as HTMLElement;
@@ -133,6 +143,24 @@
 
   .from-name, .from-only-address, .to-address {
     font-weight: 500;
+  }
+
+  .remote-images {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    background: #fff6e0;
+    border: 1px solid #f0d68a;
+    border-radius: 6px;
+    padding: 0.6rem 1rem;
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+    color: #6a5500;
+  }
+
+  .remote-images > button {
+    margin-inline-start: auto;
+    flex: none;
   }
 
   /*
@@ -266,7 +294,15 @@
             {message.text || ""}
           </div>
         {:else}
-          <div class="html" use:messageHTML={{ html, message }}></div>
+          {#if hasRemoteImages && !loadRemote}
+            <div class="remote-images">
+              <span>Remote images are hidden to protect your privacy.</span>
+              <button class="btn-light" on:click={() => loadRemote = true}>Load images</button>
+            </div>
+          {/if}
+          {#key loadRemote}
+            <div class="html" use:messageHTML={{ html, message, loadRemote }}></div>
+          {/key}
         {/if}
       </div>
     </div>
