@@ -27,7 +27,10 @@ const MeSchema = z.object({
   name: z.string().min(1).optional(),
   existingPassword: z.string().optional(),
   password: z.string().optional(),
-});
+}).refine(
+  (body) => !body.password || !!body.existingPassword,
+  { message: "existingPassword is required to change the password" }
+);
 
 // Encode a single user-controlled URL path segment before interpolating it into
 // the upstream WildDuck URL. Express decodes %2F/%3F/%26 inside a path param and
@@ -109,7 +112,10 @@ export const api = (config: Config) => {
     // Destroy the server-side session record and clear the cookie so the
     // session id cannot be reused after logout (and so a fixated id is dropped).
     await new Promise<void>((resolve) => {
-      req.session.destroy(() => resolve());
+      req.session.destroy((err) => {
+        if(err) console.error("Failed to destroy session on logout:", err);
+        resolve();
+      });
     });
     res.clearCookie(config.session_name || "raven.sid", {
       path: "/",

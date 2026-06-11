@@ -25,6 +25,11 @@
     align-items: center;
   }
 
+  x-addr.invalid {
+    background: #ffd7d7;
+    color: #a40000;
+  }
+
   x-addr:first-child{
     margin-inline-start: 0.75em;
   }
@@ -69,7 +74,10 @@
 
   const add = () => {
     const address = value.trim();
-    if( address && isMail(address) ) {
+    // Accept any non-empty value (WildDuck validates envelope addresses on
+    // submit, and self-hosted setups use dotless/internal addresses); invalid
+    // ones are flagged visually below instead of being silently dropped.
+    if( address ) {
       if (!addrs.some(a => a.address === address)) {
         addrs = [...addrs, {address, name: ""}];
         value = "";
@@ -107,7 +115,7 @@
 
 <label class="addr-input">
   {#each addrs as addr, i}
-    <x-addr>
+    <x-addr class:invalid={!isMail(addr.address)} title={isMail(addr.address) ? "" : "This does not look like a valid email address"}>
       {addr.address}
       <x-addr-close on:click={() => remove(i)} >
         <Close />
