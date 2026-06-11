@@ -149,7 +149,9 @@ export const messageHTML = (node: HTMLElement, opts: string | { html: string, me
     a.rel = "noopener noreferrer external nofollow";
   }
 
-  for(const $el of [].slice.call(fragment.querySelectorAll("style, link, script, meta, object, head, title")) as HTMLElement[]) {
+  // Keep <style> (it's inert in a no-allow-scripts iframe and email layout
+  // often depends on it); drop <link> so no remote stylesheet is fetched.
+  for(const $el of [].slice.call(fragment.querySelectorAll("link, script, meta, object, head, title")) as HTMLElement[]) {
     $el.remove();
   }
 
@@ -170,11 +172,11 @@ export const messageHTML = (node: HTMLElement, opts: string | { html: string, me
 
   // Render the untrusted email body inside a sandboxed iframe WITHOUT
   // allow-scripts: even if DOMPurify is ever bypassed, scripts cannot run and
-  // the email's CSS cannot clickjack the real app UI. allow-same-origin is kept
-  // only so we can inject the fragment and measure height; it grants no script
-  // capability on its own.
+  // the email's CSS cannot clickjack the real app UI. allow-same-origin lets us
+  // inject the fragment and measure height; allow-popups (+ escape-sandbox) lets
+  // target="_blank" links actually open. None of these enable script execution.
   const iframe = document.createElement("iframe");
-  iframe.setAttribute("sandbox", "allow-same-origin");
+  iframe.setAttribute("sandbox", "allow-same-origin allow-popups allow-popups-to-escape-sandbox");
   iframe.style.width = "100%";
   iframe.style.border = "none";
   iframe.style.display = "block";

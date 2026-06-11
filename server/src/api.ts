@@ -61,11 +61,13 @@ const enforceSameOrigin: RequestHandler = (req, res, next) => {
   if (!origin) return next();
   let originHost: string | null = null;
   try {
-    originHost = new URL(origin).host;
+    originHost = new URL(origin).hostname;
   } catch {
     originHost = null;
   }
-  if (originHost === null || originHost !== req.get("host")) {
+  // req.hostname honors X-Forwarded-Host when trust proxy is set, so this works
+  // behind a reverse proxy; compare hostnames (port-insensitive) to avoid false 403s.
+  if (originHost === null || originHost !== req.hostname) {
     res.status(StatusCodes.FORBIDDEN).json({ error: { status: 403, message: "Cross-origin request blocked" } });
     return;
   }

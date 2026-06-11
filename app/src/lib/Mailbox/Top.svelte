@@ -55,14 +55,9 @@ import { locale } from "$lib/locale";
       seen: v
     })
   
-    let changed = 0;
     for(const item of selection) {
-      if(item.seen !== v) changed++;
       item.seen = v;
     }
-
-    // keep the unseen badge in sync optimistically (COUNTERS SSE reconciles)
-    mailbox.unseen = Math.max(0, mailbox.unseen + (v ? -changed : changed));
 
     messages = {...messages};
     selection = [...selection]; 
@@ -123,10 +118,6 @@ import { locale } from "$lib/locale";
 
   const removeSelection = () => {
     const ids = selection.map(item => item.id);
-    const removedUnseen = selection.filter(item => !item.seen).length;
-
-    mailbox.total = Math.max(0, mailbox.total - selection.length);
-    mailbox.unseen = Math.max(0, mailbox.unseen - removedUnseen);
     
     messages = {
       ...messages,
