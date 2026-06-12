@@ -54,7 +54,7 @@
 
 <style>
   .message {
-    border-bottom: rgba(0,0,0,0.1) 1px solid;
+    border-bottom: var(--border) 1px solid;
     display: flex;
     flex-direction: row;
     align-items: center;
@@ -90,8 +90,8 @@
   }
 
   .selected {
-    background-color: #c2dbff;
-    border-bottom-color: #a5bad9;
+    background-color: var(--selected-bg);
+    border-bottom-color: var(--selected-border);
   }
 
   .flag {
@@ -111,7 +111,7 @@
 
   .subject-intro {
     flex: 6;
-    color: rgb(127, 127, 127);
+    color: var(--text-muted);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -120,7 +120,7 @@
   }
 
   .subject {
-    color: #000;
+    color: var(--text);
   }
 
   .intro {
@@ -129,7 +129,7 @@
 
   .date {
     flex: none;
-    color: #555;
+    color: var(--text-muted);
     font-size: 0.8rem;
     margin-inline-end: 1rem;
   }
@@ -153,7 +153,7 @@
     font-size: 1.25rem;
     margin-inline-end: 1rem;
     justify-self: flex-end;
-    color: #555;
+    color: var(--text-muted);
   }
 
   @media screen and (max-width: 650px) {

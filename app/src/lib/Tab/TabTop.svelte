@@ -11,7 +11,7 @@
     height: 3rem;
     border-bottom: var(--border) 1px solid;
     flex: none;
-    color: #333;
+    color: var(--text);
     position: relative;
     z-index: 100;
   }

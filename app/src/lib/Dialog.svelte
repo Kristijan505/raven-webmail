@@ -41,7 +41,7 @@
     width: var(--width);
     max-width: 90%;
     margin: auto;
-    background: #fff;
+    background: var(--surface);
     margin: auto;
     box-sizing: border-box;
     /*overflow: hidden;*/

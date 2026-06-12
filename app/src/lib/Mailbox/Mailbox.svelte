@@ -174,7 +174,7 @@ import { locale } from "$lib/locale";
     display: flex;
     flex-direction: column;
     align-items: center;
-    color: #333;
+    color: var(--text-muted);
     font-size: 1rem;
   }
 

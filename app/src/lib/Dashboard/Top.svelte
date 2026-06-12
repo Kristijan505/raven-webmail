@@ -6,6 +6,7 @@
   import Menu from "~icons/mdi/menu";
   import AccountButton from "./AccountButton.svelte";
   import LanguageSwitcher from "./LanguageSwitcher.svelte";
+  import ThemeSwitcher from "./ThemeSwitcher.svelte";
 
   import { getContext } from "svelte";
   import type { DashContext } from "./Dashboard.svelte";
@@ -127,6 +128,7 @@
       <input type="text" on:keypress={onkeypress} class="q" placeholder={$locale["Search..."]} bind:value={q} />
     </div>
   </div>
+  <ThemeSwitcher />
   <LanguageSwitcher />
   <AccountButton {username} />
 </div>

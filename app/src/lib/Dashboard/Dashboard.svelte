@@ -111,7 +111,7 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    background: #fff;
+    background: var(--surface);
   }
 
   .main {

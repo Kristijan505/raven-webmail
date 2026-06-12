@@ -119,7 +119,7 @@
     flex-direction: row;
     align-items: center;
     box-sizing: border-box;
-    color: #111;
+    color: var(--text);
     height: var(--top-h);
     margin-bottom: -0.75rem;
   }
@@ -140,7 +140,7 @@
   }
 
   .drawer {
-    background: #fff;
+    background: var(--surface);
   }
 
   .compose-wrap {
@@ -173,7 +173,7 @@
     user-select: none;
     cursor: pointer;
     --ripple-color: rgba(0,0,0,0.2);
-    background: #fff;
+    background: var(--surface);
   }
 
   .compose:hover {

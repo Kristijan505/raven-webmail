@@ -107,7 +107,7 @@ import { locale } from "$lib/locale";
   }
 
   .mailbox.current {
-    background: rgba(0,0,0,0.1);
+    background: var(--surface-2);
   }
 
  .icon {
@@ -164,7 +164,7 @@ import { locale } from "$lib/locale";
     font-size: 0.85em;
     transform: translateY(-50%);
     pointer-events: none;
-    color: #444;
+    color: var(--text-muted);
     font-weight: 500;
   }
 

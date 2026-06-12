@@ -2,6 +2,13 @@
     font-family: "Fira Sans", sans-serif;
     font-size: 16px;
     --red: #c62828;
+    --bg: #ffffff;
+    --surface: #ffffff;
+    --surface-2: #f0f0f0;
+    --text: #111111;
+    --text-muted: #555555;
+    --selected-bg: #c2dbff;
+    --selected-border: #a5bad9;
     --border: rgba(0, 0, 0, 0.18);
     --btn-transition: background-color 300ms ease;
     --btn-dark-bg: rgba(0, 0, 0, 0.075);
@@ -9,6 +16,33 @@
     --btn-radius: 0.25em;
     --btn-padding: 0.75rem;
     --top-h: 4rem;
+}
+
+/* Dark theme (chrome only; email bodies keep their own colours in the iframe). */
+:root[data-theme="dark"] {
+    --bg: #16181c;
+    --surface: #1e2127;
+    --surface-2: #2a2e36;
+    --text: #e7e7e7;
+    --text-muted: #9aa1ab;
+    --selected-bg: #2d4a73;
+    --selected-border: #3a5a86;
+    --border: rgba(255, 255, 255, 0.14);
+    --btn-dark-bg: rgba(255, 255, 255, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+    :root[data-theme="auto"], :root:not([data-theme]) {
+        --bg: #16181c;
+        --surface: #1e2127;
+        --surface-2: #2a2e36;
+        --text: #e7e7e7;
+        --text-muted: #9aa1ab;
+        --selected-bg: #2d4a73;
+        --selected-border: #3a5a86;
+        --border: rgba(255, 255, 255, 0.14);
+        --btn-dark-bg: rgba(255, 255, 255, 0.08);
+    }
 }
 
 * {
@@ -23,7 +57,8 @@ body,
 }
 
 html {
-    color: #111;
+    color: var(--text);
+    background: var(--bg);
 }
 
 body {
@@ -175,7 +210,7 @@ button {
 }
 
 .thin-scroll::-webkit-scrollbar-track {
-    background: #ddd;
+    background: var(--surface-2);
 }
 
 .thin-scroll::-webkit-scrollbar-thumb {
