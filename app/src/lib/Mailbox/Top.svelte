@@ -20,7 +20,7 @@
   import CheckSome from "~icons/mdi/checkbox-intermediate";
   import Check from "~icons/mdi/check";
   import Ripple from "$lib/Ripple.svelte";
-  import { tooltip } from "$lib/actions";
+  import { tooltip, clickable } from "$lib/actions";
   import { fade } from "svelte/transition";
   import { action, isDrafts, isInbox, isJunk, isSent, isTrash, mailboxName, plural, _delete, _put } from "$lib/util";
 
@@ -223,7 +223,7 @@ import { locale } from "$lib/locale";
 
 <TabTop {scrolled}>
  <div class="action-group select">
-    <div class="action btn-dark" on:click={toggleAll}>
+    <div class="action btn-dark" use:clickable on:click={toggleAll}>
       {#if selection.length === 0}
         <CheckNone />
       {:else if selection.length === messages.results.length}
@@ -234,7 +234,7 @@ import { locale } from "$lib/locale";
       <Ripple />
     </div>
 
-    <div class="action btn-dark reload" use:tooltip={$locale.Reload} on:click={reload}>
+    <div class="action btn-dark reload" use:clickable use:tooltip={$locale.Reload} on:click={reload}>
       <div class="reload-inner" style="transform: rotate({360 * reloadTimes}deg);">
         <Refresh />
       </div>
@@ -245,7 +245,7 @@ import { locale } from "$lib/locale";
   {#if selection.length === 0 && messages.results.length !== 0}
     <div class="action-group" in:fade|local={{ duration: 200 }}>
       <div class="clear-btn-wrap">
-        <div class="action btn-dark" class:hover={clearMenuOpen} on:click={() => clearMenuOpen = true}>
+        <div class="action btn-dark" use:clickable class:hover={clearMenuOpen} on:click={() => clearMenuOpen = true}>
           <DotsVertical />
           <Ripple />
         </div>
@@ -266,30 +266,30 @@ import { locale } from "$lib/locale";
     <div class="only-when-selection" in:fade|local={{ duration: 200 }}>
       <div class="action-group">
         {#if !selection.every(m => m.seen)}
-          <div class="action btn-dark" use:tooltip={$locale.Mark_as_seen} on:click={() => markAsSeen(true)}>
+          <div class="action btn-dark" use:clickable use:tooltip={$locale.Mark_as_seen} on:click={() => markAsSeen(true)}>
             <MarkSeen />
             <Ripple />
           </div>
         {:else}
-          <div class="action btn-dark" use:tooltip={$locale.Mark_as_not_seen} on:click={() => markAsSeen(false)}>
+          <div class="action btn-dark" use:clickable use:tooltip={$locale.Mark_as_not_seen} on:click={() => markAsSeen(false)}>
             <MarkUnSeen />
             <Ripple />
           </div>
         {/if}
 
         {#if isJunk(mailbox)}
-          <div class="action btn-dark" use:tooltip={$locale.This_is_not_spam} on:click={spam}> 
+          <div class="action btn-dark" use:clickable use:tooltip={$locale.This_is_not_spam} on:click={spam}> 
             <UnMarkSpam />
             <Ripple />
           </div>
         {:else if !isDrafts(mailbox) && !isSent(mailbox) && !isTrash(mailbox)}
-          <div class="action btn-dark" use:tooltip={$locale.Mark_as_spam} on:click={spam}> 
+          <div class="action btn-dark" use:clickable use:tooltip={$locale.Mark_as_spam} on:click={spam}> 
             <MarkSpam />
             <Ripple />
           </div>
         {/if}
 
-        <div class="action btn-dark" use:tooltip={isTrash(mailbox) ? $locale.Delete_permanently : isDrafts(mailbox) ? $locale.Discard_drafts : $locale.Delete} on:click={del}>
+        <div class="action btn-dark" use:clickable use:tooltip={isTrash(mailbox) ? $locale.Delete_permanently : isDrafts(mailbox) ? $locale.Discard_drafts : $locale.Delete} on:click={del}>
           <Delete />
           <Ripple />
         </div>

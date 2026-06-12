@@ -22,6 +22,7 @@
   }
 
   import Ripple from "$lib/Ripple.svelte";
+  import { clickable } from "$lib/actions";
   import type { Message, Mailbox } from "$lib/types";
 
   import NotSelected from "~icons/mdi/checkbox-blank-outline";
@@ -206,7 +207,7 @@
   class:flagged={message.flagged}
   on:click={click}
 >
-  <div class="select cell-icon btn-dark" on:click|stopPropagation|preventDefault={toggleSelection}>
+  <div class="select cell-icon btn-dark" use:clickable on:click|stopPropagation|preventDefault={toggleSelection}>
     {#if selected}
       <Selected />
     {:else}
@@ -215,7 +216,7 @@
     <Ripple />
   </div>
 
-  <div class="cell-icon btn-dark flag" on:click|stopPropagation|preventDefault={flag}>
+  <div class="cell-icon btn-dark flag" use:clickable on:click|stopPropagation|preventDefault={flag}>
     {#if message.flagged}
       <Flagged />
     {:else}

@@ -16,6 +16,7 @@
   }
 
   import DrawerMailbox from './DrawerMailbox.svelte';
+  import { clickable } from "$lib/actions";
   import ComposeIcon from "~icons/mdi/email-edit-outline";
   import Ripple from "$lib/Ripple.svelte";
 
@@ -223,7 +224,7 @@
 <div class="drawer" class:narrow-open={$narrow} class:wide-open={$wide}>
   
   <div class="top only-narrow">
-    <div class="menu btn-dark" on:click={() => narrow.set(false)}>
+    <div class="menu btn-dark" use:clickable on:click={() => narrow.set(false)}>
       <Menu />
       <Ripple />
     </div>
@@ -251,7 +252,7 @@
 
     <div class="sep"></div>
 
-    <div class="new btn-dark" on:click={openCreate}>
+    <div class="new btn-dark" use:clickable on:click={openCreate}>
       <div class="new-icon">
         <Plus />
       </div>

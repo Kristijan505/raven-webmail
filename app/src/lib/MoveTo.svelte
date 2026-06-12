@@ -64,7 +64,7 @@
   import { isJunk, isTrash, isInbox, mailboxIcon, mailboxName, isSent } from "./util";
   import { getContext } from "svelte";
   import Ripple from "./Ripple.svelte";
-  import { tooltip } from "./actions";
+  import { tooltip, clickable } from "./actions";
   import Menu from "./Menu/Menu.svelte";
   import MenuItem from "./Menu/MenuItem.svelte";
 import { locale } from "./locale";
@@ -72,7 +72,7 @@ import { locale } from "./locale";
 
 {#if folders.length}
   <div class="action-group">
-    <div class="action btn-dark" class:hover={open} on:click={() => open = !open} use:tooltip={$locale.Move_to}>
+    <div class="action btn-dark" use:clickable class:hover={open} on:click={() => open = !open} use:tooltip={$locale.Move_to}>
       <MoveTo/>
       <div class="anchor">
         <PortalPopup anchor="top-left" bind:open>

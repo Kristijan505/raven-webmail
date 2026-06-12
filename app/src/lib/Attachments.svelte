@@ -10,7 +10,7 @@
 
   import PortalPopup from "$lib/PortalPopup.svelte";
   import Menu from "$lib/Menu/Menu.svelte";
-  import { tooltip } from "./actions";
+  import { tooltip, clickable } from "./actions";
   import Ripple from "./Ripple.svelte";
 import { locale } from "./locale";
 </script>
@@ -59,7 +59,7 @@ import { locale } from "./locale";
 
 {#if message.attachments?.length}
   <div class="action-group">
-    <div class="action btn-dark" class:hover={open} use:tooltip={$locale.Attachments} on:click={() => open = !open}>
+    <div class="action btn-dark" use:clickable class:hover={open} use:tooltip={$locale.Attachments} on:click={() => open = !open}>
       <Paperclip/>
       <div class="count">{message.attachments.length}</div>
       <div class="anchor">

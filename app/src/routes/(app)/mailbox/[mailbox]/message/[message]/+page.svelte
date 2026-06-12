@@ -8,7 +8,7 @@
   
   import { action, isDrafts, isInbox, isJunk, isSent, isTrash, mailboxName, _delete, _put } from "$lib/util";
   
-  import { messageHTML, tooltip } from "$lib/actions";
+  import { messageHTML, tooltip, clickable } from "$lib/actions";
   import TabTop from "$lib/Tab/TabTop.svelte";
   
   import Delete from "~icons/mdi/delete-outline";
@@ -192,7 +192,7 @@
 
       <div class="action-group">
         <div class="action btn-dark"
-          use:tooltip={message.seen ? $locale.Mark_as_not_seen : $locale.Mark_as_seen}
+          use:clickable use:tooltip={message.seen ? $locale.Mark_as_not_seen : $locale.Mark_as_seen}
           on:click={seen}
         >
           {#if message.seen}
@@ -206,14 +206,14 @@
         {#if isJunk(mailbox)}
           <div 
             class="action btn-dark" 
-            use:tooltip={$locale.This_is_not_spam}
+            use:clickable use:tooltip={$locale.This_is_not_spam}
             on:click={spam}  
           >
             <UnMarkSpam />
             <Ripple />
           </div>
         {:else if !isDrafts(mailbox) && !isSent(mailbox) && !isTrash(mailbox)}
-          <div class="action btn-dark" use:tooltip={$locale.Mark_as_spam}
+          <div class="action btn-dark" use:clickable use:tooltip={$locale.Mark_as_spam}
             on:click={spam}
           >
             <MarkSpam />
@@ -221,7 +221,7 @@
           </div>
         {/if}
 
-        <div class="action btn-dark" use:tooltip={
+        <div class="action btn-dark" use:clickable use:tooltip={
             isTrash(mailbox) ? $locale.Delete_permanently :
             isDrafts(mailbox) ? $locale.Discard_drafts :
             $locale.Delete}
@@ -235,13 +235,13 @@
       <div class="action-group">
 
         <div class="action-group">
-          <div class="action btn-dark" use:tooltip={$locale.Forward} on:click={forward}>
+          <div class="action btn-dark" use:clickable use:tooltip={$locale.Forward} on:click={forward}>
             <Resend />
             <Ripple />
           </div>
 
           {#if !isDrafts(mailbox) && !isSent(mailbox)}
-            <div class="action btn-dark" use:tooltip={$locale.Reply} on:click={reply}>
+            <div class="action btn-dark" use:clickable use:tooltip={$locale.Reply} on:click={reply}>
               <Reply />
               <Ripple />
             </div>

@@ -2,6 +2,7 @@
   export let mailbox: Mailbox;
 
   import type { Mailbox } from "$lib/types";
+  import { clickable } from "$lib/actions";
   import { action, isDrafts, isInbox, isNarrow, isSent, isTrash, mailboxIcon, mailboxIsDeletable, mailboxName, _delete, _post, _put } from "../util";
 
   import Ripple from "$lib/Ripple.svelte";
@@ -206,7 +207,7 @@ import { locale } from "$lib/locale";
   {#if hover || menuOpen} 
     <div class="menu-out" transition:scale|local={{ duration: 200 }}>
       <div class="menu-in">
-        <div class="menu-btn btn-dark" class:hover={menuOpen} on:click|preventDefault|stopPropagation={() => menuOpen = !menuOpen}>
+        <div class="menu-btn btn-dark" use:clickable class:hover={menuOpen} on:click|preventDefault|stopPropagation={() => menuOpen = !menuOpen}>
           <Dots />
           <Ripple />
         </div>
