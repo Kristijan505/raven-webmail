@@ -27,7 +27,7 @@
   $: html = message.html?.join("").trim();
 
   let loadRemote = false;
-  let shownKey = `${message.mailbox}-${message.id}`;
+  let shownKey = `${data.message.mailbox}-${data.message.id}`;
   // Reset the "load remote images" opt-in when switching to another message.
   $: {
     const key = `${message.mailbox}-${message.id}`;
