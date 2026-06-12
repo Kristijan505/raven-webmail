@@ -223,6 +223,12 @@ export const messageHTML = (node: HTMLElement, opts: string | { html: string, me
     const doc = iframe.contentDocument;
     if(!doc) return;
     doc.body.style.margin = "0";
+    // Constrain wide media to the message column: big newsletter images/tables
+    // were rendering at natural size and overflowing the viewport.
+    const baseStyle = doc.createElement("style");
+    baseStyle.textContent =
+      "img,video{max-width:100%!important;height:auto}table{max-width:100%}body{overflow-x:hidden}";
+    doc.head.appendChild(baseStyle);
     doc.body.appendChild(fragment);
 
     const resize = () => {
