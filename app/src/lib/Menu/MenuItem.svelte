@@ -44,6 +44,7 @@
   role={href ? undefined : "button"}
   tabindex={href ? undefined : 0}
   on:click
+  on:mousedown={(e) => { if (e.button === 0) e.preventDefault(); }}
   on:keydown={(e) => { if(!href && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); e.currentTarget.click(); } }}
   on:pointerdown
   {download}
