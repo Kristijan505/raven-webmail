@@ -68,6 +68,7 @@ import { locale } from "./locale";
             {#each message.attachments as attach}
               <a href="/api/mailboxes/{mailbox.id}/messages/{message.id}/attachments/{attach.id}"
                 class="na item btn-dark"
+                on:mousedown={(e) => { if (e.button === 0) e.preventDefault(); }}
                 download={attach.filename}>
                 <div class="img" style="background-image: url({url(attach.filename)})"></div>
                 <div class="name">
