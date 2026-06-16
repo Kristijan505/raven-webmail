@@ -235,10 +235,27 @@ export const messageHTML = (node: HTMLElement, opts: string | { html: string, me
     doc.head.appendChild(baseStyle);
     doc.body.appendChild(fragment);
 
+    // Fit the iframe to the email's OWN intended width and center it, instead of
+    // stretching the full pane. Most HTML emails use a fixed-width container
+    // (~600px is the de-facto standard; some go to ~700px); we measure that
+    // intrinsic width via max-content and cap it. Fluid/plain emails whose
+    // content has no fixed width fall back to the full column.
+    const MAX_W = 1024;
+    const fitWidth = () => {
+      doc.body.style.width = "max-content";
+      doc.body.style.maxWidth = MAX_W + "px";
+      const natural = Math.ceil(doc.body.getBoundingClientRect().width);
+      doc.body.style.width = "";
+      doc.body.style.maxWidth = "";
+      iframe.style.maxWidth = Math.min(Math.max(natural, 360), MAX_W) + "px";
+      iframe.style.marginInline = "auto";
+    };
+
     const resize = () => {
       iframe.style.height = `${doc.documentElement.scrollHeight}px`;
     };
 
+    fitWidth();
     resize();
     iframe.contentWindow?.addEventListener("resize", resize);
     for(const $img of [].slice.call(doc.images) as HTMLImageElement[]) {
