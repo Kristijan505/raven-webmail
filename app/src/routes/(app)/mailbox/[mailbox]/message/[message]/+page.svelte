@@ -23,6 +23,7 @@
   import { goto } from "$app/navigation";
   import { getContext } from "svelte";
   import MoveTo from "$lib/MoveTo.svelte";
+  import MessageSecurity from "$lib/Message/MessageSecurity.svelte";
 
   $: html = message.html?.join("").trim();
 
@@ -285,6 +286,8 @@
               {$locale["Sent:"]} {new Date(message.date).toLocaleString()}
             </div>
           {/if}
+
+          <MessageSecurity {message} {mailbox} />
         </div>
       </div>
 

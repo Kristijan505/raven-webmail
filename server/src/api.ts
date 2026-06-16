@@ -366,6 +366,31 @@ export const api = (config: Config) => {
     }
   }));
 
+  api.get("/mailboxes/:mailbox/messages/:message/source", handler(async (req, res) => {
+    const back = await fetch(url(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages/${seg(req.params.message)}/message.eml`), {
+      headers: { "x-access-token": token(req) }
+    }).catch(e => {
+      throw new ApiError(502, DISPLAY_ERRORS ? String(e?.message) : "Bad Gateway");
+    });
+
+    if(back.ok) {
+      // Force the untrusted raw RFC822 source to be treated as plain text and
+      // never sniffed/rendered as HTML in our own origin. Inline so it opens in
+      // a browser tab (like Gmail's "Show original") rather than downloading.
+      res.setHeader("content-type", "text/plain; charset=utf-8");
+      res.setHeader("x-content-type-options", "nosniff");
+      res.setHeader("content-disposition", "inline");
+      if(back.body) {
+        fromWeb(back.body as any).pipe(res);
+      } else {
+        res.end();
+      }
+    } else {
+      res.status(back.status);
+      res.end("Cannot GET message source");
+    }
+  }));
+
   api.get("/search", pageHandler(async (req, res) => {
     const query = { ...req.query, limit: req.query.limit || "50" }; 
     const json = await get(`/users/${userId(req)}/search?${qs.stringify(query)}`, token(req));

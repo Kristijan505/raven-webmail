@@ -156,6 +156,24 @@ const locale: Locale = {
 
   Remote_images_hidden: "Las imágenes remotas están ocultas para proteger tu privacidad.",
   Load_images: "Cargar imágenes",
+
+  security: {
+    Verified_sender: "Remitente verificado",
+    Partially_verified: "Parcialmente verificado",
+    Not_verified: "Remitente NO verificado",
+    Details: "Detalles",
+    Sender: "Remitente",
+    Mailed_by: "Enviado por",
+    Signed_by: "Firmado por",
+    Encrypted: "Cifrado",
+    Not_encrypted: "Sin cifrar",
+    View_original: "Ver original",
+    SPF: "SPF",
+    DKIM: "DKIM",
+    DMARC: "DMARC",
+    Aligned: "alineado",
+    Not_aligned: "no alineado",
+  },
 }
 
 export default locale;

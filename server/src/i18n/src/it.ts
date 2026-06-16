@@ -157,7 +157,25 @@ const locale: Locale = {
   "Edit_your_signature": "Modifica la tua firma",
 
   "Remote_images_hidden": "Le immagini remote sono nascoste per proteggere la tua privacy.",
-  "Load_images": "Carica immagini"
+  "Load_images": "Carica immagini",
+
+  "security": {
+    "Verified_sender": "Mittente verificato",
+    "Partially_verified": "Parzialmente verificato",
+    "Not_verified": "Mittente NON verificato",
+    "Details": "Dettagli",
+    "Sender": "Mittente",
+    "Mailed_by": "Inviato da",
+    "Signed_by": "Firmato da",
+    "Encrypted": "Crittografato",
+    "Not_encrypted": "Non crittografato",
+    "View_original": "Visualizza originale",
+    "SPF": "SPF",
+    "DKIM": "DKIM",
+    "DMARC": "DMARC",
+    "Aligned": "allineato",
+    "Not_aligned": "non allineato"
+  }
 }
 
 export default locale;

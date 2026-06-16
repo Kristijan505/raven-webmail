@@ -151,13 +151,19 @@ export type FullMessage = {
   html: string[]
   text: string
   attachments?: Attchment[]
+  envelope?: {
+    from?: string
+    rcpt?: { value: string; formatted: string }[]
+  }
   verificationResults?: {
-    tls: {
-      name: any
-      version: any
-    }
-    spf: any
-    dkim: any
+    tls?: {
+      name?: any
+      version?: any
+    } | null
+    spf?: any
+    dkim?: any
+    arc?: boolean
+    bimi?: boolean
   }
   metadata: any  
   reference?: any
