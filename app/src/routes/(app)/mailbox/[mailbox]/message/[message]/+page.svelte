@@ -118,6 +118,9 @@
 
   .body {
     padding: 2rem;
+    max-width: 64rem;
+    margin-inline: auto;
+    box-sizing: border-box;
   }
 
   .text {
@@ -126,6 +129,9 @@
 
   .detail {
     padding: 2rem;
+    max-width: 64rem;
+    margin-inline: auto;
+    box-sizing: border-box;
   }
 
   .subject {
