@@ -13,7 +13,16 @@
   export let message: Message;
   export let selection: Message[];
 
-  $: selected = selection.some(m => m.id === message.id)
+  // When a row is deleted, Svelte clears the bound `message` to undefined while
+  // the row is still sliding out (transition outro). Reading props off that
+  // undefined threw inside the flush and froze the whole list (dead toolbar,
+  // broken select-all). Keep the last value so the outro keeps its content and
+  // nothing reads off undefined.
+  let lastRow: Message;
+  $: if (message) lastRow = message;
+  $: row = message || lastRow;
+
+  $: selected = row ? selection.some(m => m.id === row.id) : false
 
   const toggleSelection = () => {
     const v = selection.filter(m => m.id !== message.id);
@@ -201,11 +210,11 @@
   }
 </style>
 
-<a href="/mailbox/{mailbox.id}/message/{message.id}" 
-  class="na message" 
-  class:seen={message.seen} 
-  class:selected 
-  class:flagged={message.flagged}
+<a href="/mailbox/{mailbox.id}/message/{row.id}"
+  class="na message"
+  class:seen={row.seen}
+  class:selected
+  class:flagged={row.flagged}
   on:click={click}
 >
   <div class="select cell-icon btn-dark" use:clickable on:click|stopPropagation|preventDefault={toggleSelection}>
@@ -218,7 +227,7 @@
   </div>
 
   <div class="cell-icon btn-dark flag" use:clickable on:click|stopPropagation|preventDefault={flag}>
-    {#if message.flagged}
+    {#if row.flagged}
       <Flagged />
     {:else}
       <NotFlagged />
@@ -228,25 +237,25 @@
 
   <div class="flex">
     <div class="from">
-      {from(mailbox, message)}
+      {from(mailbox, row)}
     </div>
 
     <div class="end">
       <div class="subject-intro">
         <span class="subject">
-          {message.subject || ""}
+          {row.subject || ""}
         </span>
         <span class="intro">
-          {message.intro || ""}
+          {row.intro || ""}
         </span>
       </div>
 
       <div class="date-attachments">
         <div class="date">
-          {messageDate(message.date, $locale)}
+          {messageDate(row.date, $locale)}
         </div>
-    
-        {#if message.attachments}
+
+        {#if row.attachments}
           <div class="attachments">
             <Paperclip />
           </div>
