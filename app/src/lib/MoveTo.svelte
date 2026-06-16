@@ -79,7 +79,7 @@ import { locale } from "./locale";
           <Menu>
             {#each folders as mailbox}
               <MenuItem icon={mailboxIcon(mailbox)} on:click={() => onMove(mailbox)}>
-                {mailboxName(mailbox)}
+                {mailboxName(mailbox, $locale)}
               </MenuItem>
             {/each}
           </Menu>

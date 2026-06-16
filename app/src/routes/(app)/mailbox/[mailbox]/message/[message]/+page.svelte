@@ -185,7 +185,7 @@
 
     <TabTop {scrolled}>
       <div class="action-group first-action">
-        <a class="na action btn-dark" href="/mailbox/{mailbox.id}" use:tooltip={`${$locale.Back_to} ${mailboxName(mailbox)}`}>
+        <a class="na action btn-dark" href="/mailbox/{mailbox.id}" use:tooltip={`${$locale.Back_to} ${mailboxName(mailbox, $locale)}`}>
           <GoBack />
           <Ripple />
         </a>

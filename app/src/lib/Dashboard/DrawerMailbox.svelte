@@ -202,7 +202,7 @@ import { locale } from "$lib/locale";
     <svelte:component this={mailboxIcon(mailbox)} />
   </div>
   <div class="name">
-    {mailboxName(mailbox)}
+    {mailboxName(mailbox, $locale)}
   </div>
   {#if hover || menuOpen} 
     <div class="menu-out" transition:scale|local={{ duration: 200 }}>
@@ -236,7 +236,7 @@ import { locale } from "$lib/locale";
 
 <div class="portal" use:portal>
   {#if deleteOpen}
-    <Dialog title="{$locale.Delete_folder} {mailboxName(mailbox)}" width="550px" onClose={() => deleteOpen = false}>
+    <Dialog title="{$locale.Delete_folder} {mailboxName(mailbox, $locale)}" width="550px" onClose={() => deleteOpen = false}>
       <div class="delete-body">
         <div class="delete-label">{$locale.This_action_is_permanent_all_messages_will_be_deleted}</div>
         <button class="delete-confirm btn-light btn-primary elev2" on:click={del}>
@@ -247,7 +247,7 @@ import { locale } from "$lib/locale";
   {/if}
 
   {#if renameOpen}
-    <Dialog title="{$locale.Rename_folder} {mailboxName(mailbox)}" width="550px" onClose={() => renameOpen = false}>
+    <Dialog title="{$locale.Rename_folder} {mailboxName(mailbox, $locale)}" width="550px" onClose={() => renameOpen = false}>
       <div class="rename-body">
         <TextField validate required trim bind:value={renamePath} />
         <button class="rename-confirm btn-light btn-primary elev2" on:click={rename}>
@@ -258,7 +258,7 @@ import { locale } from "$lib/locale";
   {/if}
 
   {#if clearOpen}
-    <Dialog title="{$locale.Delete_all_messages} {$locale.of} {mailboxName(mailbox)}" width="550px" onClose={() => clearOpen = false}>
+    <Dialog title="{$locale.Delete_all_messages} {$locale.of} {mailboxName(mailbox, $locale)}" width="550px" onClose={() => clearOpen = false}>
       <div class="clear-body">
         <div class="clear-label">
           {$locale.This_action_will_delete_all_messages_in_the_folder}

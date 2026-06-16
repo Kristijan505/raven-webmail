@@ -311,7 +311,7 @@ import { locale } from "$lib/locale";
 </TabTop>
 
 {#if clearOpen}
-  <Dialog title="{$locale.Delete_all_messages} {$locale.of} {mailboxName(mailbox)}" width="550px" onClose={() => clearOpen = false}>
+  <Dialog title="{$locale.Delete_all_messages} {$locale.of} {mailboxName(mailbox, $locale)}" width="550px" onClose={() => clearOpen = false}>
     <div class="clear-body">
       <div class="clear-label">
         {$locale.This_action_will_delete_all_messages_in_the_folder}

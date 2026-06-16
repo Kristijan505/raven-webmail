@@ -1,4 +1,5 @@
 import type { Mailbox } from "$lib/types";
+import type { Locale } from "../../../server/src/i18n/locale";
 import { redirect } from "@sveltejs/kit";
 
 export class HttpError extends Error {
@@ -27,8 +28,7 @@ const throwIfError = (res: Response, json: any): void => {
   }
 }
 
-export const mailboxName = (mailbox: Mailbox) => {
-  const l = get(locale);
+export const mailboxName = (mailbox: Mailbox, l: Locale = get(locale)) => {
   if(mailbox.path === "INBOX") return l.mailboxes.Inbox;
   if(mailbox.specialUse === "\\Junk") return l.mailboxes.Spam;
   if(mailbox.specialUse === "\\Sent") return l.mailboxes.Sent;
@@ -303,9 +303,7 @@ export const watchAuth = (userId: string | null) => {
 
 const p = (n: number) => n.toString().padStart(2, "0");
 
-export const messageDate = (d: Date | string) => {
-  
-  const l = get(locale);
+export const messageDate = (d: Date | string, l: Locale = get(locale)) => {
 
   const now = new Date();
   const date = new Date(d);

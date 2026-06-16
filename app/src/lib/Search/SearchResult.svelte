@@ -35,6 +35,7 @@
   import Paperclip from "~icons/mdi/paperclip";
   
   import { action, isDrafts, mailboxName, messageDate, _put } from "$lib/util";
+  import { locale } from "$lib/locale";
   import { _open } from "$lib/Compose/compose";
   const flag = action(async () => {
     message.flagged = !message.flagged;
@@ -288,7 +289,7 @@
     <div class="end">
       <div class="mailbox-subject-intro">
         <div class="mailbox">
-          {mailboxName(mailbox)}
+          {mailboxName(mailbox, $locale)}
         </div>
         <div class="subject-intro">
           <span class="subject" use:highlight={query}>
@@ -302,7 +303,7 @@
 
       <div class="date-attachments">
         <div class="date">
-          {messageDate(message.date)}
+          {messageDate(message.date, $locale)}
         </div>
     
         {#if message.attachments}

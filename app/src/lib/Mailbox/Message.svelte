@@ -32,6 +32,7 @@
   import Paperclip from "~icons/mdi/paperclip";
   
   import { action, isDrafts, messageDate, _put } from "$lib/util";
+  import { locale } from "$lib/locale";
   import { _open } from "$lib/Compose/compose";
   const flag = action(async () => {
     message.flagged = !message.flagged;
@@ -242,7 +243,7 @@
 
       <div class="date-attachments">
         <div class="date">
-          {messageDate(message.date)}
+          {messageDate(message.date, $locale)}
         </div>
     
         {#if message.attachments}

@@ -22,11 +22,12 @@
   }
 
   import { mailboxName } from "$lib/util";
+  import { locale } from "$lib/locale";
   import Mailbox from "$lib/Mailbox/Mailbox.svelte";
 </script>
 
 <svelte:head>
-  <title>{mailbox.unseen ? `(${mailbox.unseen}) ` : ""}{mailboxName(mailbox)}</title>
+  <title>{mailbox.unseen ? `(${mailbox.unseen}) ` : ""}{mailboxName(mailbox, $locale)}</title>
 </svelte:head>
 
 {#key mailbox.id}
