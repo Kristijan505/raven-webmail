@@ -128,7 +128,7 @@
     width: 100%;
     color: var(--text);
     transition: border-color 150ms ease-in-out;
-    background-color: var(--surface);
+    background-color: var(--surface-2);
   }
 
   textarea {
@@ -153,7 +153,7 @@
     padding: 0 0.4em;
     margin: 0 -0.4em;
     pointer-events: none;
-    background: var(--surface);
+    background: var(--surface-2);
     color: var(--text-muted);
     transition: color 150ms ease, transform 150ms ease-in-out;
     transform-origin: top left;
