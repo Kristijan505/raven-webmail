@@ -16,6 +16,7 @@
   }
 
   import DrawerMailbox from './DrawerMailbox.svelte';
+  import Brand from "$lib/Brand/Brand.svelte";
   import { clickable } from "$lib/actions";
   import ComposeIcon from "~icons/mdi/email-edit-outline";
   import Ripple from "$lib/Ripple.svelte";
@@ -229,7 +230,7 @@
       <Ripple />
     </div>
     <div class="logo">
-      {$locale.Raven}
+      <Brand />
     </div>
   </div>
 

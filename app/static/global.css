@@ -1,7 +1,7 @@
 :root {
     font-family: "Fira Sans", sans-serif;
     font-size: 16px;
-    --red: #c62828;
+    --red: #ec1e24;
     --bg: #ffffff;
     --surface: #ffffff;
     --surface-2: #f0f0f0;
@@ -71,6 +71,7 @@ body {
     height: 100%;
     position: fixed;
     z-index: -1;
+    background: #ec1e24;
     flex-direction: column;
     align-items: center;
     justify-content: center;
@@ -80,17 +81,17 @@ body {
 
 @keyframes enter {
     0% {
-        transform: scale(0);
+        opacity: 0;
     }
     100% {
-        transform: scale(1);
+        opacity: 1;
     }
 }
 
 #loading-icon {
     width: min(13rem, 50vw);
     height: min(13rem, 50vh);
-    background-image: url(/icons/512.png);
+    background-image: url(/brand/redcode-logo-white.svg);
     background-size: contain;
     background-position: center;
     background-repeat: no-repeat;
@@ -105,12 +106,12 @@ body {
 }
 
 #progress-line {
-    background-color: #b3d4fc;
+    background-color: rgba(255, 255, 255, 0.3);
     display: flex;
 }
 
 #progress-line:before {
-    background-color: #F82559;
+    background-color: #ffffff;
     content: '';
     animation: running-progress 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }

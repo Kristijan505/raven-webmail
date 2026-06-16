@@ -2,7 +2,7 @@
   import { watchAuth } from "$lib/util";
   import { onMount } from "svelte";
   import { fly } from "svelte/transition";
-  import { locale } from '$lib/locale';
+  import Brand from "$lib/Brand/Brand.svelte";
   import ThemeSwitcher from "$lib/Dashboard/ThemeSwitcher.svelte";
   import LanguageSwitcher from "$lib/Dashboard/LanguageSwitcher.svelte";
   onMount(() => watchAuth(null));
@@ -41,7 +41,7 @@
 <div class="dash" in:fly|local={{duration: 400, y: -25}}>
   <div class="top">
     <div class="logo">
-      {$locale.Raven}
+      <Brand />
     </div>
     <div class="actions">
       <ThemeSwitcher />

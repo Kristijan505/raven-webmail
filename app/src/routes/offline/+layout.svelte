@@ -1,5 +1,5 @@
 <script>
-  import { locale } from "$lib/locale";
+  import Brand from "$lib/Brand/Brand.svelte";
 </script>
 
 <style>
@@ -27,7 +27,7 @@
 
 <div class="dash">
   <div class="top">
-    <div class="logo">{$locale.Raven}</div>
+    <div class="logo"><Brand /></div>
   </div>
 
   <div class="page">

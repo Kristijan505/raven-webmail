@@ -1,8 +1,6 @@
 import type { Locale } from "../locale";
 
 const locale: Locale = {
-
-  Raven: "Raven",
   
   daily: "por día",
   by_minute: "por minuto",

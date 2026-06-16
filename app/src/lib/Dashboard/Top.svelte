@@ -5,6 +5,7 @@
 
   import Menu from "~icons/mdi/menu";
   import AccountButton from "./AccountButton.svelte";
+  import Brand from "$lib/Brand/Brand.svelte";
   import LanguageSwitcher from "./LanguageSwitcher.svelte";
   import ThemeSwitcher from "./ThemeSwitcher.svelte";
 
@@ -119,7 +120,7 @@
     <Menu />
     <Ripple />
   </div>
-  <div class="logo">{$locale.Raven}</div>
+  <div class="logo"><Brand /></div>
   <div class="q-wrap-wrap">
     <div class="q-wrap">
       <div class="search-icon">

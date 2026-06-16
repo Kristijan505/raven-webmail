@@ -1,5 +1,4 @@
 export default {
-  Raven: "Raven",
   
   daily: "daily",
   by_minute: "by minute",
