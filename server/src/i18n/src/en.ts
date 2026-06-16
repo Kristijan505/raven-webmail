@@ -106,6 +106,7 @@ export default {
   Numbered_list: "Numbered list",
   Remove_format: "Remove format",
   Send: "Send",
+  Save: "Save",
   Attach: "Attach",
   Remove: "Remove",
   Add: "Add",

@@ -108,6 +108,7 @@ const locale: Locale = {
   Numbered_list: "Numerirani popis",
   Remove_format: "Ukloni oblikovanje",
   Send: "Pošalji",
+  Save: "Spremi",
   Attach: "Priloži",
   Remove: "Ukloni",
   Add: "Dodaj",

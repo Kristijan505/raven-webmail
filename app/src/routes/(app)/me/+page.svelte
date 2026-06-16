@@ -406,7 +406,7 @@
 
 			<div class="send">
 				<button class="btn-light btn-primary elev2">
-          {$locale.Send}
+          {$locale.Save}
           <Ripple />
         </button>
 			</div>
@@ -422,7 +422,7 @@
 			</div>
 			<div class="send">
 				<button class="btn-light btn-primary elev2">
-          {$locale.Send}
+          {$locale.Save}
           <Ripple />
         </button>
 			</div>

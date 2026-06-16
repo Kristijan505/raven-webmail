@@ -110,6 +110,7 @@ const locale: Locale = {
   Numbered_list: "Lista numerada",
   Remove_format: "Remover formato",
   Send: "Enviar",
+  Save: "Guardar",
   Attach: "Adjuntar",
   Remove: "Remover",
   Add: "Agregar",
