@@ -5,6 +5,8 @@
   $: ({ user } = data);
 
   import { signature } from "$lib/signature";
+  import GoBack from "~icons/mdi/arrow-left";
+  import { tooltip } from "$lib/actions";
 
 	$: name = user.name || 'Unnamed';
 	$: letter = name[0] || '';
@@ -97,6 +99,19 @@
     flex-direction: column;
   }
 
+  .back {
+    align-self: flex-start;
+    margin: 0.75rem 0.75rem -1rem;
+    width: 2.5rem;
+    height: 2.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    border-radius: 50%;
+    flex: none;
+  }
+
 </style>
 
 <svelte:head>
@@ -105,6 +120,9 @@
 
 <TransitionPage>
   <div class="account">
+    <a class="back na btn-dark" href="/me" use:tooltip={$locale.My_account}>
+      <GoBack />
+    </a>
     <div class="main">
       <div class="letter elev3">{letter}</div>
       <div class="end">
