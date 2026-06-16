@@ -144,8 +144,8 @@ import { locale } from "$lib/locale";
         delay,
         duration,
         easing,
-        css: (t: number, u: number) => 
-            'box-sizing: border-box' +
+        css: (t: number, u: number) =>
+            'box-sizing: border-box;' +
             'overflow: hidden;' +
             `opacity: ${t};` +
             `height: ${t * height}px;`
