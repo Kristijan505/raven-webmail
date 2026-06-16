@@ -111,7 +111,7 @@
   }
 
   .date.empty:not(:focus-within) {
-    color: #fff;
+    color: var(--surface);
   }
 
   input,
@@ -122,13 +122,13 @@
     outline: none;
     flex: 1;
     margin: 0;
-    border: 1px rgba(0, 0, 0, 0.23) solid;
+    border: 1px solid var(--border);
     border-radius: 3px;
     padding: 0.9em 0.75em;
     width: 100%;
-    color: inherit;
+    color: var(--text);
     transition: border-color 150ms ease-in-out;
-    background-color: #fff;
+    background-color: var(--surface);
   }
 
   textarea {
@@ -138,7 +138,7 @@
 
   input:disabled,
   textarea:disabled {
-    color: rgba(0, 0, 0, 0.5);
+    color: var(--text-muted);
   }
 
   input:focus,
@@ -153,8 +153,8 @@
     padding: 0 0.4em;
     margin: 0 -0.4em;
     pointer-events: none;
-    background: #fff;
-    color: rgba(0, 0, 0, 0.5);
+    background: var(--surface);
+    color: var(--text-muted);
     transition: color 150ms ease, transform 150ms ease-in-out;
     transform-origin: top left;
     max-width: calc(100% - 1em);
