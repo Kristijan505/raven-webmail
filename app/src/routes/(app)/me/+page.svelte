@@ -118,7 +118,8 @@
 
 	.box {
 		margin: 2rem 1rem;
-    background: #fff;
+    background: var(--surface);
+    border: 1px solid var(--border);
     border-radius: 4px;
     display: flex;
     flex-direction: column;
@@ -136,7 +137,7 @@
 
 	.box-title > .comment {
 		font-size: 0.8em;
-		color: #666;
+		color: var(--text-muted);
 		margin-inline-start: 0.5em;
 	}
 
@@ -165,12 +166,12 @@
 
 	.quota-desc > .used {
 		font-size: 1.15em;
-		color: #333;
+		color: var(--text);
 	}
 
 	.quota-desc > .total {
 		font-size: 1.15em;
-		color: #666;
+		color: var(--text-muted);
 	}
 
 	.password-dialog > .field {

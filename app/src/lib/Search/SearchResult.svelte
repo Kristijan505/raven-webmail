@@ -126,8 +126,8 @@
   }
 
   .selected {
-    background-color: #c2dbff;
-    border-bottom-color: #a5bad9;
+    background-color: var(--selected-bg);
+    border-bottom-color: var(--selected-border);
   }
 
   .flag {
@@ -160,19 +160,19 @@
     padding: 0.5rem;
     font-size: 0.8rem;
     border-radius: 0.35rem;
-    background: rgba(0,0,0,0.1);
+    background: var(--surface-2);
     font-weight: 400;
   }
 
   .subject-intro {
-    color: rgb(127, 127, 127);
+    color: var(--text-muted);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
   .subject {
-    color: #000;
+    color: var(--text);
   }
 
   .intro {
@@ -181,7 +181,7 @@
 
   .date {
     flex: none;
-    color: #555;
+    color: var(--text-muted);
     font-size: 0.8rem;
     margin-inline-end: 1rem;
   }
@@ -205,7 +205,7 @@
     font-size: 1.25rem;
     margin-inline-end: 1rem;
     justify-self: flex-end;
-    color: #555;
+    color: var(--text-muted);
   }
 
   @media screen and (max-width: 650px) {
@@ -253,6 +253,7 @@
 
   .message :global(.highlight) {
     background: yellow;
+    color: #000;
   }
 </style>
 

@@ -6,7 +6,7 @@
   .dash {
     width: 100%;
     min-height: 100%;
-    background: #fff;
+    background: var(--bg);
   }
 
   .top {
