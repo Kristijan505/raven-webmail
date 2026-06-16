@@ -14,7 +14,7 @@
     flex-direction: row;
     align-items: center;
     height: 2.5rem;
-    color: #333;
+    color: var(--text);
     padding-inline-end: 1rem;
   }
 

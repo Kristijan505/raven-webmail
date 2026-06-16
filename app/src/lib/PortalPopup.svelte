@@ -129,7 +129,8 @@
 		display: flex;
 		flex-direction: column;
 		min-width: 10em;
-		background: #fff;
+		background: var(--surface);
+		color: var(--text);
 		border-radius: 3px;
 		z-index: 100000000;
     max-width: calc(100% - 10px);

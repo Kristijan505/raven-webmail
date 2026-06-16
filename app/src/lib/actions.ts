@@ -218,6 +218,10 @@ export const messageHTML = (node: HTMLElement, opts: string | { html: string, me
   iframe.style.width = "100%";
   iframe.style.border = "none";
   iframe.style.display = "block";
+  // Email HTML is authored for a white canvas; without this the transparent
+  // iframe shows the dark app background behind it in dark mode.
+  iframe.style.background = "#fff";
+  iframe.style.colorScheme = "light";
   iframe.srcdoc = "";
   iframe.onload = () => {
     const doc = iframe.contentDocument;
@@ -227,7 +231,7 @@ export const messageHTML = (node: HTMLElement, opts: string | { html: string, me
     // were rendering at natural size and overflowing the viewport.
     const baseStyle = doc.createElement("style");
     baseStyle.textContent =
-      "img,video{max-width:100%!important;height:auto}table{max-width:100%}body{overflow-x:hidden}";
+      "html,body{background:#fff;color:#202124}img,video{max-width:100%!important;height:auto}table{max-width:100%}body{overflow-x:hidden}";
     doc.head.appendChild(baseStyle);
     doc.body.appendChild(fragment);
 
