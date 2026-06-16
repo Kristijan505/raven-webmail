@@ -173,7 +173,7 @@
     user-select: none;
     cursor: pointer;
     --ripple-color: rgba(0,0,0,0.2);
-    background: var(--surface);
+    background: var(--surface-2);
   }
 
   .compose:hover {

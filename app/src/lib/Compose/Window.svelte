@@ -105,6 +105,7 @@ import { locale } from "$lib/locale";
     top: 5%;
     left: 5%;
     background: #fff;
+    color: #202124;
     border-radius: 0.5rem;
     z-index: 100200;
     display: flex;
