@@ -115,6 +115,7 @@ const locale: Locale = {
   of: "od",
 
   notifier: {
+    Email_address_copied: "Email adresa kopirana",
     New_folder_created: "Nova mapa je stvorena",
     Folder_deleted: "Mapa je izbrisana",
     Folder_renamed: "Mapa je preimenovana",

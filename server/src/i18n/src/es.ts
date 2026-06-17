@@ -116,6 +116,7 @@ const locale: Locale = {
   of: "de",
 
   notifier: {
+    Email_address_copied: "Dirección de correo copiada",
     New_folder_created: "Nueva carpeta creada",
     Folder_deleted: "Carpeta eliminada",
     Folder_renamed: "Carpeta renombrada",

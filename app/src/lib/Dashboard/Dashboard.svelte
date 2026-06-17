@@ -14,7 +14,6 @@
 
 <script lang="ts">
   export let user: User;
-  export let username: string;
   let _mailboxes: Mailbox[] = [];
   export { _mailboxes as mailboxes };
 
@@ -130,7 +129,7 @@
 
 <div class="dashboard" in:fly={{duration: 400, y: -25}}>
   <Navigating />
-  <Top {username} />
+  <Top />
   <div class="main">
     <Drawer />
     <div class="page">

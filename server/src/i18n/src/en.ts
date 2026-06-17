@@ -113,6 +113,7 @@ export default {
   of: "of",
 
   notifier: {
+    Email_address_copied: "Email address copied",
     New_folder_created: "New folder created",
     Folder_deleted: "Folder deleted",
     Folder_renamed: "Folder renamed",

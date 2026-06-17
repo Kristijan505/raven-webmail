@@ -1,5 +1,4 @@
 <script lang="ts">
-  export let username: string;
   import { page } from "$app/stores";
   let q = ($page.url.pathname === "/search" && $page.url.searchParams.get("query")) || "";
 
@@ -12,7 +11,7 @@
   import { getContext } from "svelte";
   import type { DashContext } from "./Dashboard.svelte";
   import Ripple from "$lib/Ripple.svelte";
-  const { toggle, mailboxes } = getContext("dash") as DashContext;
+  const { toggle, mailboxes, user } = getContext("dash") as DashContext;
 
   import Magnify from "~icons/mdi/magnify";
   import { goto } from "$app/navigation";
@@ -147,5 +146,5 @@
   </div>
   <ThemeSwitcher />
   <LanguageSwitcher />
-  <AccountButton {username} />
+  <AccountButton {user} />
 </div>

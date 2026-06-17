@@ -118,6 +118,7 @@ const locale: Locale = {
   "of": "di",
 
   "notifier": {
+    "Email_address_copied": "Indirizzo email copiato",
     "New_folder_created": "Nuova cartella creata",
     "Folder_deleted": "Cartella eliminata",
     "Folder_renamed": "Cartella rinominata",

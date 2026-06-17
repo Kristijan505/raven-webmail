@@ -11,7 +11,6 @@
   };
 
   let user: User = data.user;
-  let username: string = data.username;
   let mailboxes: Mailbox[] = data.mailboxes;
   let lastData = data;
 
@@ -19,7 +18,7 @@
   // child bind: write-back — matches the guard used in mailbox/search +page.
   $: if (data !== lastData) {
     lastData = data;
-    ({ user, username, mailboxes } = data);
+    ({ user, mailboxes } = data);
   }
 
   onMount(() => {
@@ -27,6 +26,6 @@
   })
 </script>
 
-<Dashboard bind:username bind:user bind:mailboxes>
+<Dashboard bind:user bind:mailboxes>
   <slot />
 </Dashboard>
