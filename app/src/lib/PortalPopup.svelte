@@ -31,14 +31,15 @@
 
 	import { onMount } from 'svelte';
 
-	let popupEl: HTMLElement | undefined;
 	const click = (e?: Event) => {
 		if (!open) return;
 		// Keep the popup open for clicks INSIDE it when closeOnInsideClick is
 		// false (e.g. the account menu: copy-email row + selectable details).
-		// Outside clicks, window blur and self-closing actions still dismiss it.
+		// Match against the DOM (.popup) rather than a bound node ref — a listener
+		// added in onMount doesn't reliably see bind:this update in legacy mode.
+		// Outside clicks, window blur and the self-closing actions still dismiss it.
 		const target = e?.target;
-		if (!closeOnInsideClick && popupEl && target instanceof Node && popupEl.contains(target)) return;
+		if (!closeOnInsideClick && target instanceof Element && target.closest(".popup")) return;
 		setTimeout(() => {
 			if (autoClose) open = false;
 		}, 5);
@@ -162,7 +163,7 @@
     <div
       class="popup elev3 thin-scroll"  
       class:wide
-      bind:clientHeight={height} bind:clientWidth={width} bind:this={popupEl}
+      bind:clientHeight={height} bind:clientWidth={width}
       style="top: {top}px; left: {left}px"
       transition:popupTransition|local
       use:portal
