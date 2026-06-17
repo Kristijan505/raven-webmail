@@ -1,6 +1,9 @@
 import type { Locale } from "../locale";
 
 const locale: Locale = {
+  Unsaved_changes: "Cambios sin guardar",
+  Unsaved_changes_body: "Tienes cambios sin guardar en la firma. ¿Guardarlos antes de salir?",
+  Discard: "Descartar",
   Name: "Nombre",
   Email_address: "Dirección de correo",
   Cancel: "Cancelar",

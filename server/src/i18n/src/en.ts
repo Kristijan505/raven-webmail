@@ -1,4 +1,7 @@
 export default {
+  Unsaved_changes: "Unsaved changes",
+  Unsaved_changes_body: "You have unsaved signature changes. Save them before leaving?",
+  Discard: "Discard",
   Name: "Name",
   Email_address: "Email address",
   Cancel: "Cancel",

@@ -12,6 +12,7 @@
 <script lang="ts">
   export let html: string;
   export let onChange: ((html: string) => void) | null = null;
+  export let onDirty: (() => void) | null = null;
 
   let codeMode = false;
 
@@ -80,6 +81,11 @@
         attributes: true,
         subtree: true,
       });
+
+      // `input` fires only on real user editing (typing, paste, toolbar
+      // execCommand) — not on the programmatic load above — so it's a clean
+      // "the user touched the signature" signal for the unsaved-changes guard.
+      _document.body.addEventListener("input", () => onDirty?.());
     })
 
     return {

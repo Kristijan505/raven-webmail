@@ -1,6 +1,9 @@
 import type { Locale } from "../locale";
 
 const locale: Locale = {
+  Unsaved_changes: "Nespremljene promjene",
+  Unsaved_changes_body: "Imate nespremljene promjene potpisa. Spremiti ih prije izlaska?",
+  Discard: "Odbaci",
   Name: "Ime",
   Email_address: "Email adresa",
   Cancel: "Odustani",

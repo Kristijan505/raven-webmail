@@ -4,6 +4,9 @@
 import type { Locale } from "../locale";
 
 const locale: Locale = {
+  "Unsaved_changes": "Modifiche non salvate",
+  "Unsaved_changes_body": "Hai modifiche non salvate alla firma. Salvarle prima di uscire?",
+  "Discard": "Scarta",
   "Name": "Nome",
   "Email_address": "Indirizzo email",
   "Cancel": "Annulla",
