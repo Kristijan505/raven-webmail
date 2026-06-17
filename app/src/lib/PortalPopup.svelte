@@ -1,5 +1,6 @@
 <script lang="ts">
 	export let autoClose: boolean = true;
+	export let closeOnInsideClick: boolean = true;
 	export let wide = false;
 	export let anchor: Anchor = 'top-right';
 
@@ -30,11 +31,18 @@
 
 	import { onMount } from 'svelte';
 
-	const click = () =>
-		open &&
+	let popupEl: HTMLElement | undefined;
+	const click = (e?: Event) => {
+		if (!open) return;
+		// Keep the popup open for clicks INSIDE it when closeOnInsideClick is
+		// false (e.g. the account menu: copy-email row + selectable details).
+		// Outside clicks, window blur and self-closing actions still dismiss it.
+		const target = e?.target;
+		if (!closeOnInsideClick && popupEl && target instanceof Node && popupEl.contains(target)) return;
 		setTimeout(() => {
 			if (autoClose) open = false;
 		}, 5);
+	};
 
 	onMount(() => {
     const off = [  
@@ -154,7 +162,7 @@
     <div
       class="popup elev3 thin-scroll"  
       class:wide
-      bind:clientHeight={height} bind:clientWidth={width}
+      bind:clientHeight={height} bind:clientWidth={width} bind:this={popupEl}
       style="top: {top}px; left: {left}px"
       transition:popupTransition|local
       use:portal

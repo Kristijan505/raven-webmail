@@ -18,19 +18,22 @@
   import { _message } from "$lib/Notify/notify";
 
   const signOut = action(async () => {
+    open = false;
     await _post("/api/logout", {})
     goto("/login");
   })
 
   // Quick "copy my email" so the user can hand out their address without
-  // opening the profile page.
+  // opening the profile page. The on:mousedown preventDefault on the row keeps
+  // the click from being eaten by the popup's focus handling, so this actually
+  // fires (HTTPS gives us the Clipboard API).
   const copyEmail = async () => {
     if (!user.address) return;
     try {
       await navigator.clipboard.writeText(user.address);
       _message($locale.notifier.Email_address_copied);
-    } catch (_e) {
-      console.error("clipboard write failed", _e);
+    } catch (e) {
+      console.error("clipboard write failed", e);
     }
   };
 </script>
@@ -134,7 +137,7 @@
   </div>
 
   <div class="anchor">
-    <PortalPopup anchor="top-right" bind:open>
+    <PortalPopup anchor="top-right" bind:open closeOnInsideClick={false}>
       <Menu>
         <div class="account-head">
           <Avatar {user} variant="brand" size="2.75rem" />
@@ -147,7 +150,7 @@
         </div>
 
         {#if user.address}
-          <div class="account-email btn-dark" use:clickable on:click={copyEmail}>
+          <div class="account-email btn-dark" use:clickable on:mousedown={(e) => { if (e.button === 0) e.preventDefault(); }} on:click={copyEmail}>
             <span class="account-email-text">{user.address}</span>
             <span class="account-email-icon"><CopyIcon /></span>
             <Ripple />
@@ -156,7 +159,7 @@
 
         <div class="account-sep"></div>
 
-        <MenuItem icon={Account} href="/me">{$locale.My_account}</MenuItem>
+        <MenuItem icon={Account} href="/me" on:click={() => open = false}>{$locale.My_account}</MenuItem>
         <MenuItem icon={SignOut} on:click={signOut}>{$locale.Sign_out}</MenuItem>
       </Menu>
     </PortalPopup>
