@@ -10,6 +10,11 @@
   const scrollTop = writable(0);
   setContext("drawer", { scrollTop })
 
+  // Logo in the drawer header is a home button too: go to the inbox and close
+  // the drawer (mailboxes[0] is the inbox; the bare "/" route redirects there).
+  $: inbox = $mailboxes.find(isInbox) ?? $mailboxes[0];
+  $: inboxHref = inbox ? `/mailbox/${inbox.id}` : "/";
+
   const onScroll = (event: Event) => {
     const target = event.target as HTMLElement;
     $scrollTop = target.scrollTop;
@@ -40,7 +45,7 @@
 
   import Menu from "~icons/mdi/menu"; 
 
-  import { action, isDrafts, isNarrow, _post } from "$lib/util";
+  import { action, isDrafts, isInbox, isNarrow, _post } from "$lib/util";
   import type { DashContext } from "./Dashboard.svelte";
   import { getContext, setContext } from "svelte";
   import Plus from "~icons/mdi/plus";
@@ -138,6 +143,9 @@
   .logo {
     font-weight: 500;
     font-size: 1.25rem;
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
   }
 
   .drawer {
@@ -229,9 +237,9 @@
       <Menu />
       <Ripple />
     </div>
-    <div class="logo">
+    <a class="logo na" href={inboxHref} aria-label={$locale.mailboxes.Inbox} on:click={() => narrow.set(false)}>
       <Brand />
-    </div>
+    </a>
   </div>
 
   <div class="compose-wrap" class:scrolled={$scrollTop !== 0}>

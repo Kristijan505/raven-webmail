@@ -12,12 +12,13 @@
   import { getContext } from "svelte";
   import type { DashContext } from "./Dashboard.svelte";
   import Ripple from "$lib/Ripple.svelte";
-  const { toggle } = getContext("dash") as DashContext;
+  const { toggle, mailboxes } = getContext("dash") as DashContext;
 
   import Magnify from "~icons/mdi/magnify";
   import { goto } from "$app/navigation";
   import { locale } from "$lib/locale";
   import { clickable } from "$lib/actions";
+  import { isInbox } from "$lib/util";
 
   let searching = false;
   const onkeypress = async (event: KeyboardEvent) => {
@@ -32,6 +33,11 @@
       }
     }
   }
+
+  // The logo doubles as a home button: jump to the inbox on click
+  // (mailboxes[0] is the inbox; the bare "/" route redirects there too).
+  $: inbox = $mailboxes.find(isInbox) ?? $mailboxes[0];
+  $: inboxHref = inbox ? `/mailbox/${inbox.id}` : "/";
 </script>
 
 <style>
@@ -61,6 +67,14 @@
     font-weight: 500;
     font-size: 1.25rem;
     margin-inline-end: 1rem;
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+    transition: opacity 150ms ease;
+  }
+
+  .logo:hover {
+    opacity: 0.85;
   }
 
   @media screen and (max-width: 600px) {
@@ -120,7 +134,9 @@
     <Menu />
     <Ripple />
   </div>
-  <div class="logo"><Brand /></div>
+  <a class="logo na" href={inboxHref} aria-label={$locale.mailboxes.Inbox} title={$locale.mailboxes.Inbox}>
+    <Brand />
+  </a>
   <div class="q-wrap-wrap">
     <div class="q-wrap">
       <div class="search-icon">
