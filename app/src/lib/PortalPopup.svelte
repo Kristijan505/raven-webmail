@@ -33,13 +33,17 @@
 
 	const click = (e?: Event) => {
 		if (!open) return;
-		// Keep the popup open for clicks INSIDE it when closeOnInsideClick is
-		// false (e.g. the account menu: copy-email row + selectable details).
-		// Match against the DOM (.popup) rather than a bound node ref — a listener
-		// added in onMount doesn't reliably see bind:this update in legacy mode.
-		// Outside clicks, window blur and the self-closing actions still dismiss it.
 		const target = e?.target;
+		// Keep the popup open for clicks INSIDE it when closeOnInsideClick is false
+		// (account menu: copy-email row + selectable details). Match the DOM (.popup),
+		// not a bound ref — a listener added in onMount doesn't see bind:this update
+		// in legacy mode.
 		if (!closeOnInsideClick && target instanceof Element && target.closest(".popup")) return;
+		// The blur listener is capture-phase, so it ALSO fires when the trigger button
+		// blurs as you click inside the popup (e.g. clicking its background moves focus
+		// off the button). For closeOnInsideClick=false, ignore those element blurs —
+		// the page is still focused; only a real window blur (tab/app switch) dismisses.
+		if (!closeOnInsideClick && e?.type === "blur" && document.hasFocus()) return;
 		setTimeout(() => {
 			if (autoClose) open = false;
 		}, 5);
