@@ -1,6 +1,9 @@
 import type { Locale } from "../locale";
 
 const locale: Locale = {
+  Name: "Nombre",
+  Email_address: "Dirección de correo",
+  Cancel: "Cancelar",
   
   daily: "por día",
   by_minute: "por minuto",
@@ -116,6 +119,7 @@ const locale: Locale = {
   of: "de",
 
   notifier: {
+    Signature_saved: "Firma guardada",
     Email_address_copied: "Dirección de correo copiada",
     New_folder_created: "Nueva carpeta creada",
     Folder_deleted: "Carpeta eliminada",

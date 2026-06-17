@@ -1,6 +1,9 @@
 import type { Locale } from "../locale";
 
 const locale: Locale = {
+  Name: "Ime",
+  Email_address: "Email adresa",
+  Cancel: "Odustani",
 
   daily: "dnevno",
   by_minute: "po minuti",
@@ -115,6 +118,7 @@ const locale: Locale = {
   of: "od",
 
   notifier: {
+    Signature_saved: "Potpis spremljen",
     Email_address_copied: "Email adresa kopirana",
     New_folder_created: "Nova mapa je stvorena",
     Folder_deleted: "Mapa je izbrisana",

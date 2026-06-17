@@ -8,9 +8,6 @@
   import GoBack from "~icons/mdi/arrow-left";
   import { tooltip } from "$lib/actions";
 
-	$: name = user.name || 'Unnamed';
-	$: letter = name[0] || '';
-
   let html = get(signature);
 
   import { onMount } from "svelte";
@@ -21,75 +18,42 @@
     }, 1);
   })
 
-  let timer: any = null;
-  const onChange = (html: string) => {
-    clearTimeout(timer);
-    timer = setTimeout(async () => {
-      try {
-        await _put("/api/signature", { html })
-        signature.set(html);
-      } catch(e: any) {
-        getNotifier().error(e?.message)
-      }
-    }, 300)
-  }
+  // Explicit save / cancel — editing no longer auto-saves. The old behaviour only
+  // persisted as a side effect of navigating away (the back button), which read as
+  // "saves on back". bind:html keeps `html` current as you type.
+  const save = action(async () => {
+    await _put("/api/signature", { html });
+    signature.set(html);
+    _message($locale.notifier.Signature_saved);
+    goto("/me");
+  })
 
-  import getNotifier, { _message } from "$lib/Notify/notify";
+  const cancel = () => goto("/me");
+
+  import { _message } from "$lib/Notify/notify";
   import { locale } from "$lib/locale";
-	import TransitionPage from '$lib/TransitionPage.svelte';
-	import SignatureEditor from '$lib/Editor/SignatureEditor.svelte';
-	import { get } from "svelte/store";
-  import { _put } from "$lib/util";
+  import TransitionPage from '$lib/TransitionPage.svelte';
+  import SignatureEditor from '$lib/Editor/SignatureEditor.svelte';
+  import AccountHeader from "$lib/Dashboard/AccountHeader.svelte";
+  import Ripple from "$lib/Ripple.svelte";
+  import { get } from "svelte/store";
+  import { action, _put } from "$lib/util";
+  import { goto } from "$app/navigation";
 </script>
 
 <style>
-	.account {
-		flex-direction: column;
+  .account {
+    flex-direction: column;
     --spacing: 1.5rem;
-		background: rgba(0, 0, 0, 0.025);
-		overflow-x: hidden;
-		overflow-y: auto;
-		height: 100%;
-	}
-
-	.main {
-		flex: none;
-		display: flex;
-		flex-direction: row;
-		align-items: center;
-		padding: var(--spacing);
-		padding-top: calc(var(--spacing) * 2);
-	}
-
-	.main > .end {
-		font-size: 1.1em;
-		display: flex;
-		flex-direction: column;
-		margin-left: 1.5em;
-	}
-
-	.main > .end > div {
-		flex: none;
-		white-space: nowrap;
-		line-height: 1.5em;
-	}
-
-	.letter {
-		font-size: 3em;
-		text-transform: uppercase;
-		width: 6rem;
-		height: 6rem;
-		background: var(--red);
-		color: #fff;
-		border-radius: 50%;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		flex: none;
-	}
+    background: rgba(0, 0, 0, 0.025);
+    overflow-x: hidden;
+    overflow-y: auto;
+    height: 100%;
+  }
 
   .page {
     padding-inline: var(--spacing);
+    padding-bottom: 3rem;
   }
 
   .editor {
@@ -97,6 +61,14 @@
     min-height: 20rem;
     display: flex;
     flex-direction: column;
+  }
+
+  .actions {
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    margin-top: 1.25rem;
   }
 
   .back {
@@ -111,7 +83,6 @@
     border-radius: 50%;
     flex: none;
   }
-
 </style>
 
 <svelte:head>
@@ -123,22 +94,26 @@
     <a class="back na btn-dark" href="/me" use:tooltip={$locale.My_account}>
       <GoBack />
     </a>
-    <div class="main">
-      <div class="letter elev3">{letter}</div>
-      <div class="end">
-        <div class="name">{name}</div>
-        <div class="username">{user.username}</div>
-        <div class="address">{user.address}</div>
-      </div>
-    </div>
+
+    <AccountHeader {user} />
 
     <div class="page">
       <h1>{$locale.Edit_your_signature}</h1>
 
       <div class="editor elev3">
-        <SignatureEditor bind:html {onChange} />
+        <SignatureEditor bind:html />
       </div>
 
+      <div class="actions">
+        <button class="btn-light" on:click={cancel}>
+          {$locale.Cancel}
+          <Ripple />
+        </button>
+        <button class="btn-light btn-primary elev2" on:click={save}>
+          {$locale.Save}
+          <Ripple />
+        </button>
+      </div>
     </div>
   </div>
 </TransitionPage>

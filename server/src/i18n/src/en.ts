@@ -1,4 +1,7 @@
 export default {
+  Name: "Name",
+  Email_address: "Email address",
+  Cancel: "Cancel",
   
   daily: "daily",
   by_minute: "by minute",
@@ -113,6 +116,7 @@ export default {
   of: "of",
 
   notifier: {
+    Signature_saved: "Signature saved",
     Email_address_copied: "Email address copied",
     New_folder_created: "New folder created",
     Folder_deleted: "Folder deleted",

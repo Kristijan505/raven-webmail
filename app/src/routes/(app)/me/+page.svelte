@@ -7,9 +7,6 @@
   // `user.name = ...` edit in editName() isn't re-derived away (see mailbox/search).
   $: if (data !== lastData) { lastData = data; user = data?.user ?? null; }
 
-	$: name = user?.name || 'Unnamed';
-	$: letter = name[0] || '';
-
 	import LockReset from '~icons/mdi/lock-reset';
 	import DrawPen from '~icons/mdi/draw';
 	import CircularGraph from '$lib/CircularGraph.svelte';
@@ -23,6 +20,7 @@
   import TextField from "$lib/TextField.svelte";
   import { _message } from "$lib/Notify/notify";
   import { locale } from "$lib/locale";
+  import AccountHeader from "$lib/Dashboard/AccountHeader.svelte";
 	import TransitionPage from '$lib/TransitionPage.svelte';
 
 	const gb = (size: number) => (size / 1024 ** 3).toFixed(2);
@@ -77,42 +75,6 @@
 
 	.bottom-space {
 		height: 7em;
-		flex: none;
-	}
-
-	.main {
-		flex: none;
-		display: flex;
-		flex-direction: row;
-		align-items: center;
-		padding: var(--spacing);
-		padding-top: calc(var(--spacing) * 2);
-	}
-
-	.main > .end {
-		font-size: 1.1em;
-		display: flex;
-		flex-direction: column;
-		margin-left: 1.5em;
-	}
-
-	.main > .end > div {
-		flex: none;
-		white-space: nowrap;
-		line-height: 1.5em;
-	}
-
-	.letter {
-		font-size: 3em;
-		text-transform: uppercase;
-		width: 6rem;
-		height: 6rem;
-		background: var(--red);
-		color: #fff;
-		border-radius: 50%;
-		display: flex;
-		align-items: center;
-		justify-content: center;
 		flex: none;
 	}
 
@@ -196,14 +158,7 @@
 <TransitionPage>
   {#if user}
   <div class="account">
-    <div class="main">
-      <div class="letter elev3">{letter}</div>
-      <div class="end">
-        <div class="name">{name}</div>
-        <div class="username">{user.username}</div>
-        <div class="address">{user.address}</div>
-      </div>
-    </div>
+    <AccountHeader {user} />
   
     <div class="box elev3 common-actions">
       <div class="box-title">{$locale.Common_actions}</div>
