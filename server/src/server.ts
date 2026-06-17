@@ -44,6 +44,15 @@ const injectCspNonce: RequestHandler = (req, res, next) => {
   const nonce = (res.locals as any)?.nonce as string | undefined;
   if (!nonce) return next();
 
+  // The HTML shell bakes a per-request CSP nonce into its <script> tags, so it
+  // must never be reused from cache: a cached body (old nonce) paired with a
+  // freshly generated response header (new nonce) blocks every inline script and
+  // the app hangs on the loading screen — only a hard reload recovers. Drop the
+  // conditional request headers so the page handler can't answer 304 with a
+  // stale body; the rewritten HTML is additionally marked no-store below.
+  delete req.headers["if-none-match"];
+  delete req.headers["if-modified-since"];
+
   const chunks: Buffer[] = [];
   let deferredHeaders: Record<string, any> | undefined;
 
@@ -87,6 +96,11 @@ const injectCspNonce: RequestHandler = (req, res, next) => {
         const html = body.toString("utf8").replace(/<script(?=[\s>])/gi, `<script nonce="${nonce}"`);
         body = Buffer.from(html, "utf8");
       }
+      // Per-request nonce -> the shell can't be cached or revalidated, or a stale
+      // cached body fails CSP against the freshly generated header.
+      res.setHeader("cache-control", "no-store");
+      res.removeHeader("etag");
+      res.removeHeader("last-modified");
       res.removeHeader("content-length"); // length changed -> chunked (compression-safe)
     }
 
