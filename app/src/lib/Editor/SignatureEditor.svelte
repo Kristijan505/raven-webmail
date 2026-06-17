@@ -29,6 +29,7 @@
   setContext("editor", context);
 
   import css from "./iframe.css?raw";
+  import dompurify from "dompurify";
   import { setContext } from "svelte";
   import { writable } from "svelte/store";
   import type { Writable } from "svelte/store";
@@ -62,7 +63,11 @@
       _document.head.appendChild(style);
 
       _document.body.contentEditable = "true";
-      _document.body.innerHTML = html;
+      // Sandboxed (no allow-scripts) iframe: sanitize so scripts / inline event
+      // handlers / nested srcdoc-iframes in a saved signature are stripped instead
+      // of being blocked by the sandbox and logged to the console. Keeps
+      // formatting, inline styles and (base64) images.
+      _document.body.innerHTML = dompurify.sanitize(html, { ADD_DATA_URI_TAGS: ["img"] });
       
       const obs = new MutationObserver(() => {
         html = _document.body.innerHTML;

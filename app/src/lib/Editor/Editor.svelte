@@ -31,6 +31,7 @@
   setContext("editor", context);
 
   import css from "./iframe.css?raw";
+  import dompurify from "dompurify";
   import { setContext } from "svelte";
   import { writable } from "svelte/store";
   import type { Writable } from "svelte/store";
@@ -61,7 +62,14 @@
       _document.head.appendChild(style);
 
       _document.body.contentEditable = "true";
-      _document.body.innerHTML = draft.html;
+      // Sanitize before injecting: draft.html is untrusted (quoted sender HTML on
+      // reply/forward; a saved signature on a new mail) and this iframe is
+      // sandboxed WITHOUT allow-scripts. Inline event handlers / nested
+      // srcdoc-iframes in that HTML would otherwise be blocked by the sandbox and
+      // spam "Blocked script execution" to the console; stripping them here also
+      // keeps them out of what we send. Formatting, inline styles and (base64)
+      // images are preserved.
+      _document.body.innerHTML = dompurify.sanitize(draft.html, { ADD_DATA_URI_TAGS: ["img"] });
       
       const obs = new MutationObserver(() => {
         draft.html = _document.body.innerHTML;
