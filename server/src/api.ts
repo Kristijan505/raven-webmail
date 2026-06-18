@@ -8,13 +8,31 @@ import qs from "qs";
 import { Config } from "./config";
 import * as i18n from "./i18n/i18n";
 import { RAVEN_SIGNATURE_META_KEY } from "./metadata";
-import { Readable } from "stream";
+import { Readable, Transform } from "stream";
 import * as dns from "dns/promises";
 import * as net from "net";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
 
 const fromWeb = (Readable as any).fromWeb as ((stream: any) => NodeJS.ReadableStream);
+
+// Returns a Transform that passes bytes through unchanged but destroys the
+// pipeline with an error once `maxBytes` have been seen. This enforces a hard
+// download cap regardless of whether the upstream server sends Content-Length
+// (chunked responses omit it, making a header-only check bypassable).
+const byteLimiter = (maxBytes: number): Transform => {
+  let seen = 0;
+  return new Transform({
+    transform(chunk, _encoding, callback) {
+      seen += chunk.length;
+      if (seen > maxBytes) {
+        callback(new Error(`Response exceeds ${maxBytes} byte limit`));
+      } else {
+        callback(null, chunk);
+      }
+    },
+  });
+};
 const LoginSchema = z.object({
   username: z.string().min(1),
   password: z.string().min(1),
@@ -519,8 +537,12 @@ export const api = (config: Config) => {
     if (!/^image\//i.test(contentType)) {
       throw new ApiError(StatusCodes.UNSUPPORTED_MEDIA_TYPE, "Not an image");
     }
+
+    const IMAGE_SIZE_LIMIT = 10 * 1024 * 1024; // 10 MiB
+
+    // Reject immediately if Content-Length is present and already over the limit.
     const contentLength = Number(upstream.headers.get("content-length") || "0");
-    if (contentLength > 10 * 1024 * 1024) {
+    if (contentLength > IMAGE_SIZE_LIMIT) {
       throw new ApiError(StatusCodes.BAD_GATEWAY, "Image too large");
     }
 
@@ -528,7 +550,16 @@ export const api = (config: Config) => {
     res.setHeader("x-content-type-options", "nosniff");
     res.setHeader("cache-control", "private, max-age=86400");
     if (upstream.body) {
-      fromWeb(upstream.body as any).pipe(res);
+      // Enforce the byte cap while streaming so that servers omitting
+      // Content-Length (chunked transfer encoding) cannot bypass the check.
+      const limiter = byteLimiter(IMAGE_SIZE_LIMIT);
+      limiter.on("error", () => {
+        // Abort the response mid-stream; the client receives a truncated body
+        // and a connection reset, which is the correct outcome for an oversize
+        // image — we cannot send a proper HTTP error after headers are flushed.
+        res.destroy();
+      });
+      fromWeb(upstream.body as any).pipe(limiter).pipe(res);
     } else {
       res.end();
     }
