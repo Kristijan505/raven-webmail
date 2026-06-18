@@ -37,8 +37,15 @@ const LoginSchema = z.object({
   username: z.string().min(1),
   password: z.string().min(1),
 });
+// Signature HTML is stored in WildDuck metadata and rendered in two places:
+//   1. SignatureEditor (sandboxed iframe + DOMPurify before innerHTML assignment)
+//   2. Compose window (sanitize() helper runs DOMPurify before draft creation)
+// Both paths sanitise before display, so the XSS surface is limited to those
+// renderers. We still cap length here to prevent trivially large payloads from
+// being stored in user metadata (WildDuck has no built-in limit on metaData).
+const SIGNATURE_MAX_BYTES = 512 * 1024; // 512 KiB — enough for any realistic signature
 const SignatureSchema = z.object({
-  html: z.string(),
+  html: z.string().max(SIGNATURE_MAX_BYTES, "Signature HTML exceeds maximum allowed size"),
 });
 
 // Profile fields the webmail is allowed to update. zod strips every other key,
@@ -350,7 +357,14 @@ export const api = (config: Config) => {
   }))
 
   api.get("/mailboxes/:mailbox/messages", handler(async (req, res) => {
-    const body = await get(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages${query(req)}`, token(req));
+    // Allow-list the two params the UI sends (pagination cursor + page size).
+    // Forwarding req.query verbatim would let clients inject undocumented
+    // WildDuck params (metaData, threadCounters, unseen, etc.).
+    const allowed: Record<string, string> = {};
+    if (typeof req.query.next === "string" && req.query.next) allowed.next = req.query.next;
+    if (typeof req.query.limit === "string" && req.query.limit) allowed.limit = req.query.limit;
+    const qs_str = qs.stringify(allowed);
+    const body = await get(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages${qs_str ? "?" + qs_str : ""}`, token(req));
     res.json(body);
   }))
 
@@ -482,7 +496,13 @@ export const api = (config: Config) => {
     contentType && (headers["content-type"] = contentType);
     contentLength && (headers["content-length"] = contentLength);
 
-    const back = await fetch(url(`/users/${userId(req)}/storage${query(req)}`), {
+    // Allow-list the two params the upload UI sends; forwarding req.query
+    // verbatim would expose undocumented WildDuck storage params.
+    const storageAllowed: Record<string, string> = {};
+    if (typeof req.query.filename === "string" && req.query.filename) storageAllowed.filename = req.query.filename;
+    if (typeof req.query.contentType === "string" && req.query.contentType) storageAllowed.contentType = req.query.contentType;
+    const storageQs = qs.stringify(storageAllowed);
+    const back = await fetch(url(`/users/${userId(req)}/storage${storageQs ? "?" + storageQs : ""}`), {
       method: "POST",
       headers: headers,
       body: req as any,
