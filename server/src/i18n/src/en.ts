@@ -7,7 +7,7 @@ export default {
   },
   validation: {
     Field_required: "Oops! You missed this field",
-    Invalid_email: "Oops! This is not a valid email address",
+    Invalid_email: "Invalid email address",
     No_recipients: "This message has no recipients",
     Password_too_short: "Password must have 6 characters or more",
     Passwords_dont_match: "Passwords do not match",

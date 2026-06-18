@@ -9,7 +9,7 @@ const locale: Locale = {
   },
   validation: {
     Field_required: "Ups! Preskočili ste ovo polje",
-    Invalid_email: "Ups! Ovo nije ispravna email adresa",
+    Invalid_email: "Neispravna email adresa",
     No_recipients: "Poruka nema primatelja",
     Password_too_short: "Lozinka mora imati barem 6 znakova",
     Passwords_dont_match: "Lozinke se ne podudaraju",

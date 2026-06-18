@@ -9,7 +9,7 @@ const locale: Locale = {
   },
   validation: {
     Field_required: "¡Ups! Te faltó completar este campo",
-    Invalid_email: "¡Ups! Esta no es una dirección de correo válida",
+    Invalid_email: "Dirección de correo no válida",
     No_recipients: "Este mensaje no tiene destinatarios",
     Password_too_short: "La contraseña debe tener 6 caracteres o más",
     Passwords_dont_match: "Las contraseñas no coinciden",

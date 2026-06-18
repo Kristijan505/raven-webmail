@@ -12,7 +12,7 @@ const locale: Locale = {
   },
   "validation": {
     "Field_required": "Ops! Hai saltato questo campo",
-    "Invalid_email": "Ops! Questo non è un indirizzo email valido",
+    "Invalid_email": "Indirizzo email non valido",
     "No_recipients": "Questo messaggio non ha destinatari",
     "Password_too_short": "La password deve avere almeno 6 caratteri",
     "Passwords_dont_match": "Le password non corrispondono",
