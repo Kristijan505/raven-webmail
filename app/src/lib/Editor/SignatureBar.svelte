@@ -66,7 +66,7 @@
     padding: 0.5rem 0.1em;
     user-select: none;
     cursor: pointer;
-    color: #444;
+    color: var(--text-muted);
     transition: background-color 300ms ease, color 300ms ease;
     border-radius: 3px;
     position: relative;
@@ -75,8 +75,8 @@
 
   x-toolbar :global(x-command:hover),
   x-toolbar :global(x-command.hover) {
-    color: #111;
-    background-color: rgba(0,0,0,0.15);
+    color: var(--text);
+    background-color: var(--btn-dark-bg);
   }
 
   x-toolbar :global(x-command:active) {

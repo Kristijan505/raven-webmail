@@ -16,6 +16,26 @@
     --btn-radius: 0.25em;
     --btn-padding: 0.75rem;
     --top-h: 4rem;
+
+    /* Semantic / UI tokens — dark overrides live in the two dark blocks below.
+       Tokens not repeated there keep this light value in dark mode too. */
+    --red-hover: #bf3434;
+    --overlay-bg: rgba(0, 0, 0, 0.4);
+    --flag-color: #e3c066;
+    --send-bg: #4273e8;
+    --send-bg-hover: #507be1;
+    --color-success: #2e7d32;
+    --color-warning: #b8860b;
+    --color-error: #c52727;
+    --color-info: #1976d2;
+    --warning-bg: #fff6e0;
+    --warning-border: #f0d68a;
+    --warning-text: #6a5500;
+    --error-bg: #ffe1e1;
+    --error-text: #a40000;
+    --highlight-bg: #ffe39a;
+    --scrollbar-thumb: #c4c4c4;
+    --scrollbar-thumb-hover: #a0a0a0;
 }
 
 /* Dark theme (chrome only; email bodies keep their own colours in the iframe). */
@@ -29,6 +49,18 @@
     --selected-border: #3a5a86;
     --border: rgba(255, 255, 255, 0.14);
     --btn-dark-bg: rgba(255, 255, 255, 0.08);
+    --color-success: #5fbf6a;
+    --color-warning: #d8a93a;
+    --color-error: #f06a6a;
+    --color-info: #5a9fe0;
+    --warning-bg: #3a3320;
+    --warning-border: #5c5026;
+    --warning-text: #e3c977;
+    --error-bg: #4a2424;
+    --error-text: #f0a0a0;
+    --highlight-bg: #6b5d1a;
+    --scrollbar-thumb: #454b54;
+    --scrollbar-thumb-hover: #5a616b;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -42,6 +74,18 @@
         --selected-border: #3a5a86;
         --border: rgba(255, 255, 255, 0.14);
         --btn-dark-bg: rgba(255, 255, 255, 0.08);
+        --color-success: #5fbf6a;
+        --color-warning: #d8a93a;
+        --color-error: #f06a6a;
+        --color-info: #5a9fe0;
+        --warning-bg: #3a3320;
+        --warning-border: #5c5026;
+        --warning-text: #e3c977;
+        --error-bg: #4a2424;
+        --error-text: #f0a0a0;
+        --highlight-bg: #6b5d1a;
+        --scrollbar-thumb: #454b54;
+        --scrollbar-thumb-hover: #5a616b;
     }
 }
 
@@ -176,7 +220,7 @@ button {
 }
 
 .btn-primary:hover {
-    background-color: #bf3434;
+    background-color: var(--red-hover);
 }
 
 .na {
@@ -216,11 +260,11 @@ button {
 }
 
 .thin-scroll::-webkit-scrollbar-thumb {
-    background: #aaa;
+    background: var(--scrollbar-thumb);
 }
 
 .thin-scroll::-webkit-scrollbar-thumb:hover {
-    background: #888;
+    background: var(--scrollbar-thumb-hover);
 }
 
 .elev2 {

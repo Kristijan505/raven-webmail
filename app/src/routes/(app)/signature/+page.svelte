@@ -98,7 +98,7 @@
   }
 
   .editor {
-    background: #fff;
+    background: var(--surface);
     min-height: 20rem;
     display: flex;
     flex-direction: column;

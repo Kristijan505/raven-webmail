@@ -18,7 +18,7 @@
     margin-top: 0.5em;
     margin-bottom: 0.25em;
     border-radius: 1em;
-    background: #eee;
+    background: var(--surface-2);
 
     display: flex;
     flex-direction: row;
@@ -26,8 +26,8 @@
   }
 
   x-addr.invalid {
-    background: #ffd7d7;
-    color: #a40000;
+    background: var(--error-bg);
+    color: var(--error-text);
   }
 
   x-addr:first-child{

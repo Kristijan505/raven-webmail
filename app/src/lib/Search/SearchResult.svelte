@@ -90,7 +90,7 @@
 
 <style>
   .message {
-    border-bottom: rgba(0,0,0,0.1) 1px solid;
+    border-bottom: var(--border) 1px solid;
     display: flex;
     flex-direction: row;
     align-items: center;
@@ -135,7 +135,7 @@
   }
 
   .flagged > .flag {
-    color: #e3c066;
+    color: var(--flag-color);
   }
 
   .from {
@@ -252,8 +252,8 @@
   }
 
   .message :global(.highlight) {
-    background: yellow;
-    color: #000;
+    background: var(--highlight-bg);
+    color: var(--text);
   }
 </style>
 

@@ -11,11 +11,11 @@
     width: 3em;
     height: 3em;
     border-radius: 50%;
-    color: #444;
+    color: var(--text-muted);
   }
 
   x-action:hover {
-    color: #111;
+    color: var(--text);
   }
 
   x-action > :global(svg) {
@@ -53,7 +53,7 @@
     right: -6em;
     width: 20rem;
     max-height: 70vh;
-    background: #fff;
+    background: var(--surface);
     border-radius: 3px;
     display: flex;
     max-width: 80vw;
@@ -106,7 +106,7 @@
   .add {
     padding: 0.5rem 0.75rem;
     border-radius: 0.25rem;
-    color: #444;
+    color: var(--text-muted);
   }
 </style>
 
@@ -245,7 +245,7 @@ import { locale } from "$lib/locale";
   {#if open}
     <x-popup transition:fly|local={{x: 0, y: 20, duration: 250}}>
       <svg class="arrow" viewBox="0 0 24 24" preserveAspectRatio="none">
-        <path d="M0 0 L24 0 L12 24 L 0 0" fill="#fff"/>
+        <path d="M0 0 L24 0 L12 24 L 0 0" fill="var(--surface)"/>
       </svg>
       <x-popup-body>
         <x-scroll>

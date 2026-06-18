@@ -189,8 +189,8 @@
     box-shadow: rgba(0,0,0,0.4) 0 0 8px 0;
     border-radius: 0.25rem;
     padding: 1rem;
-    color: #333;
-    background: #fff;
+    color: var(--text);
+    background: var(--surface);
   }
 
   .title-bar {

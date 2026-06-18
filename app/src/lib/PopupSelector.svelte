@@ -50,7 +50,7 @@
     display: flex;
     flex-direction: row;
     align-items: center;
-    border: rgba(0,0,0,0.18) 1px solid;
+    border: var(--border) 1px solid;
   }
 
   .arrow {

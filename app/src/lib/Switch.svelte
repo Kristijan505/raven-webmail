@@ -36,7 +36,7 @@
 		position: relative;
 		width: 2rem;
 		height: 0.8rem;
-		background-color: #ddd;
+		background-color: var(--surface-2);
 		border-radius: 1rem;
 		transition: background-color 125ms ease;
     flex: none;
@@ -47,7 +47,7 @@
 	}
 	
 	.handle {
-		background: #fff;
+		background: var(--surface);
 		box-shadow: rgba(0,0,0,0.5) 0 0 2px 1px;
 		width: 1rem;
 		height: 1rem;

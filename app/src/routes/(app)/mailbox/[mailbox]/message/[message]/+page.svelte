@@ -156,13 +156,13 @@
     display: flex;
     align-items: center;
     gap: 1rem;
-    background: #fff6e0;
-    border: 1px solid #f0d68a;
+    background: var(--warning-bg);
+    border: 1px solid var(--warning-border);
     border-radius: 6px;
     padding: 0.6rem 1rem;
     margin-bottom: 1rem;
     font-size: 0.9rem;
-    color: #6a5500;
+    color: var(--warning-text);
   }
 
   .remote-images > button {

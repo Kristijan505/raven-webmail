@@ -19,7 +19,7 @@
     padding: 0.5rem;
     flex: none;
     font-family: monospace;
-    border-right: #ccc 1px solid;
+    border-right: var(--border) 1px solid;
     text-align: right;
     line-height: var(--line-height);
   }

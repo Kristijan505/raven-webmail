@@ -35,7 +35,7 @@
   }
 
   .message {
-    background: #c52727;
+    background: var(--color-error);
     padding: 0.5rem;
     text-shadow: #2d3033 0 1px 0;
     font-weight: 600;
@@ -48,7 +48,7 @@
     display: flex;
     width: 1.5rem;
     height: 0.75rem;
-    color: #c52727;
+    color: var(--color-error);
     margin-top: -1px;
   }
 

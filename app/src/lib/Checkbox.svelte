@@ -24,7 +24,7 @@
     width: 2rem;
     height: 2rem;
     border-radius: 50%;
-    color: #111;
+    color: var(--text);
     transition: color 200ms ease;
     display: flex;
     align-items: center;

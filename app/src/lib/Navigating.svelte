@@ -38,7 +38,7 @@
 
 <style>
   .navigating {
-    background-color: #fff;
+    background-color: var(--surface);
     position: fixed;
     z-index: 10000;
     top: 0;

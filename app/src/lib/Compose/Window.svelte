@@ -104,8 +104,8 @@ import { locale } from "$lib/locale";
     height: 87.5%;
     top: 5%;
     left: 5%;
-    background: #fff;
-    color: #202124;
+    background: var(--surface);
+    color: var(--text);
     border-radius: 0.5rem;
     z-index: 100200;
     display: flex;
@@ -122,12 +122,12 @@ import { locale } from "$lib/locale";
     box-sizing: border-box;
     align-items: center;
     justify-content: flex-end;
-    background: #333;
+    background: #333; /* intentional dark compose chrome (white text), like the navbar */
     cursor: pointer;
   }
 
   .window-title {
-    color: #ddd;
+    color: #ddd; /* light title on the dark compose chrome */
     font-size: 0.9rem;
     margin-inline-end: auto;
     margin-inline-start: 1rem;
@@ -188,7 +188,7 @@ import { locale } from "$lib/locale";
 
   .label-input {
     position: relative;
-    border-bottom: #eee 1px solid;
+    border-bottom: var(--border) 1px solid;
     display: flex;
     flex-direction: row;
     flex: none;
@@ -201,7 +201,7 @@ import { locale } from "$lib/locale";
 
   x-label {
     font-size: 0.9rem;
-    color: #777;
+    color: var(--text-muted);
     align-self: flex-start;
     line-height: 2.5rem;
     height: 2.25rem;
@@ -232,7 +232,7 @@ import { locale } from "$lib/locale";
     display: flex;
     align-items: center;
     justify-content: center;
-    background: #fff;
+    background: var(--surface);
     font-size: 0.9rem;
     height: 2.75rem;
   }
@@ -246,7 +246,7 @@ import { locale } from "$lib/locale";
     justify-content: center;
     padding: 0.25em;
     cursor: pointer;
-    color: #777;
+    color: var(--text-muted);
   }
 
   x-toggle-cc > span:hover {

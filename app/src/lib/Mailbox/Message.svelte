@@ -109,7 +109,7 @@
   }
 
   .flagged > .flag {
-    color: #e3c066;
+    color: var(--flag-color);
   }
 
   .from {

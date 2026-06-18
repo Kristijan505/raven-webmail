@@ -173,10 +173,10 @@ import { locale } from "$lib/locale";
     align-items: center;
     margin-inline-start: auto;
     margin-inline-end: 1rem;
-    background: #c2dbff;
+    background: var(--selected-bg);
     padding: 0.4em 0.5em;
     border-radius: 100px;
-    color: #555;
+    color: var(--text-muted);
   }
 
   .selection-info > :global(svg) {
@@ -194,7 +194,7 @@ import { locale } from "$lib/locale";
     font-size: 0.8rem;
     padding: 0.5rem 1rem;
     border-radius: 100px;
-    background: #e6e6e6;
+    background: var(--surface-2);
   }
 </style>
 

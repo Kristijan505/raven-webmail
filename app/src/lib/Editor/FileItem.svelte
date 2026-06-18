@@ -37,7 +37,7 @@ import { locale } from "$lib/locale";
     align-content: center;
     padding: 0.5em 0;
     flex: none;
-    background: #fff;
+    background: var(--surface);
   }
 
   x-file:not(:only-child) {
@@ -48,7 +48,7 @@ import { locale } from "$lib/locale";
     flex: none;
     width: 3em;
     height: 3em;
-    background: #ddd;
+    background: var(--surface-2);
     border-radius: 3px;
     margin-inline-end: 1em;
     position: relative;
@@ -80,11 +80,11 @@ import { locale } from "$lib/locale";
   }
 
   .complete {
-    color: #558b2f;
+    color: var(--color-success);
   }
 
   .error {
-    color: #7f0000;
+    color: var(--color-error);
   }
 
   .remove {

@@ -244,7 +244,7 @@
     box-sizing: border-box;
     padding: 0 0 0 0.5rem;
     border-radius: 0.25rem 0.25rem 0 0;
-    background: #333;
+    background: #333; /* intentional dark compose chrome (white text), like the navbar */
     user-select: none;
     cursor: pointer;
     white-space: nowrap;
@@ -284,7 +284,7 @@
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0,0,0,0.4);
+    background: var(--overlay-bg);
     z-index: 100050;
 
   }

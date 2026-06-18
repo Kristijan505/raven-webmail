@@ -65,8 +65,8 @@
     background: var(--surface-2);
   }
 
-  .summary.pass { color: #2e7d32; }
-  .summary.warn { color: #b8860b; }
+  .summary.pass { color: var(--color-success); }
+  .summary.warn { color: var(--color-warning); }
   .summary.fail { color: var(--red); }
 
   .panel {
@@ -96,8 +96,8 @@
     word-break: break-all;
   }
 
-  .icon-pass { color: #2e7d32; display: inline-flex; }
-  .icon-warn { color: #b8860b; display: inline-flex; }
+  .icon-pass { color: var(--color-success); display: inline-flex; }
+  .icon-warn { color: var(--color-warning); display: inline-flex; }
   .icon-fail { color: var(--red); display: inline-flex; }
 
   .original {

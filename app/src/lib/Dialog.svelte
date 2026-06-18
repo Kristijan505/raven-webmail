@@ -28,7 +28,7 @@
     padding: 5rem 1rem;
     cursor: pointer;
     position: absolute;
-    background: rgba(0,0,0,0.4);
+    background: var(--overlay-bg);
     top: 0;
     left: 0;
     width: 100%;

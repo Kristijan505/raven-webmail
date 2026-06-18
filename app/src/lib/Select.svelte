@@ -126,7 +126,7 @@
     width: 100%;
     left: 0;
     z-index: 100000;
-    background: #fff;
+    background: var(--surface);
     max-height: 95vh;
     overflow-x: hidden;
     overflow-y: auto;

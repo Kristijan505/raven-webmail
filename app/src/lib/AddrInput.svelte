@@ -18,7 +18,7 @@
     margin-top: 0.5em;
     margin-bottom: 0.25em;
     border-radius: 1em;
-    background: #eee;
+    background: var(--surface-2);
 
     display: flex;
     flex-direction: row;

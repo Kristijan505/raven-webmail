@@ -100,7 +100,7 @@
     padding: 0.5rem 0.1em;
     user-select: none;
     cursor: pointer;
-    color: #444;
+    color: var(--text-muted);
     transition: background-color 300ms ease, color 300ms ease;
     border-radius: 3px;
     position: relative;
@@ -109,8 +109,8 @@
 
   x-toolbar :global(x-command:hover),
   x-toolbar :global(x-command.hover) {
-    color: #111;
-    background-color: rgba(0,0,0,0.15);
+    color: var(--text);
+    background-color: var(--btn-dark-bg);
   }
 
   x-toolbar :global(x-command:active) {
@@ -138,7 +138,7 @@
   }
   
   .send {
-    background-color: rgb(66, 115, 232);
+    background-color: var(--send-bg);
     color: #fff;
     border-radius: 0.25rem;
     transition: background-color 300ms ease;
@@ -150,7 +150,7 @@
   }
 
   .send:hover {
-    background-color: rgb(80, 123, 225);
+    background-color: var(--send-bg-hover);
   }
 
   .send-label {

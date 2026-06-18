@@ -76,7 +76,7 @@
     flex-direction: row;
     flex: none;
     align-items: center;
-    background: #dfdfdf;
+    background: var(--surface-2);
     margin: 0 0.75rem 0.75rem 0;
   }
 
