@@ -23,6 +23,9 @@ const fromWeb = (Readable as any).fromWeb as ((stream: any) => NodeJS.ReadableSt
 const byteLimiter = (maxBytes: number): Transform => {
   let seen = 0;
   return new Transform({
+    decodeStrings: true,
+    readableObjectMode: false,
+    writableObjectMode: false,
     transform(chunk, _encoding, callback) {
       seen += chunk.length;
       if (seen > maxBytes) {
@@ -33,6 +36,21 @@ const byteLimiter = (maxBytes: number): Transform => {
     },
   });
 };
+
+// Allowed raster image MIME types for the proxy-image route. SVG is intentionally
+// excluded: even though SVG is a valid image/* subtype, SVG files can contain
+// <script> elements and event handlers that execute when opened directly in a tab
+// or used as an <img> without a strict CSP. Raster formats cannot contain
+// executable content and are safe to proxy.
+const ALLOWED_IMAGE_TYPES = new Set([
+  "image/jpeg", "image/png", "image/gif", "image/webp",
+  "image/avif", "image/bmp", "image/tiff", "image/x-icon", "image/vnd.microsoft.icon",
+]);
+
+// Hard byte cap for proxied images (enforced both via Content-Length check
+// and the byteLimiter Transform for chunked responses).
+const IMAGE_SIZE_LIMIT = 10 * 1024 * 1024; // 10 MiB
+
 const LoginSchema = z.object({
   username: z.string().min(1),
   password: z.string().min(1),
@@ -69,7 +87,10 @@ const MailboxUpdateSchema = z.object({
 // `message` is either a single numeric id or a comma-separated list / range that
 // WildDuck's bulk-update endpoint accepts (e.g. "1,2,3" or "1:*").
 const BulkMessageUpdateSchema = z.object({
-  message: z.string().min(1),
+  // WildDuck accepts a single numeric id, a comma-separated list ("1,2,3"),
+  // a range ("1:5"), or the wildcard sentinel "1:*". Constrain to those
+  // characters so arbitrary strings cannot be smuggled into the upstream URL.
+  message: z.string().min(1).regex(/^[\d,: *]+$/, "Invalid message range"),
   seen: z.boolean().optional(),
   flagged: z.boolean().optional(),
   moveTo: z.string().min(1).optional(),
@@ -97,8 +118,8 @@ const CreateMessageSchema = z.object({
   cc: z.array(AddressSchema).optional(),
   bcc: z.array(AddressSchema).optional(),
   subject: z.string().optional(),
-  html: z.string().optional(),
-  text: z.string().optional(),
+  html: z.string().max(5 * 1024 * 1024).optional(),
+  text: z.string().max(5 * 1024 * 1024).optional(),
   files: z.array(z.string()).optional(),
   reference: ReferenceSchema.optional(),
 });
@@ -363,8 +384,8 @@ export const api = (config: Config) => {
     const allowed: Record<string, string> = {};
     if (typeof req.query.next === "string" && req.query.next) allowed.next = req.query.next;
     if (typeof req.query.limit === "string" && req.query.limit) allowed.limit = req.query.limit;
-    const qs_str = qs.stringify(allowed);
-    const body = await get(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages${qs_str ? "?" + qs_str : ""}`, token(req));
+    const qsStr = qs.stringify(allowed);
+    const body = await get(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages${qsStr ? "?" + qsStr : ""}`, token(req));
     res.json(body);
   }))
 
@@ -554,20 +575,9 @@ export const api = (config: Config) => {
     }
 
     const contentType = (upstream.headers.get("content-type") || "").toLowerCase().split(";")[0].trim();
-    // Allow raster image types only. SVG is excluded: even though SVG is a valid
-    // image/* subtype, SVG files can contain <script> elements and event handlers
-    // that would execute if the browser renders the response directly (e.g. opened
-    // in a tab or used as an <img> without a strict CSP). Raster formats cannot
-    // contain executable content and are safe to proxy.
-    const ALLOWED_IMAGE_TYPES = new Set([
-      "image/jpeg", "image/png", "image/gif", "image/webp",
-      "image/avif", "image/bmp", "image/tiff", "image/x-icon", "image/vnd.microsoft.icon",
-    ]);
     if (!ALLOWED_IMAGE_TYPES.has(contentType)) {
       throw new ApiError(StatusCodes.UNSUPPORTED_MEDIA_TYPE, "Not a supported image type");
     }
-
-    const IMAGE_SIZE_LIMIT = 10 * 1024 * 1024; // 10 MiB
 
     // Reject immediately if Content-Length is present and already over the limit.
     const contentLength = Number(upstream.headers.get("content-length") || "0");
@@ -581,14 +591,17 @@ export const api = (config: Config) => {
     if (upstream.body) {
       // Enforce the byte cap while streaming so that servers omitting
       // Content-Length (chunked transfer encoding) cannot bypass the check.
+      const src = fromWeb(upstream.body as any) as Readable;
       const limiter = byteLimiter(IMAGE_SIZE_LIMIT);
       limiter.on("error", () => {
-        // Abort the response mid-stream; the client receives a truncated body
-        // and a connection reset, which is the correct outcome for an oversize
-        // image — we cannot send a proper HTTP error after headers are flushed.
+        // Abort both the upstream read and the response mid-stream. The client
+        // receives a truncated body and a connection reset — the correct outcome
+        // for an oversize image since we cannot send a proper HTTP error after
+        // headers are already flushed.
+        src.destroy();
         res.destroy();
       });
-      fromWeb(upstream.body as any).pipe(limiter).pipe(res);
+      src.pipe(limiter).pipe(res);
     } else {
       res.end();
     }
