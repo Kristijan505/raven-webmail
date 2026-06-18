@@ -553,9 +553,18 @@ export const api = (config: Config) => {
       throw new ApiError(StatusCodes.BAD_GATEWAY, "Cannot fetch image");
     }
 
-    const contentType = upstream.headers.get("content-type") || "";
-    if (!/^image\//i.test(contentType)) {
-      throw new ApiError(StatusCodes.UNSUPPORTED_MEDIA_TYPE, "Not an image");
+    const contentType = (upstream.headers.get("content-type") || "").toLowerCase().split(";")[0].trim();
+    // Allow raster image types only. SVG is excluded: even though SVG is a valid
+    // image/* subtype, SVG files can contain <script> elements and event handlers
+    // that would execute if the browser renders the response directly (e.g. opened
+    // in a tab or used as an <img> without a strict CSP). Raster formats cannot
+    // contain executable content and are safe to proxy.
+    const ALLOWED_IMAGE_TYPES = new Set([
+      "image/jpeg", "image/png", "image/gif", "image/webp",
+      "image/avif", "image/bmp", "image/tiff", "image/x-icon", "image/vnd.microsoft.icon",
+    ]);
+    if (!ALLOWED_IMAGE_TYPES.has(contentType)) {
+      throw new ApiError(StatusCodes.UNSUPPORTED_MEDIA_TYPE, "Not a supported image type");
     }
 
     const IMAGE_SIZE_LIMIT = 10 * 1024 * 1024; // 10 MiB
