@@ -35,6 +35,49 @@ const MeSchema = z.object({
   { message: "existingPassword is required to change the password" }
 );
 
+// Rename a mailbox — the only field the UI sends is the new IMAP path.
+const MailboxUpdateSchema = z.object({
+  path: z.string().min(1),
+});
+
+// Bulk message operations: mark seen/unseen, flag/unflag, move to another mailbox.
+// `message` is either a single numeric id or a comma-separated list / range that
+// WildDuck's bulk-update endpoint accepts (e.g. "1,2,3" or "1:*").
+const BulkMessageUpdateSchema = z.object({
+  message: z.string().min(1),
+  seen: z.boolean().optional(),
+  flagged: z.boolean().optional(),
+  moveTo: z.string().min(1).optional(),
+});
+
+// Address used in draft creation (To / Cc / Bcc fields).
+const AddressSchema = z.object({
+  name: z.string().optional(),
+  address: z.string().min(1),
+});
+
+// Reference to a message being replied to or forwarded.
+const ReferenceSchema = z.object({
+  mailbox: z.string().min(1),
+  id: z.number().int().positive(),
+  action: z.enum(["reply", "replyAll", "forward"]),
+  attachments: z.boolean(),
+});
+
+// Draft creation body — mirrors createMessageBody() in app/src/lib/Compose/compose.ts.
+// Zod strips any extra keys the client might inject before we proxy to WildDuck.
+const CreateMessageSchema = z.object({
+  draft: z.boolean().optional(),
+  to: z.array(AddressSchema).optional(),
+  cc: z.array(AddressSchema).optional(),
+  bcc: z.array(AddressSchema).optional(),
+  subject: z.string().optional(),
+  html: z.string().optional(),
+  text: z.string().optional(),
+  files: z.array(z.string()).optional(),
+  reference: ReferenceSchema.optional(),
+});
+
 // Encode a single user-controlled URL path segment before interpolating it into
 // the upstream WildDuck URL. Express decodes %2F/%3F/%26 inside a path param and
 // the WHATWG URL parser collapses ../, which together let a crafted id climb
@@ -283,7 +326,8 @@ export const api = (config: Config) => {
   }))
 
   api.put("/mailboxes/:mailbox", handler(async (req, res) => {
-    const json = await put(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}`, token(req), req.body);
+    const body = validate(() => MailboxUpdateSchema.parse(req.body));
+    const json = await put(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}`, token(req), body);
     res.json(json);
   }))
 
@@ -293,12 +337,14 @@ export const api = (config: Config) => {
   }))
 
   api.put("/mailboxes/:mailbox/messages", handler(async (req, res) => {
-    const json = await put(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages`, token(req), req.body);
+    const body = validate(() => BulkMessageUpdateSchema.parse(req.body));
+    const json = await put(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages`, token(req), body);
     res.json(json);
   }))
 
   api.post("/mailboxes/:mailbox/messages", handler(async (req, res) => {
-    const json = await post(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages`, token(req), req.body);
+    const body = validate(() => CreateMessageSchema.parse(req.body));
+    const json = await post(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages`, token(req), body);
     res.json(json);
   }))
 
@@ -319,8 +365,16 @@ export const api = (config: Config) => {
 
   api.put("/mailboxes/:mailbox/messages/:message/flag", handler(async (req, res) => {
     const value = !!req.body.value;
+    // Validate the message id is a numeric string before embedding it in the
+    // bulk-update body sent to WildDuck (it is not in the URL path here, so
+    // seg() does not apply, but we still must reject arbitrary values).
+    // seg() also rejects empty / non-string / separator values.
+    const messageId = seg(req.params.message);
+    if (!/^\d+$/.test(messageId)) {
+      throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid message id");
+    }
     const body = await put(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages`, token(req), {
-      message: req.params.message,
+      message: messageId,
       flagged: value,
     })
 
@@ -328,7 +382,9 @@ export const api = (config: Config) => {
   }))
 
   api.post("/mailboxes/:mailbox/messages/:message/submit", handler(async (req, res) => {
-    const body = await post(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages/${seg(req.params.message)}/submit`, token(req), req.body);
+    // The submit endpoint takes no meaningful client-supplied fields — the draft
+    // to send is identified by the URL params alone. Accept an empty body only.
+    const body = await post(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages/${seg(req.params.message)}/submit`, token(req), {});
     res.json(body);
   }))
 
