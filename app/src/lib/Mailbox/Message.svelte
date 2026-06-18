@@ -105,7 +105,7 @@
   }
 
   .flag {
-    transition: var(btn-transition), color 200ms ease;
+    transition: var(--btn-transition), color 200ms ease;
   }
 
   .flagged > .flag {

@@ -249,7 +249,7 @@
       on:keypress
       on:keydown
       on:keyup
-      style={resize ? `resize: " ${resize}` : ''}></textarea>
+      style={resize ? `resize: ${resize}` : ''}></textarea>
     {#if label != null}
       <span class="label">{label}</span>
     {/if}
@@ -261,7 +261,7 @@
       <Ripple/>
     </a>
   {:else if external != null}
-    <a class="na link btn-dark" rel="nofollow nopener" target="_blank" href={external}>
+    <a class="na link btn-dark" rel="nofollow noreferrer noopener" target="_blank" href={external}>
       <OpenInNew />
       <Ripple/>
     </a>

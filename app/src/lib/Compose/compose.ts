@@ -63,7 +63,7 @@ export const createMessageBody = (target: Partial<typeof baseDraft>) => {
 }
 
 
-export const kShowBcc = Symbol("draft-show-cc");
+export const kShowBcc = Symbol("draft-show-bcc");
 export const kShowCc = Symbol("draft-show-cc");
 export const kSent = Symbol("draft-sent");
 
