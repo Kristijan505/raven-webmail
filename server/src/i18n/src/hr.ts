@@ -1,6 +1,19 @@
 import type { Locale } from "../locale";
 
 const locale: Locale = {
+  theme: {
+    Theme: "Tema",
+    Light: "Svijetlo",
+    Dark: "Tamno",
+    Auto: "Automatski",
+  },
+  validation: {
+    Field_required: "Ups! Preskočili ste ovo polje",
+    Invalid_email: "Ups! Ovo nije ispravna email adresa",
+    No_recipients: "Poruka nema primatelja",
+    Password_too_short: "Lozinka mora imati barem 6 znakova",
+    Passwords_dont_match: "Lozinke se ne podudaraju",
+  },
   Unsaved_changes: "Nespremljene promjene",
   Unsaved_changes_body: "Imate nespremljene promjene potpisa. Spremiti ih prije izlaska?",
   Discard: "Odbaci",

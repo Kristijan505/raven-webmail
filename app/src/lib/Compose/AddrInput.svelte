@@ -64,6 +64,7 @@
 <script>
   import Close from "~icons/mdi/close";
   import { isMail } from "$lib/util";
+  import { locale } from "$lib/locale";
 
   export let name = "";
   export let id = ""
@@ -115,7 +116,7 @@
 
 <label class="addr-input">
   {#each addrs as addr, i}
-    <x-addr class:invalid={!isMail(addr.address)} title={isMail(addr.address) ? "" : "This does not look like a valid email address"}>
+    <x-addr class:invalid={!isMail(addr.address)} title={isMail(addr.address) ? "" : $locale.validation.Invalid_email}>
       {addr.address}
       <x-addr-close on:click={() => remove(i)} >
         <Close />

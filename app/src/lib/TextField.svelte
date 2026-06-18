@@ -49,13 +49,13 @@
     };
    
     if(required && (value === "" || value == null)) {
-      validationError = "Oops! You missed this field";
+      validationError = $locale.validation.Field_required;
       console.log("[Formy] validation fails [TextField] [Required]", label, value);
       return false;
     }
 
     if(type === "e-mail" && value !== "" && value != null && !isMail(value)) {
-      validationError = "Oops! This is not a valid email address"
+      validationError = $locale.validation.Invalid_email
       console.log("[Formy] validation fails [TextField] [Email]", label, value);
       return false;
     }
@@ -99,6 +99,7 @@
   import ArrowRight from "~icons/mdi/arrow-right";
   import OpenInNew from "~icons/mdi/open-in-new";
   import { isMail } from "$lib/util";
+  import { locale } from "$lib/locale";
   import type { Context } from "./Formy/Formy.svelte";
   import ValidationError from "./Formy/ValidationError.svelte";
   import Ripple from "./Ripple.svelte";

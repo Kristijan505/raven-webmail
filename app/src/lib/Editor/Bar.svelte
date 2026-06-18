@@ -35,7 +35,7 @@
   
   const _send = action(async () => {
     if(draft.to.length === 0 && draft.cc.length === 0 && draft.bcc.length === 0) {
-      throw new Error("This message has no recipients") 
+      throw new Error($locale.validation.No_recipients) 
     }
 
     sending = true;

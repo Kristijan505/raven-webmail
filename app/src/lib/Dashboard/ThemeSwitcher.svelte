@@ -11,13 +11,20 @@
   import AutoIcon from "~icons/mdi/brightness-auto";
   import Check from "~icons/mdi/check";
   import { theme, setTheme, type Theme } from "$lib/theme";
+  import { locale } from "$lib/locale";
   import { clickable } from "$lib/actions";
 
-  const OPTS: { value: Theme; label: string; icon: any }[] = [
-    { value: "light", label: "Light", icon: Sun },
-    { value: "dark", label: "Dark", icon: Moon },
-    { value: "auto", label: "Auto", icon: AutoIcon },
+  const OPTS: { value: Theme; icon: any }[] = [
+    { value: "light", icon: Sun },
+    { value: "dark", icon: Moon },
+    { value: "auto", icon: AutoIcon },
   ];
+
+  $: label = {
+    light: $locale.theme.Light,
+    dark: $locale.theme.Dark,
+    auto: $locale.theme.Auto,
+  } as Record<Theme, string>;
 
   const choose = (t: Theme) => {
     setTheme(t);
@@ -50,7 +57,7 @@
 </style>
 
 <div class="wrap">
-  <div class="theme-btn btn-dark" class:hover={open} use:clickable={"Theme"} on:click={() => open = !open}>
+  <div class="theme-btn btn-dark" class:hover={open} use:clickable={$locale.theme.Theme} on:click={() => open = !open}>
     <ThemeIcon />
     <Ripple />
   </div>
@@ -60,7 +67,7 @@
       <Menu>
         {#each OPTS as o}
           <MenuItem icon={$theme === o.value ? Check : o.icon} iconPlaceholder on:click={() => choose(o.value)}>
-            {o.label}
+            {label[o.value]}
           </MenuItem>
         {/each}
       </Menu>

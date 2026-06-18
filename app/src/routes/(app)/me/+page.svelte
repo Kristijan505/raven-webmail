@@ -31,8 +31,8 @@
 	let confirmPassword = '';
 
 	const updatePassword = action(async () => {
-		if (newPassword.length < 6) throw new Error('Password must have 6 characters or more');
-		if (newPassword !== confirmPassword) throw new Error('Passwords does not match');
+		if (newPassword.length < 6) throw new Error($locale.validation.Password_too_short);
+		if (newPassword !== confirmPassword) throw new Error($locale.validation.Passwords_dont_match);
 			
     await _put(`/api/me`, {
       existingPassword: currentPassword,

@@ -38,13 +38,14 @@
   import ValidationError from "./Formy/ValidationError.svelte";
   import TextField from "./TextField.svelte";
   import { getContext, onMount } from "svelte";
+  import { locale } from "$lib/locale";
 
 
 
   let validationError: string | null = null;
   export let doValidate = () => {
     if(validate && required && value.length === 0) {
-      validationError = "Ups! Te faltó completar este campo";
+      validationError = $locale.validation.Field_required;
       return false;
     }
 

@@ -1,4 +1,17 @@
 export default {
+  theme: {
+    Theme: "Theme",
+    Light: "Light",
+    Dark: "Dark",
+    Auto: "Auto",
+  },
+  validation: {
+    Field_required: "Oops! You missed this field",
+    Invalid_email: "Oops! This is not a valid email address",
+    No_recipients: "This message has no recipients",
+    Password_too_short: "Password must have 6 characters or more",
+    Passwords_dont_match: "Passwords do not match",
+  },
   Unsaved_changes: "Unsaved changes",
   Unsaved_changes_body: "You have unsaved signature changes. Save them before leaving?",
   Discard: "Discard",

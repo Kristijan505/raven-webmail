@@ -1,6 +1,19 @@
 import type { Locale } from "../locale";
 
 const locale: Locale = {
+  theme: {
+    Theme: "Tema",
+    Light: "Claro",
+    Dark: "Oscuro",
+    Auto: "Automático",
+  },
+  validation: {
+    Field_required: "¡Ups! Te faltó completar este campo",
+    Invalid_email: "¡Ups! Esta no es una dirección de correo válida",
+    No_recipients: "Este mensaje no tiene destinatarios",
+    Password_too_short: "La contraseña debe tener 6 caracteres o más",
+    Passwords_dont_match: "Las contraseñas no coinciden",
+  },
   Unsaved_changes: "Cambios sin guardar",
   Unsaved_changes_body: "Tienes cambios sin guardar en la firma. ¿Guardarlos antes de salir?",
   Discard: "Descartar",
