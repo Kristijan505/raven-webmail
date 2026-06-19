@@ -7,7 +7,7 @@
   import PortalPopup from "$lib/PortalPopup.svelte";
   import Globe from "~icons/mdi/web";
   import Check from "~icons/mdi/check";
-  import { lang, locale } from "$lib/locale";
+  import { lang, locale, persistLang } from "$lib/locale";
   import { action, _get } from "$lib/util";
   import { clickable } from "$lib/actions";
 
@@ -22,7 +22,7 @@
   // an override, so no reload is needed — the stores update and every $locale
   // consumer re-renders. The saved value is re-applied by +layout.ts on reload.
   const choose = action(async (code: string) => {
-    try { localStorage.setItem("raven.lang", code); } catch (_e) { /* ignore */ }
+    persistLang(code);
     const data = await _get(`/api/locale?accept-language=${encodeURIComponent(code)}`);
     lang.set(data.lang);
     locale.set(data.locale);

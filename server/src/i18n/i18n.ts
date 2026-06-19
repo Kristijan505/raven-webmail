@@ -191,14 +191,41 @@ export const getLocaleForAcceptLang = (acceptLang: string | null | undefined, lo
   return { lang: "en", locale: locales.en }
 }
 
+// The webmail persists the chosen language in a `raven.lang` cookie (mirrored
+// from localStorage) so that EVERY API request — not only the /api/locale fetch
+// that carries ?accept-language= — is tagged with the user's choice. Without it,
+// server-side error messages would fall back to the browser's Accept-Language,
+// which can differ from the in-app selection. Parsed by hand to avoid pulling in
+// cookie-parser for a single value.
+const LANG_COOKIE = "raven.lang";
+const readLangCookie = (req: Request): string | undefined => {
+  const header = req.headers.cookie;
+  if(!header) return undefined;
+  for(const part of header.split(";")) {
+    const eq = part.indexOf("=");
+    if(eq === -1) continue;
+    if(part.slice(0, eq).trim() === LANG_COOKIE) {
+      const raw = part.slice(eq + 1).trim();
+      try { return decodeURIComponent(raw); } catch { return raw; }
+    }
+  }
+  return undefined;
+};
+
 export const middleware = (config: Config) => {
 
   const locales = loadLocales(config);
-  
+
   const i18n = Router();
 
   i18n.use((req: Request, res: Response, next: NextFunction) => {
+    // Priority: explicit ?accept-language= query (the /api/locale fetch) > the
+    // raven.lang cookie (in-app choice, sent on every request) > Accept-Language
+    // header (browser default) > en (the getLocaleForAcceptLang fallback).
     let acceptLanguage = String(req.query["accept-language"] || "");
+    if(!acceptLanguage) {
+      acceptLanguage = readLangCookie(req) || "";
+    }
     if(!acceptLanguage) {
       const header = req.headers["accept-language"] as string | string[] | undefined;
       if(typeof header === "string") {
@@ -207,7 +234,7 @@ export const middleware = (config: Config) => {
         acceptLanguage = header.join(",");
       }
     }
-    const { lang, locale } = getLocaleForAcceptLang(acceptLanguage, locales);  
+    const { lang, locale } = getLocaleForAcceptLang(acceptLanguage, locales);
     req.lang = lang;
     req.locale = locale;
     next();

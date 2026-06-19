@@ -26,15 +26,15 @@ const Requester = <Body>(method: string) => {
     }
 
     const res = await fetch(url(u), init).catch(e => {
-      throw new ApiError(StatusCodes.BAD_GATEWAY, DISPLAY_ERRORS ? String(e?.message) : "Bad Gateway");
+      throw new ApiError(StatusCodes.BAD_GATEWAY, DISPLAY_ERRORS ? String(e?.message) : "Bad Gateway", "bad_gateway");
     })
 
     if(res.status === StatusCodes.FORBIDDEN) {
-      throw new ApiError(StatusCodes.FORBIDDEN, "The session has expired");
+      throw new ApiError(StatusCodes.FORBIDDEN, "The session has expired", "session_expired");
     }
 
     const json = await res.json().catch(e => {
-      throw new ApiError(StatusCodes.BAD_GATEWAY, "Invalid JSON from backend");
+      throw new ApiError(StatusCodes.BAD_GATEWAY, "Invalid JSON from backend", "bad_gateway");
     })
 
     if(json?.error) {
@@ -74,11 +74,11 @@ export const authenticate = async (username: string, password: string): Promise<
       password,
     })
   }).catch(e => {
-    throw new ApiError(StatusCodes.BAD_GATEWAY, DISPLAY_ERRORS ? String(e?.message) : "Bad Gateway");
+    throw new ApiError(StatusCodes.BAD_GATEWAY, DISPLAY_ERRORS ? String(e?.message) : "Bad Gateway", "bad_gateway");
   })
 
   const json: any = await res.json().catch(e => {
-    throw new ApiError(StatusCodes.BAD_GATEWAY, "Invalid JSON body from backend")
+    throw new ApiError(StatusCodes.BAD_GATEWAY, "Invalid JSON body from backend", "bad_gateway")
   });
 
   if(json?.error) {
@@ -92,22 +92,22 @@ export const watch = async (userId: string, accessToken: string): Promise<NodeJS
   const res = await fetch(url(`/users/${userId}/updates`), {
     headers: { "x-access-token": accessToken },
   }).catch(e => {
-    throw new ApiError(502, DISPLAY_ERRORS ? String(e?.message) : "Bad Gateway");
+    throw new ApiError(502, DISPLAY_ERRORS ? String(e?.message) : "Bad Gateway", "bad_gateway");
   })
 
   if(res.ok) {
     if(!res.body) {
-      throw new ApiError(502, "Invalid stream from backend");
+      throw new ApiError(502, "Invalid stream from backend", "bad_gateway");
     }
     return fromWeb(res.body as any);
   }
 
   if(res.status === StatusCodes.FORBIDDEN) {
-    throw new ApiError(StatusCodes.FORBIDDEN, "Session has expired");
+    throw new ApiError(StatusCodes.FORBIDDEN, "Session has expired", "session_expired");
   }
 
   const json = await res.json().catch(() => {
-    throw new ApiError(502, "Invalid JSON body from backend");
+    throw new ApiError(502, "Invalid JSON body from backend", "bad_gateway");
   })
 
   throw new ApiError(res.status, String(json?.error || "JSON error without message"));

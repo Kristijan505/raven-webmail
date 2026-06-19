@@ -1,5 +1,5 @@
 import { Request, RequestHandler, Router } from "express"
-import { validate, handler, ApiError, pageHandler } from "./util";
+import { validate, handler, ApiError, pageHandler, errMsg } from "./util";
 import { authenticate, del, get, post, put, url, watch } from "./client";
 import { json } from "body-parser";
 import { StatusCodes } from "http-status-codes";
@@ -147,7 +147,7 @@ export const seg = (value: string | string[] | undefined): string => {
     /[\/\\]/.test(value) ||   // smuggled separators (e.g. decoded %2F) enable traversal
     value === "." || value === ".."   // dot-segments the URL parser would collapse
   ) {
-    throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid path parameter");
+    throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid path parameter", "invalid_path_parameter");
   }
   return encodeURIComponent(value);
 };
@@ -173,7 +173,7 @@ const enforceSameOrigin: RequestHandler = (req, res, next) => {
   // req.hostname honors X-Forwarded-Host when trust proxy is set, so this works
   // behind a reverse proxy; compare hostnames (port-insensitive) to avoid false 403s.
   if (originHost === null || originHost !== req.hostname) {
-    res.status(StatusCodes.FORBIDDEN).json({ error: { status: 403, message: "Cross-origin request blocked" } });
+    res.status(StatusCodes.FORBIDDEN).json({ error: { status: 403, message: errMsg(req, "cross_origin_blocked", "Cross-origin request blocked") } });
     return;
   }
   return next();
@@ -259,7 +259,9 @@ const loginLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   validate: { trustProxy: false },
-  message: { error: { status: 429, message: "Too many login attempts, please try again later" } },
+  // Resolve the 429 body per-request so it honors the caller's language. The i18n
+  // middleware runs before this limiter (api.use order), so req.locale is set.
+  message: (req: Request) => ({ error: { status: 429, message: errMsg(req, "too_many_logins", "Too many login attempts, please try again later") } }),
 });
 
 export const api = (config: Config) => {
@@ -371,7 +373,7 @@ export const api = (config: Config) => {
 
   api.post("/mailboxes", handler(async (req, res) => {
     const path = String(req.body?.path?.trim() || "");
-    if(!path) throw new ApiError(StatusCodes.BAD_REQUEST, "'path' is required");
+    if(!path) throw new ApiError(StatusCodes.BAD_REQUEST, "'path' is required", "path_required");
     const json = await post(`/users/${userId(req)}/mailboxes`, token(req), { path });
     res.json(json);
   }))
@@ -434,7 +436,7 @@ export const api = (config: Config) => {
     // seg() also rejects empty / non-string / separator values.
     const messageId = seg(req.params.message);
     if (!/^\d+$/.test(messageId)) {
-      throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid message id");
+      throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid message id", "invalid_message_id");
     }
     const body = await put(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages`, token(req), {
       message: messageId,
@@ -455,7 +457,7 @@ export const api = (config: Config) => {
     const back = await fetch(url(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages/${seg(req.params.message)}/attachments/${seg(req.params.attachment)}`), {
       headers: { "x-access-token": token(req) }
     }).catch(e => {
-      throw new ApiError(502, DISPLAY_ERRORS ? String(e?.message) : "Bad Gateway");
+      throw new ApiError(502, DISPLAY_ERRORS ? String(e?.message) : "Bad Gateway", "bad_gateway");
     });
 
     if(back.ok) {
@@ -489,7 +491,7 @@ export const api = (config: Config) => {
     const back = await fetch(url(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages/${seg(req.params.message)}/message.eml`), {
       headers: { "x-access-token": token(req) }
     }).catch(e => {
-      throw new ApiError(502, DISPLAY_ERRORS ? String(e?.message) : "Bad Gateway");
+      throw new ApiError(502, DISPLAY_ERRORS ? String(e?.message) : "Bad Gateway", "bad_gateway");
     });
 
     if(back.ok) {
@@ -539,11 +541,11 @@ export const api = (config: Config) => {
       body: req as any,
       duplex: "half" as any,
     } as any).catch(e => {
-      throw new ApiError(502, DISPLAY_ERRORS ? String(e?.message) : "Bad Gateway");
+      throw new ApiError(502, DISPLAY_ERRORS ? String(e?.message) : "Bad Gateway", "bad_gateway");
     })
 
     const json = await back.json().catch(e => {
-      throw new ApiError(StatusCodes.INTERNAL_SERVER_ERROR, "Invalid JSON from backend");
+      throw new ApiError(StatusCodes.INTERNAL_SERVER_ERROR, "Invalid JSON from backend", "bad_gateway");
     })
 
     if(json?.error) {
@@ -556,7 +558,7 @@ export const api = (config: Config) => {
   api.get("/proxy-image", handler(async (req, res) => {
     // Require an authenticated session so this can never be used as an open proxy.
     if (req.session.authentication == null) {
-      throw new ApiError(StatusCodes.FORBIDDEN, "Forbidden");
+      throw new ApiError(StatusCodes.FORBIDDEN, "Forbidden", "forbidden");
     }
 
     let current = await assertPublicHttpUrl(String(req.query.url || ""));
@@ -683,7 +685,7 @@ export const api = (config: Config) => {
 
 export const token = (req: Request): string => {
   if(req.session.authentication == null) {
-    throw new ApiError(StatusCodes.FORBIDDEN, "Forbidden");
+    throw new ApiError(StatusCodes.FORBIDDEN, "Forbidden", "forbidden");
   }
 
   return req.session.authentication.token;
@@ -691,7 +693,7 @@ export const token = (req: Request): string => {
 
 export const userId = (req: Request): string => {
   if(req.session.authentication == null) {
-    throw new ApiError(StatusCodes.FORBIDDEN, "Forbidden");
+    throw new ApiError(StatusCodes.FORBIDDEN, "Forbidden", "forbidden");
   }
 
   return req.session.authentication.id;
