@@ -1,4 +1,10 @@
 export default {
+  errors: {
+    request_failed: "Request failed",
+    cannot_connect: "Cannot connect to the server",
+    invalid_response: "Invalid response from the server",
+    unknown_error: "Something went wrong",
+  },
   compose: {
     reply_divider: "Reply message",
     forward_divider: "Forwarded message",

@@ -10,6 +10,14 @@ export class HttpError extends Error {
   }
 }
 
+// Network/transport errors thrown by the fetch helpers surface as toasts, so
+// resolve them from the locale (English fallback for the brief window before the
+// locale store has loaded).
+const netErr = (
+  k: "request_failed" | "cannot_connect" | "invalid_response" | "unknown_error",
+  fallback: string,
+): string => get(locale).errors?.[k] ?? fallback;
+
 // Normalize the various server error shapes into one thrown HttpError:
 // handler() returns { error: { status, message } }, pageHandler() returns
 // { error: "<string>" } or { status, redirect }. The old code assumed
@@ -23,7 +31,7 @@ const throwIfError = (res: Response, json: any): void => {
   if(json?.error) {
     const message = typeof json.error === "string"
       ? json.error
-      : (json.error?.message || "Request failed");
+      : (json.error?.message || netErr("request_failed", "Request failed"));
     throw new HttpError(res.status, message);
   }
 }
@@ -102,11 +110,11 @@ type GetPageOptions = {
 export const getPage = async ({ fetch, path, url }: GetPageOptions) => {
   const pathAndQuery = path || (url ? `/api/pages${url.pathname}${url.search}` : "");
   const res = await fetch(pathAndQuery).catch(() => {
-    throw new HttpError(500, "Cannot connect to server");
+    throw new HttpError(500, netErr("cannot_connect", "Cannot connect to the server"));
   });
 
   const body: any = await res.json().catch(() => {
-    throw new HttpError(res.status, "Invalid JSON response from server");
+    throw new HttpError(res.status, netErr("invalid_response", "Invalid response from the server"));
   });
 
   // Legacy page endpoint format uses JSON redirect payloads.
@@ -117,12 +125,12 @@ export const getPage = async ({ fetch, path, url }: GetPageOptions) => {
   if (body?.error) {
     const message = typeof body.error === "string"
       ? body.error
-      : body.error?.message || "Unknown page error";
+      : body.error?.message || netErr("unknown_error", "Something went wrong");
     throw new HttpError(Number(body.status) || res.status, message);
   }
 
   if (!res.ok) {
-    throw new HttpError(res.status, `Cannot get page, invalid response status code: ${res.status}`);
+    throw new HttpError(res.status, `${netErr("invalid_response", "Invalid response from the server")} (${res.status})`);
   }
 
   return body?.props ?? body;
@@ -135,18 +143,18 @@ export const action = <A extends any[], T>(fn: (...args: A) => T | Promise<T>) =
       return await fn(...args)
     } catch(e: any) {
       // @ts-ignore
-      _error(e?.message || "Error");
+      _error(e?.message || netErr("unknown_error", "Something went wrong"));
     }
   }
 }
 
 export const _get = async (url: string) => {
   const res = await fetch(url).catch(e => {
-    throw new HttpError(500, "Cannot connect to server");
+    throw new HttpError(500, netErr("cannot_connect", "Cannot connect to the server"));
   })
 
   const json = await res.json().catch(e => {
-    throw new HttpError(res.status, "Invalid JSON response from server");
+    throw new HttpError(res.status, netErr("invalid_response", "Invalid response from the server"));
   })
 
   throwIfError(res, json);
@@ -158,11 +166,11 @@ export const _delete = async (url: string) => {
   const res = await fetch(url, {
     method: "DELETE",
   }).catch(e => {
-    throw new HttpError(500, "Cannot connect to server");
+    throw new HttpError(500, netErr("cannot_connect", "Cannot connect to the server"));
   })
 
   const json = await res.json().catch(e => {
-    throw new HttpError(res.status, "Invalid JSON response from server");
+    throw new HttpError(res.status, netErr("invalid_response", "Invalid response from the server"));
   })
 
   throwIfError(res, json);
@@ -176,11 +184,11 @@ export const _post = async (url: string, body: any) => {
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body)
   }).catch(e => {
-    throw new HttpError(500, "Cannot connect to server");
+    throw new HttpError(500, netErr("cannot_connect", "Cannot connect to the server"));
   })
 
   const json = await res.json().catch(e => {
-    throw new HttpError(res.status, "Invalid JSON response from server");
+    throw new HttpError(res.status, netErr("invalid_response", "Invalid response from the server"));
   })
 
   throwIfError(res, json);
@@ -194,11 +202,11 @@ export const _put = async (url: string, body: any) => {
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body)
   }).catch(e => {
-    throw new HttpError(500, "Cannot connect to server");
+    throw new HttpError(500, netErr("cannot_connect", "Cannot connect to the server"));
   })
 
   const json = await res.json().catch(e => {
-    throw new HttpError(res.status, "Invalid JSON response from server");
+    throw new HttpError(res.status, netErr("invalid_response", "Invalid response from the server"));
   })
 
   throwIfError(res, json);

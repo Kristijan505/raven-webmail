@@ -1,6 +1,12 @@
 import type { Locale } from "../locale";
 
 const locale: Locale = {
+  errors: {
+    request_failed: "La solicitud falló",
+    cannot_connect: "No se puede conectar al servidor",
+    invalid_response: "Respuesta no válida del servidor",
+    unknown_error: "Algo salió mal",
+  },
   compose: {
     reply_divider: "Mensaje de respuesta",
     forward_divider: "Mensaje reenviado",

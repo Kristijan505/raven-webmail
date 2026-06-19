@@ -1,6 +1,12 @@
 import type { Locale } from "../locale";
 
 const locale: Locale = {
+  errors: {
+    request_failed: "Zahtjev nije uspio",
+    cannot_connect: "Nije moguće spojiti se na poslužitelj",
+    invalid_response: "Neispravan odgovor poslužitelja",
+    unknown_error: "Nešto je pošlo po zlu",
+  },
   compose: {
     reply_divider: "Odgovor na poruku",
     forward_divider: "Proslijeđena poruka",
