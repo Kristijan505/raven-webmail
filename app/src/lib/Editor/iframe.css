@@ -3,6 +3,13 @@
   font-size: 16px;
   height: 100%;
   width: 100%;
+  /* The editor body is a white "sheet of paper" in every theme: you compose the
+     email exactly as the recipient will see it (WYSIWYG). This iframe is a
+     separate document, so the app's --surface/--text theme vars don't reach it;
+     without these explicit colours a dark theme shows the transparent iframe
+     over the dark surface with black UA text — dark and unreadable. */
+  background: #ffffff;
+  color: #111111;
 }
 
 .editor-content > body {

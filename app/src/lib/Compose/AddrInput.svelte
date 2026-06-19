@@ -57,6 +57,10 @@
     font-size: inherit;
     font-family: inherit;
     min-width: 12em;
+    /* Follow the surrounding theme instead of the <input> UA default (white bg /
+       black text), which would otherwise stand out on the dark compose chrome. */
+    background: transparent;
+    color: inherit;
   }
 
   /* Keyboard-focus affordance for the otherwise borderless address input. */

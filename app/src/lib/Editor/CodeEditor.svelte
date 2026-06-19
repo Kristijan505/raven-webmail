@@ -6,12 +6,17 @@
 </script>
 
 <style>
+  /* The HTML source view is the same white "paper" as the rendered editor, so it
+     uses fixed light colours in every theme (the theme border would be invisible
+     on white in dark mode). */
   .wrap {
     flex-grow: 1;
     display: flex;
     flex-direction: row;
     font-size: 1rem;
     --line-height: 1.1rem;
+    background: #ffffff;
+    color: #111111;
   }
 
   .lines {
@@ -19,11 +24,12 @@
     padding: var(--space-2);
     flex: none;
     font-family: monospace;
-    border-right: var(--border) 1px solid;
+    border-right: #dddddd 1px solid;
+    color: #999999;
     text-align: right;
     line-height: var(--line-height);
   }
-  
+
   textarea {
     line-height: var(--line-height);
     flex: 1;
@@ -36,6 +42,8 @@
     display: block;
     resize: none;
     white-space: nowrap;
+    background: transparent;
+    color: inherit;
   }
 </style>
 

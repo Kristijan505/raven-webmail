@@ -33,7 +33,9 @@
   }
 
   const dosave = async (current: Draft, t: number) => {
-    if(current[kSent]) return;
+    // current can be null if the compose tab/window was torn down before this
+    // debounced save fired (navigating away mid-edit) — guard the kSent read.
+    if(!current || current[kSent]) return;
     const newId = await save(current);
     // here we dont trigger an invalidate
     current.id = newId;
@@ -219,6 +221,9 @@ import { locale } from "$lib/locale";
     flex: 1;
     font-size: inherit;
     font-family: inherit;
+    /* Inherit the dark compose chrome rather than the <input> UA white/black. */
+    background: transparent;
+    color: inherit;
   }
 
   x-toggle-cc {
