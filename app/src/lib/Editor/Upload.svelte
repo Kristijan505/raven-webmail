@@ -126,9 +126,21 @@
   import Clip from "~icons/mdi/paperclip"
   import Ripple from "$lib/Ripple.svelte";
   import CircularProgress from "$lib/CircularProgress.svelte";
-  import { tooltip } from "$lib/actions";
+  import { tooltip, add as listen } from "$lib/actions";
+  import { onMount } from "svelte";
 import { locale } from "$lib/locale";
-  
+
+  let root: HTMLElement;
+
+  onMount(() => {
+    // Dismiss the attachments popup when clicking anywhere outside it (incl. while
+    // composing). The toolbar button lives inside `root`, so toggling it never
+    // self-closes; clicks inside the popup (file rows, Add) are kept too.
+    return listen(document, "click", (e: MouseEvent) => {
+      if(open && root && !root.contains(e.target as Node)) open = false;
+    });
+  });
+
   const remove = (file: MessageFile) => {
     draft.files = draft.files.filter(item => item !== file);
   }
@@ -223,8 +235,8 @@ import { locale } from "$lib/locale";
   }
 </script>
 
-<x-upload>
-  
+<x-upload bind:this={root}>
+
   <input bind:this={input} on:change={change} type="file" name="0-upload" id="0-upload" multiple>
   
   <x-action class="upload btn-dark" class:hover={open} use:tooltip={open ? null : $locale.Attach} on:click={click}>
