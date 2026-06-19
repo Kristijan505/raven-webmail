@@ -51,6 +51,16 @@ const ALLOWED_IMAGE_TYPES = new Set([
 // and the byteLimiter Transform for chunked responses).
 const IMAGE_SIZE_LIMIT = 10 * 1024 * 1024; // 10 MiB
 
+// Image-proxy fetch budget: follow at most 3 redirect hops (each re-validated
+// against private ranges) with an 8s per-hop timeout.
+const MAX_IMAGE_REDIRECTS = 3;
+const PROXY_FETCH_TIMEOUT_MS = 8000;
+
+// Login throttling window/cap and the default message-list page size.
+const LOGIN_RATE_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_RATE_MAX = 10;
+const PAGE_SIZE_LIMIT = "50";
+
 const LoginSchema = z.object({
   username: z.string().min(1),
   password: z.string().min(1),
@@ -243,8 +253,8 @@ export const assertPublicHttpUrl = async (raw: string): Promise<URL> => {
 // failed attempts count (skipSuccessfulRequests), so legitimate users are never
 // locked out; keyed by client IP (honors trust proxy).
 const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: 10,
+  windowMs: LOGIN_RATE_WINDOW_MS,
+  limit: LOGIN_RATE_MAX,
   skipSuccessfulRequests: true,
   standardHeaders: true,
   legacyHeaders: false,
@@ -501,7 +511,7 @@ export const api = (config: Config) => {
   }));
 
   api.get("/search", pageHandler(async (req, res) => {
-    const query = { ...req.query, limit: req.query.limit || "50" }; 
+    const query = { ...req.query, limit: req.query.limit || PAGE_SIZE_LIMIT }; 
     const json = await get(`/users/${userId(req)}/search?${qs.stringify(query)}`, token(req));
     res.json(json)
   }))
@@ -553,12 +563,12 @@ export const api = (config: Config) => {
     let upstream: Awaited<ReturnType<typeof fetch>> | null = null;
 
     // Follow up to 3 redirects, re-validating each hop against private ranges.
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i <= MAX_IMAGE_REDIRECTS; i++) {
       upstream = await fetch(current.toString(), {
         method: "GET",
         redirect: "manual",
         headers: { "user-agent": "RavenImageProxy/1.0", accept: "image/*" },
-        signal: AbortSignal.timeout(8000),
+        signal: AbortSignal.timeout(PROXY_FETCH_TIMEOUT_MS),
       }).catch(() => { throw new ApiError(StatusCodes.BAD_GATEWAY, "Cannot fetch image"); });
 
       if (upstream.status >= 300 && upstream.status < 400) {
@@ -641,14 +651,14 @@ export const api = (config: Config) => {
   }))
   
   pages.get("/search", pageHandler(async (req, res) => {
-    const query = { ...req.query, limit: req.query.limit || "50" }; 
+    const query = { ...req.query, limit: req.query.limit || PAGE_SIZE_LIMIT }; 
     const props = await get(`/users/${userId(req)}/search?${qs.stringify(query)}`, token(req));
     res.json({ props })
   }))
 
   pages.get("/mailbox/:mailbox", pageHandler(async (req, res) => {
     
-    const {limit = "50"} = req.query;
+    const {limit = PAGE_SIZE_LIMIT} = req.query;
 
     const [ mailbox, messages ] = await Promise.all([
       get(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}`, token(req)),
