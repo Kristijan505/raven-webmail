@@ -1,7 +1,7 @@
 <script lang="ts" context="module">
-  const from = (mailbox: Mailbox, message: Message): string => {
+  const from = (mailbox: Mailbox, message: Message, l: any): string => {
     if(mailbox.specialUse === "\\Drafts" || mailbox.specialUse === "\\Sent") {
-      return `To: ${message.to[0]?.name || message.to[0]?.address || ""}`;
+      return `${l["To:"]} ${message.to[0]?.name || message.to[0]?.address || ""}`;
     }
 
     return message.from?.name || message.from?.address || "";
@@ -237,7 +237,7 @@
 
   <div class="flex">
     <div class="from">
-      {from(mailbox, row)}
+      {from(mailbox, row, $locale)}
     </div>
 
     <div class="end">

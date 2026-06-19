@@ -1,4 +1,15 @@
 export default {
+  compose: {
+    reply_divider: "Reply message",
+    forward_divider: "Forwarded message",
+  },
+  "From:": "From:",
+  "Date:": "Date:",
+  No_mailbox: "You don't have any mailbox",
+  Not_found: "Not found",
+  Page_not_found: "Oops, this page no longer exists.",
+  Language: "Language",
+  File_too_large: "File is too large",
   datePicker: {
     weekDays: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
     months: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],

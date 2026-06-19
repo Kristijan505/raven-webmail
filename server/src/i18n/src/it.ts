@@ -4,6 +4,17 @@
 import type { Locale } from "../locale";
 
 const locale: Locale = {
+  "compose": {
+    "reply_divider": "Messaggio di risposta",
+    "forward_divider": "Messaggio inoltrato",
+  },
+  "From:": "Da:",
+  "Date:": "Data:",
+  "No_mailbox": "Non hai nessuna casella",
+  "Not_found": "Non trovato",
+  "Page_not_found": "Ops, questa pagina non esiste più.",
+  "Language": "Lingua",
+  "File_too_large": "Il file è troppo grande",
   "datePicker": {
     "weekDays": ["Domenica", "Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato"],
     "months": ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"],

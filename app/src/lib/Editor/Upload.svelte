@@ -195,7 +195,7 @@ import { locale } from "$lib/locale";
             throw e;
           }
         } else if (res.status === 413) {
-          throw new Error(`File ${file.name} is too big`);
+          throw new Error($locale.File_too_large);
         } else {
           throw e;
         }

@@ -1,6 +1,17 @@
 import type { Locale } from "../locale";
 
 const locale: Locale = {
+  compose: {
+    reply_divider: "Mensaje de respuesta",
+    forward_divider: "Mensaje reenviado",
+  },
+  "From:": "De:",
+  "Date:": "Fecha:",
+  No_mailbox: "No tienes ningún buzón",
+  Not_found: "No encontrado",
+  Page_not_found: "Vaya, esta página ya no existe.",
+  Language: "Idioma",
+  File_too_large: "El archivo es demasiado grande",
   datePicker: {
     weekDays: ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"],
     months: ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"],

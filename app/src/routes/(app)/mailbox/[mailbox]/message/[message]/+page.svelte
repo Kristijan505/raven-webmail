@@ -270,9 +270,9 @@
           {#if message.from}
             <div class="from">
               {#if message.from.name}
-                From: <span class="from-name">{message.from.name}</span> {"<"}{message.from.address}{">"}
+                {$locale["From:"]} <span class="from-name">{message.from.name}</span> {"<"}{message.from.address}{">"}
               {:else}
-                From: <span class="from-only-address">{message.from.address}</span>
+                {$locale["From:"]} <span class="from-only-address">{message.from.address}</span>
               {/if}
             </div>
           {/if}

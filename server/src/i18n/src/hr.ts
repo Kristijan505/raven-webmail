@@ -1,6 +1,17 @@
 import type { Locale } from "../locale";
 
 const locale: Locale = {
+  compose: {
+    reply_divider: "Odgovor na poruku",
+    forward_divider: "Proslijeđena poruka",
+  },
+  "From:": "Od:",
+  "Date:": "Datum:",
+  No_mailbox: "Nemate nijedan poštanski sandučić",
+  Not_found: "Nije pronađeno",
+  Page_not_found: "Ups, ova stranica više ne postoji.",
+  Language: "Jezik",
+  File_too_large: "Datoteka je prevelika",
   datePicker: {
     weekDays: ["Nedjelja", "Ponedjeljak", "Utorak", "Srijeda", "Četvrtak", "Petak", "Subota"],
     months: ["Siječanj", "Veljača", "Ožujak", "Travanj", "Svibanj", "Lipanj", "Srpanj", "Kolovoz", "Rujan", "Listopad", "Studeni", "Prosinac"],

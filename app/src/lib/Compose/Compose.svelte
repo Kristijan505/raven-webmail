@@ -71,16 +71,16 @@
   }
 
   const createBody = (action: "re" | "fwd", ref: FullMessage) => {
-
+    const l = get(locale);
     return [
       "<br />".repeat(6),
-      get(signature),    
+      get(signature),
       "<br/>".repeat(2),
-        "-".repeat(10) + " " + (action === "re" ? "Reply message" : "Forwarded message") + " " + "-".repeat(10),
-        ref.from && (`From: <b>${s(ref.from.name) || ""}</b> ${s("<" + ref.from.address + ">")}`),
-        ref.to && ref.to.length && (`To: ${ref.to.map(to => s(to.address)).join(", ")}`),
-        "Subject: " + s(ref.subject),      
-        "Date: " + s(new Date(ref.date).toUTCString())
+        "-".repeat(10) + " " + (action === "re" ? l.compose.reply_divider : l.compose.forward_divider) + " " + "-".repeat(10),
+        ref.from && (`${l["From:"]} <b>${s(ref.from.name) || ""}</b> ${s("<" + ref.from.address + ">")}`),
+        ref.to && ref.to.length && (`${l["To:"]} ${ref.to.map(to => s(to.address)).join(", ")}`),
+        l["Subject:"] + " " + s(ref.subject),
+        l["Date:"] + " " + s(new Date(ref.date).toUTCString())
       ].filter(Boolean).join("<br />") + "<br/>".repeat(4) +
       (ref.html?.join("") || "");
   }
