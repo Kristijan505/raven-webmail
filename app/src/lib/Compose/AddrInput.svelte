@@ -59,6 +59,13 @@
     min-width: 12em;
   }
 
+  /* Keyboard-focus affordance for the otherwise borderless address input. */
+  input:focus-visible {
+    outline: 2px solid var(--selected-border);
+    outline-offset: -2px;
+    border-radius: 2px;
+  }
+
 </style>
 
 <script>

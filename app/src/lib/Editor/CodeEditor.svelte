@@ -45,5 +45,5 @@
       <div class="line">{i + 1}</div>
     {/each}
   </div>
-  <textarea bind:value={html} on:input={() => onChange?.(html)}></textarea>
+  <textarea bind:value={html} on:input={() => onChange?.(html)} aria-label="HTML" spellcheck="false"></textarea>
 </div>

@@ -5,6 +5,7 @@
 
   import Popup from "./Popup.svelte";
   import Ripple from "./Ripple.svelte";
+  import { clickable } from "$lib/actions";
 </script>
 
 <style>
@@ -42,7 +43,7 @@
 </style>
 
 <div class="selector">
-  <div class="button btn-dark" on:click={() => open = !open} class:hover={open}>
+  <div class="button btn-dark" role="button" tabindex="0" aria-expanded={open} use:clickable on:click={() => open = !open} class:hover={open}>
     <div class="icon">
       <svelte:component this={icon} />
     </div>
