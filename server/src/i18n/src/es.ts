@@ -1,6 +1,19 @@
 import type { Locale } from "../locale";
 
 const locale: Locale = {
+  datePicker: {
+    weekDays: ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"],
+    months: ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"],
+  },
+  font: {
+    Small: "Pequeño",
+    Normal: "Normal",
+    Big: "Grande",
+    Giant: "Gigante",
+    Sans_serif: "Sans Serif",
+    Serif: "Serif",
+    Monospace: "Monospace",
+  },
   theme: {
     Theme: "Tema",
     Light: "Claro",

@@ -1,4 +1,17 @@
 export default {
+  datePicker: {
+    weekDays: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
+    months: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
+  },
+  font: {
+    Small: "Small",
+    Normal: "Normal",
+    Big: "Big",
+    Giant: "Giant",
+    Sans_serif: "Sans Serif",
+    Serif: "Serif",
+    Monospace: "Monospace",
+  },
   theme: {
     Theme: "Theme",
     Light: "Light",

@@ -12,6 +12,7 @@
   export let validationError: string | null = null;
 
   import { getContext, onMount } from "svelte";
+  import { locale } from "$lib/locale";
 
   import Checkbox from "./Checkbox.svelte";
   import type { Context } from "./Formy/Formy.svelte";
@@ -26,7 +27,7 @@
     }
 
     if(!value) {
-      validationError = "Este campo es requerido";
+      validationError = $locale.validation.Field_required;
       console.log("[Formy] validation fails [BooleanField]", label, value)
       return false;
     }

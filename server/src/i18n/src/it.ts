@@ -4,6 +4,19 @@
 import type { Locale } from "../locale";
 
 const locale: Locale = {
+  "datePicker": {
+    "weekDays": ["Domenica", "Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato"],
+    "months": ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"],
+  },
+  "font": {
+    "Small": "Piccolo",
+    "Normal": "Normale",
+    "Big": "Grande",
+    "Giant": "Gigante",
+    "Sans_serif": "Sans Serif",
+    "Serif": "Serif",
+    "Monospace": "Monospace",
+  },
   "theme": {
     "Theme": "Tema",
     "Light": "Chiaro",

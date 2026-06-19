@@ -1,6 +1,19 @@
 import type { Locale } from "../locale";
 
 const locale: Locale = {
+  datePicker: {
+    weekDays: ["Nedjelja", "Ponedjeljak", "Utorak", "Srijeda", "Četvrtak", "Petak", "Subota"],
+    months: ["Siječanj", "Veljača", "Ožujak", "Travanj", "Svibanj", "Lipanj", "Srpanj", "Kolovoz", "Rujan", "Listopad", "Studeni", "Prosinac"],
+  },
+  font: {
+    Small: "Malo",
+    Normal: "Normalno",
+    Big: "Veliko",
+    Giant: "Ogromno",
+    Sans_serif: "Sans Serif",
+    Serif: "Serif",
+    Monospace: "Monospace",
+  },
   theme: {
     Theme: "Tema",
     Light: "Svijetlo",

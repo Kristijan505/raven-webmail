@@ -117,31 +117,7 @@
   import ChevronLeft from "~icons/mdi/chevron-left";
   import ChevronRight from "~icons/mdi/chevron-right";
   import Ripple from "./Ripple.svelte";
-
-  const weekDays = [
-    "Domingo",
-    "Lunes",
-    "Martes",
-    "Miércoles",
-    "Jueves",
-    "Viernes",
-    "Sábabo",
-  ];
-
-  const months = [
-    "Enero",
-    "Febrero",
-    "Marzo",
-    "Abril",
-    "Mayo",
-    "Junio",
-    "Julio",
-    "Agosto",
-    "Septiempre",
-    "Octubre",
-    "Noviembre",
-    "Diciembre"
-  ];
+  import { locale } from "$lib/locale";
 
   type Days = {
     leading: Date[]
@@ -271,7 +247,7 @@
     </div>
     {#each [0] as _ (currentMonth.getMonth())}
       <div class="title">
-        {months[currentMonth.getMonth()]} de {currentMonth.getFullYear()}
+        {$locale.datePicker.months[currentMonth.getMonth()]} {currentMonth.getFullYear()}
       </div>
     {/each}
     <div class="next btn-dark" on:click={gotoNextMonth}>
@@ -280,7 +256,7 @@
     </div>
   </div>
   <div class="days-top">
-    {#each weekDays as weekDay}
+    {#each $locale.datePicker.weekDays as weekDay}
       <div>{weekDay[0]}</div>
     {/each}
   </div>
