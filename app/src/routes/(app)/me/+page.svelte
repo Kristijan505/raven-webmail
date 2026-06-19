@@ -79,7 +79,7 @@
 	}
 
 	.box {
-		margin: 2rem 1rem;
+		margin: var(--space-8) var(--space-4);
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 4px;
@@ -94,7 +94,7 @@
     font-size: 1.25em;
     flex: none;
     border-bottom: var(--border) 1px solid;
-    padding: 1rem;
+    padding: var(--space-4);
 	}
 
 	.box-title > .comment {
@@ -137,17 +137,17 @@
 	}
 
 	.password-dialog > .field {
-		margin-bottom: 1.5rem;
+		margin-bottom: var(--space-6);
 	}
 
 	.send {
-		margin-top: 1rem;
+		margin-top: var(--space-4);
 		display: flex;
 		justify-content: flex-end;
 	}
 
   .menu {
-    padding: 0.5rem 0;
+    padding: var(--space-2) 0;
   }
 </style>
 

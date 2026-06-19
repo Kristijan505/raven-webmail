@@ -40,12 +40,12 @@
   .navigating {
     background-color: var(--surface);
     position: fixed;
-    z-index: 10000;
+    z-index: var(--z-nav);
     top: 0;
     left: 0;
     height: 2px;
     pointer-events: none;
-    transition: opacity 300ms ease 200ms;
+    transition: opacity var(--duration) ease 200ms;
   }
 </style>
 

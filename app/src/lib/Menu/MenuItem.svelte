@@ -15,11 +15,11 @@
     align-items: center;
     height: 2.5rem;
     color: var(--text);
-    padding-inline-end: 1rem;
+    padding-inline-end: var(--space-4);
   }
 
   .noplaceholder {
-    padding-inline-start: 1rem;
+    padding-inline-start: var(--space-4);
   }
 
   .icon {

@@ -27,12 +27,12 @@
   .logo {
     font-weight: 500;
     font-size: 1.25rem;
-    margin: 0 1.5rem;
+    margin: 0 var(--space-6);
   }
 
   .actions {
     margin-inline-start: auto;
-    margin-inline-end: 0.75rem;
+    margin-inline-end: var(--space-3);
     display: flex;
     align-items: center;
   }

@@ -39,7 +39,7 @@
     height: 1.5em;
     margin: 0.25em 0.25em 0.25em 0;
     cursor: pointer;
-    border-radius: 50%;
+    border-radius: var(--radius-full);
     flex: none;
     display: flex;
     align-items: center;

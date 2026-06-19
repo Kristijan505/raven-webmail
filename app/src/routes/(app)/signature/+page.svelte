@@ -94,7 +94,7 @@
 
   .page {
     padding-inline: var(--spacing);
-    padding-bottom: 3rem;
+    padding-bottom: var(--space-12);
   }
 
   .editor {
@@ -108,20 +108,20 @@
     display: flex;
     flex-direction: row;
     justify-content: flex-end;
-    gap: 0.75rem;
-    margin-top: 1.25rem;
+    gap: var(--space-3);
+    margin-top: var(--space-5);
   }
 
   .back {
     align-self: flex-start;
-    margin: 0.75rem 0.75rem -1rem;
+    margin: var(--space-3) var(--space-3) calc(-1 * var(--space-4));
     width: 2.5rem;
     height: 2.5rem;
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 1.5rem;
-    border-radius: 50%;
+    border-radius: var(--radius-full);
     flex: none;
   }
 
@@ -131,14 +131,14 @@
   }
 
   .confirm-text {
-    margin-bottom: 1.5rem;
+    margin-bottom: var(--space-6);
     line-height: 1.5;
   }
 
   .confirm-actions {
     display: flex;
     justify-content: flex-end;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 </style>
 

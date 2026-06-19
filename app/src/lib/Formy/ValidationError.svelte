@@ -36,7 +36,7 @@
 
   .message {
     background: var(--color-error);
-    padding: 0.5rem;
+    padding: var(--space-2);
     text-shadow: #2d3033 0 1px 0;
     font-weight: 600;
     color: #fff;

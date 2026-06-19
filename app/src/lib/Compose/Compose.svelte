@@ -224,7 +224,7 @@
     flex-wrap: wrap-reverse;
     flex-direction: row-reverse;
     position: fixed;
-    z-index: 100100;
+    z-index: calc(var(--z-compose) + 1);
     bottom: 0;
     right: 2.5rem;
   }
@@ -232,7 +232,7 @@
   .tab-holder {
     width: 10rem;
     height: 2rem;
-    margin: 0.5rem 0.25rem 0 0.25rem;
+    margin: var(--space-2) var(--space-1) 0 var(--space-1);
   }
 
   .tab {
@@ -242,8 +242,8 @@
     width: 10rem;
     height: 2rem;
     box-sizing: border-box;
-    padding: 0 0 0 0.5rem;
-    border-radius: 0.25rem 0.25rem 0 0;
+    padding: 0 0 0 var(--space-2);
+    border-radius: var(--radius) var(--radius) 0 0;
     background: #333; /* intentional dark compose chrome (white text), like the navbar */
     user-select: none;
     cursor: pointer;
@@ -262,19 +262,19 @@
     right: 0;
     bottom: 0;
     opacity: 0;
-    z-index: -1;
+    z-index: var(--z-below);
   }
 
   .tab-remove {
     display: flex;
-    border-radius: 0.125rem;
+    border-radius: var(--radius-sm);
     margin-inline-start: auto;
     display: flex;
     align-items: center;
     justify-content: center;
     height: 2rem;
     font-size: 1rem;
-    padding: 0 0.5rem 0 0.5rem;
+    padding: 0 var(--space-2) 0 var(--space-2);
     box-sizing: border-box;
   }
 
@@ -285,7 +285,7 @@
     width: 100%;
     height: 100%;
     background: var(--overlay-bg);
-    z-index: 100050;
+    z-index: var(--z-compose);
 
   }
 

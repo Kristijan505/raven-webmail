@@ -10,7 +10,7 @@
     justify-content: center;
     width: 3em;
     height: 3em;
-    border-radius: 50%;
+    border-radius: var(--radius-full);
     color: var(--text-muted);
   }
 
@@ -29,7 +29,7 @@
   x-bubble {
     position: absolute;
     background: var(--red);
-    border-radius: 50%;
+    border-radius: var(--radius-full);
     width: 1rem;
     height: 1rem;
     font-size: 0.7em;
@@ -104,8 +104,8 @@
   }
 
   .add {
-    padding: 0.5rem 0.75rem;
-    border-radius: 0.25rem;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius);
     color: var(--text-muted);
   }
 </style>

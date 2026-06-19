@@ -49,7 +49,7 @@
     align-items: center;
     justify-content: center;
     font-size: 1.4rem;
-    border-radius: 50%;
+    border-radius: var(--radius-full);
     color: #fff;
   }
 </style>

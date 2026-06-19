@@ -57,17 +57,17 @@
     align-items: center;
     font-size: 0.9rem;
     font-weight: 600;
-    border-radius: 0.25rem;
-    padding: 0.25rem 0.75rem 0.25rem 0.25rem;
+    border-radius: var(--radius);
+    padding: var(--space-1) var(--space-3) var(--space-1) var(--space-1);
     align-self: flex-start;
   }
 
   .compact-top {
-    margin-top: -0.5rem;
+    margin-top: calc(-1 * var(--space-2));
   }
 
   .compact-bottom {
-    margin-bottom: -0.5rem;
+    margin-bottom: calc(-1 * var(--space-2));
   }
 </style>
 

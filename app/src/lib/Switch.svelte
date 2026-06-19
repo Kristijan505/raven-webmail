@@ -24,8 +24,8 @@
   }
 	
   .with-label {
-    padding: 0.5rem 0.75rem;
-    border-radius: 0.25rem;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius);
   }
 
   .readonly {
@@ -37,7 +37,7 @@
 		width: 2rem;
 		height: 0.8rem;
 		background-color: var(--surface-2);
-		border-radius: 1rem;
+		border-radius: var(--radius-lg);
 		transition: background-color 125ms ease;
     flex: none;
 	}
@@ -54,7 +54,7 @@
 		position: absolute;
 		top: -0.1rem;
 		left: 0;
-		border-radius: 50%;
+		border-radius: var(--radius-full);
 		transition: transform 125ms ease;
 	}
 	
@@ -63,7 +63,7 @@
 	}
 
   .label {
-    margin-inline-start: 0.5rem;
+    margin-inline-start: var(--space-2);
     font-size: 0.9rem;
     font-weight: 600;
   }

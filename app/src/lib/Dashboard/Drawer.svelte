@@ -78,8 +78,8 @@
     left: 0;
     right: 0;
     background: var(--overlay-bg);
-    z-index: 101100;
-    transition: opacity 300ms ease;
+    z-index: var(--z-drawer);
+    transition: opacity var(--duration) ease;
   }
 
   .overlay:not(.open) {
@@ -97,7 +97,7 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
-    transition: margin 300ms ease;
+    transition: margin var(--duration) ease;
   }
 
   @media (max-width: 800px) {
@@ -106,7 +106,7 @@
       top: 0;
       bottom: 0;
       left: 0;
-      z-index: 101200;
+      z-index: calc(var(--z-drawer) + 1);
     }
 
     .drawer:not(.narrow-open) {
@@ -127,7 +127,7 @@
     box-sizing: border-box;
     color: var(--text);
     height: var(--top-h);
-    margin-bottom: -0.75rem;
+    margin-bottom: calc(-1 * var(--space-3));
   }
 
   .menu {
@@ -155,7 +155,7 @@
   .compose-wrap {
     z-index: 10;
     position: relative;
-    padding: 1rem;
+    padding: var(--space-4);
     transition: box-shadow 200ms ease;
   }
 
@@ -175,7 +175,7 @@
     align-items: center;
     border: var(--border) 1px solid;
     border-radius: 100px;
-    padding: 0.75rem 1.25rem 0.75rem 0.75rem;
+    padding: var(--space-3) var(--space-5) var(--space-3) var(--space-3);
     font-size: 1rem;
     box-shadow: 0 1px 2px 0 rgb(60 64 67 / 30%), 0 1px 3px 1px rgb(60 64 67 / 15%);
     transition: box-shadow 400ms ease;
@@ -192,8 +192,8 @@
   .compose-icon {
     display: flex;
     font-size: 1.25rem;
-    margin-inline-end: 0.75rem;
-    margin-inline-start: 0.25rem;
+    margin-inline-end: var(--space-3);
+    margin-inline-start: var(--space-1);
   }
 
   .sep {
@@ -204,12 +204,12 @@
     display: flex;
     flex-direction: row;
     align-items: center;
-    padding: 1rem 0.75rem 1rem 0.5rem;
+    padding: var(--space-4) var(--space-3) var(--space-4) var(--space-2);
   }
 
   .new-icon {
     font-size: 1.25rem;
-    margin-inline-end: 1rem;
+    margin-inline-end: var(--space-4);
   }
 
   .create-form {
@@ -218,7 +218,7 @@
   }
 
   .create-name {
-    margin-bottom: 1.25rem;
+    margin-bottom: var(--space-5);
   }
 
   .create-send {

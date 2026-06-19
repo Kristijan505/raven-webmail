@@ -128,7 +128,7 @@
     padding: 0.9em 0.75em;
     width: 100%;
     color: var(--text);
-    transition: border-color 150ms ease-in-out;
+    transition: border-color var(--duration-fast) ease-in-out;
     background-color: var(--surface-2);
   }
 
@@ -156,7 +156,7 @@
     pointer-events: none;
     background: var(--surface-2);
     color: var(--text-muted);
-    transition: color 150ms ease, transform 150ms ease-in-out;
+    transition: color var(--duration-fast) ease, transform var(--duration-fast) ease-in-out;
     transform-origin: top left;
     max-width: calc(100% - 1em);
     overflow: hidden;
@@ -186,7 +186,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 50%;
+    border-radius: var(--radius-full);
   }
 
   .with-link > input {

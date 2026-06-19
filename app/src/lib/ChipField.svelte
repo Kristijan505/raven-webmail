@@ -67,7 +67,7 @@
     display: flex;
     flex-direction: row;
     flex-wrap: wrap;
-    margin-bottom: 0.25rem;
+    margin-bottom: var(--space-1);
   }
 
   .chip {
@@ -77,20 +77,20 @@
     flex: none;
     align-items: center;
     background: var(--surface-2);
-    margin: 0 0.75rem 0.75rem 0;
+    margin: 0 var(--space-3) var(--space-3) 0;
   }
 
   .chip-txt {
-    padding: 0.5rem 0.5rem 0.5rem 1rem;
+    padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
   }
 
   .remove {
-    border-radius: 50%;
+    border-radius: var(--radius-full);
     display: flex;
     color: #dfdfdf;
     background: rgba(0,0,0,0.3);
     font-size: 1.5rem;
-    margin: 0.25rem 0.25rem 0.25rem 0;
+    margin: var(--space-1) var(--space-1) var(--space-1) 0;
   }
 </style>
 

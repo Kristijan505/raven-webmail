@@ -67,8 +67,8 @@
     align-items: center;
     padding: 0 0.5em;
     box-shadow: rgba(0,0,0,0.35) 0 1px 3px 2px;
-    border-radius: 0.25rem;
-    margin: 0.5rem 1rem 0.75rem 0.75rem;
+    border-radius: var(--radius);
+    margin: var(--space-2) var(--space-4) var(--space-3) var(--space-3);
     overflow-x: auto;
     overflow-y: hidden;
   }
@@ -97,11 +97,11 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 0.5rem 0.1em;
+    padding: var(--space-2) 0.1em;
     user-select: none;
     cursor: pointer;
     color: var(--text-muted);
-    transition: background-color 300ms ease, color 300ms ease;
+    transition: background-color var(--duration) ease, color var(--duration) ease;
     border-radius: 3px;
     position: relative;
     flex: none;
@@ -140,11 +140,11 @@
   .send {
     background-color: var(--send-bg);
     color: #fff;
-    border-radius: 0.25rem;
-    transition: background-color 300ms ease;
+    border-radius: var(--radius);
+    transition: background-color var(--duration) ease;
     font-size: 0.9rem;
-    padding: 0.5rem 0.75rem;
-    margin: 1rem 1rem 1rem auto;
+    padding: var(--space-2) var(--space-3);
+    margin: var(--space-4) var(--space-4) var(--space-4) auto;
     position: relative;
     flex: none;
   }

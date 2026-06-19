@@ -42,7 +42,7 @@
   .wrap {
     position: relative;
     margin-inline-start: auto;
-    margin-inline-end: 1rem;
+    margin-inline-end: var(--space-4);
   }
 
   .anchor {
@@ -56,7 +56,7 @@
     align-items: center;
     justify-content: center;
     padding: 0.3rem;
-    border-radius: 50%;
+    border-radius: var(--radius-full);
     position: relative;
     overflow: hidden;
     cursor: pointer;
@@ -66,8 +66,8 @@
   .account-head {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    padding: 0.85rem 1rem 0.65rem;
+    gap: var(--space-3);
+    padding: 0.85rem var(--space-4) 0.65rem;
     min-width: 12rem;
   }
 
@@ -99,8 +99,8 @@
   .account-email {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 1rem;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-4);
     cursor: pointer;
     position: relative;
     overflow: hidden;

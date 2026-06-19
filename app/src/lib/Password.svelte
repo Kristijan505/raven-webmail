@@ -31,7 +31,7 @@
     height: 100%;
     cursor: pointer;
     color: var(--text-muted);
-    transition: color 300ms ease;
+    transition: color var(--duration) ease;
     display: flex;
     font-size: 1.5em;
     user-select: none;

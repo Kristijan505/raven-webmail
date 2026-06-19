@@ -106,8 +106,8 @@ import { locale } from "$lib/locale";
     left: 5%;
     background: var(--surface);
     color: var(--text);
-    border-radius: 0.5rem;
-    z-index: 100200;
+    border-radius: var(--radius-md);
+    z-index: calc(var(--z-compose) + 2);
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -130,7 +130,7 @@ import { locale } from "$lib/locale";
     color: #ddd; /* light title on the dark compose chrome */
     font-size: 0.9rem;
     margin-inline-end: auto;
-    margin-inline-start: 1rem;
+    margin-inline-start: var(--space-4);
     display: flex;
     flex-direction: row;
     align-items: center;
@@ -147,7 +147,7 @@ import { locale } from "$lib/locale";
     align-items: center;
     justify-content: center;
     font-size: 2rem;
-    margin-inline-start: -0.75rem;
+    margin-inline-start: calc(-1 * var(--space-3));
   }
 
   .window-btn {
@@ -159,7 +159,7 @@ import { locale } from "$lib/locale";
     width: 2.25rem;
     height: 2.25rem;
     margin: 0.125rem;
-    border-radius: 0.125rem;
+    border-radius: var(--radius-sm);
     color: #fff;
   }
 

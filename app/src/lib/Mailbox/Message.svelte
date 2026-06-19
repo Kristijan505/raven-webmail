@@ -88,15 +88,15 @@
   }
 
   .cell-icon:hover {
-    z-index: 1;
+    z-index: var(--z-base);
   }
 
   .cell-icon + .cell-icon {
-    margin-inline-start: -0.75rem;
+    margin-inline-start: calc(-1 * var(--space-3));
   }
 
   .cell-icon:first-child {
-    margin-inline-start: 0.5rem;
+    margin-inline-start: var(--space-2);
   }
 
   .selected {
@@ -125,8 +125,8 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    margin-inline-end: 1rem;
-    margin-inline-start: 1rem;
+    margin-inline-end: var(--space-4);
+    margin-inline-start: var(--space-4);
   }
 
   .subject {
@@ -134,14 +134,14 @@
   }
 
   .intro {
-    margin-inline-start: 1rem;
+    margin-inline-start: var(--space-4);
   }
 
   .date {
     flex: none;
     color: var(--text-muted);
     font-size: 0.8rem;
-    margin-inline-end: 1rem;
+    margin-inline-end: var(--space-4);
   }
 
   .flex {
@@ -161,7 +161,7 @@
   .attachments {
     display: flex;
     font-size: 1.25rem;
-    margin-inline-end: 1rem;
+    margin-inline-end: var(--space-4);
     justify-self: flex-end;
     color: var(--text-muted);
   }
@@ -170,7 +170,7 @@
     .flex {
       flex-direction: column;
       align-items: flex-start;
-      padding: 0.75rem 0;
+      padding: var(--space-3) 0;
     }
 
     .end {
@@ -179,13 +179,13 @@
     }
     
     .subject-intro {
-      margin-top: 0.5rem;
+      margin-top: var(--space-2);
       margin-inline-start: 0;
       width: calc(100% - 1rem);
     }
 
     .date {
-      margin-top: 0.5rem;
+      margin-top: var(--space-2);
     }
 
     .select {
@@ -198,8 +198,8 @@
 
     .attachments {
       margin-inline-start: auto;
-      margin-top: 0.5rem;
-      margin-bottom: -0.5rem;
+      margin-top: var(--space-2);
+      margin-bottom: calc(-1 * var(--space-2));
     }
   }
 

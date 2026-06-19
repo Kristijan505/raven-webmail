@@ -30,7 +30,7 @@ import { locale } from "./locale";
     color: #fff;
     font-weight: 600;
     background: var(--red);
-    border-radius: 50%;
+    border-radius: var(--radius-full);
     width: 1.4em;
     height: 1.4em;
     line-height: 1.4em;
@@ -48,12 +48,12 @@ import { locale } from "./locale";
   .img {
     width: 2rem;
     height: 2rem;
-    margin-inline-start: 0.5rem;
+    margin-inline-start: var(--space-2);
   }
 
   .name {
-    margin-inline-start: 1rem;
-    margin-inline-end: 1rem;
+    margin-inline-start: var(--space-4);
+    margin-inline-end: var(--space-4);
   }
 </style>
 

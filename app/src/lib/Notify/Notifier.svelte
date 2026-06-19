@@ -122,7 +122,7 @@
 <style>
   .messenger {
     position: fixed;
-    z-index: 99999999999;
+    z-index: var(--z-toast);
     bottom: 0.5em;
     left: 0.5em;
     display: flex;

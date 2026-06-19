@@ -9,12 +9,12 @@
 
 <style>
   .page {
-    padding: 2rem;
+    padding: var(--space-8);
   }
 
   p {
     font-size: 1.25rem;
-    margin-bottom: 3rem;
+    margin-bottom: var(--space-12);
   }
 </style>
 

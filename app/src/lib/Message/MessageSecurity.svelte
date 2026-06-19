@@ -45,7 +45,7 @@
 
 <style>
   .security {
-    margin-top: 0.5rem;
+    margin-top: var(--space-2);
     font-size: 0.85rem;
   }
 
@@ -70,11 +70,11 @@
   .summary.fail { color: var(--red); }
 
   .panel {
-    margin-top: 0.5rem;
+    margin-top: var(--space-2);
     border: 1px solid var(--border);
     background: var(--surface-2);
-    border-radius: 0.5rem;
-    padding: 0.75rem 1rem;
+    border-radius: var(--radius-md);
+    padding: var(--space-3) var(--space-4);
     color: var(--text);
     max-width: 32rem;
   }
@@ -111,7 +111,7 @@
   .sep {
     height: 1px;
     background: var(--border);
-    margin: 0.5rem 0;
+    margin: var(--space-2) 0;
   }
 </style>
 

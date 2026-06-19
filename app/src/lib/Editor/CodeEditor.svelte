@@ -16,7 +16,7 @@
 
   .lines {
     font-size: 0.8rem;
-    padding: 0.5rem;
+    padding: var(--space-2);
     flex: none;
     font-family: monospace;
     border-right: var(--border) 1px solid;
@@ -29,7 +29,7 @@
     flex: 1;
     font-size: inherit;
     font-family: monospace;
-    padding: 0.5rem;
+    padding: var(--space-2);
     outline: 0;
     border: 0;
     margin: 0;

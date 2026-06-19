@@ -153,7 +153,7 @@ import { locale } from "$lib/locale";
 
   .reload-inner {
     display: flex;
-    transition: transform 300ms ease;
+    transition: transform var(--duration) ease;
   }
 
   .select {
@@ -172,7 +172,7 @@ import { locale } from "$lib/locale";
     flex-direction: row-reverse;
     align-items: center;
     margin-inline-start: auto;
-    margin-inline-end: 1rem;
+    margin-inline-end: var(--space-4);
     background: var(--selected-bg);
     padding: 0.4em 0.5em;
     border-radius: 100px;
@@ -194,7 +194,7 @@ import { locale } from "$lib/locale";
   }
 
   .clear-label {
-    margin-bottom: 1.5rem;
+    margin-bottom: var(--space-6);
   }
 
   .clear-confirm {
@@ -213,9 +213,9 @@ import { locale } from "$lib/locale";
 
   .total {
     margin-inline-start: auto;
-    margin-inline-end: 1rem;
+    margin-inline-end: var(--space-4);
     font-size: 0.8rem;
-    padding: 0.5rem 1rem;
+    padding: var(--space-2) var(--space-4);
     border-radius: 100px;
     background: var(--surface-2);
     color: var(--text-muted);

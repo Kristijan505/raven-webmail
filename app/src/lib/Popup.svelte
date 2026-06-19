@@ -14,7 +14,7 @@
         background: var(--surface);
         color: var(--text);
         border-radius: 3px;
-        z-index: 100000;
+        z-index: var(--z-dropdown);
     }
 
     .wide {

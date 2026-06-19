@@ -145,7 +145,7 @@
 		background: var(--surface);
 		color: var(--text);
 		border-radius: 3px;
-		z-index: 100000000;
+		z-index: var(--z-popover);
     max-width: calc(100% - 10px);
     max-height: calc(100% - 10px);
     overflow: auto;

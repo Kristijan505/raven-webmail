@@ -108,7 +108,7 @@
   }
 
   .first-action {
-    margin-inline-start: 0.5rem;
+    margin-inline-start: var(--space-2);
   }
 
   .message {
@@ -117,7 +117,7 @@
   }
 
   .body {
-    padding: 2rem;
+    padding: var(--space-8);
     max-width: 64rem;
     margin-inline: auto;
     box-sizing: border-box;
@@ -128,7 +128,7 @@
   }
 
   .detail {
-    padding: 2rem;
+    padding: var(--space-8);
     max-width: 64rem;
     margin-inline: auto;
     box-sizing: border-box;
@@ -137,7 +137,7 @@
   .subject {
     font-size: 1.65rem;
     font-weight: 500;
-    margin-bottom: 1.25rem;
+    margin-bottom: var(--space-5);
   }
 
   .info {
@@ -145,7 +145,7 @@
   }
 
   .info > div {
-    margin-bottom: 0.75rem;
+    margin-bottom: var(--space-3);
   }
 
   .from-name, .from-only-address, .to-address {
@@ -155,12 +155,12 @@
   .remote-images {
     display: flex;
     align-items: center;
-    gap: 1rem;
+    gap: var(--space-4);
     background: var(--warning-bg);
     border: 1px solid var(--warning-border);
     border-radius: 6px;
-    padding: 0.6rem 1rem;
-    margin-bottom: 1rem;
+    padding: 0.6rem var(--space-4);
+    margin-bottom: var(--space-4);
     font-size: 0.9rem;
     color: var(--warning-text);
   }

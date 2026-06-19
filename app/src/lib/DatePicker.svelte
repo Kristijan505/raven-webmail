@@ -163,8 +163,8 @@
     flex-direction: column;
     overflow: hidden;
     box-shadow: rgba(0,0,0,0.4) 0 0 8px 0;
-    border-radius: 0.25rem;
-    padding: 1rem;
+    border-radius: var(--radius);
+    padding: var(--space-4);
     color: var(--text);
     background: var(--surface);
   }
@@ -173,7 +173,7 @@
     display: flex;
     flex-direction: row;
     align-items: center;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .title {
@@ -190,8 +190,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 0.5rem;
-    border-radius: 50%;
+    padding: var(--space-2);
+    border-radius: var(--radius-full);
   }
 
   .days-top {
@@ -223,7 +223,7 @@
     align-items: center;
     justify-content: center;
     text-align: center;
-    border-radius: 50%;
+    border-radius: var(--radius-full);
     transition: background-color 250ms ease, color 250ms ease;
     font-weight: 500;
   }

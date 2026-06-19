@@ -126,7 +126,7 @@
     top: 100%;
     width: 100%;
     left: 0;
-    z-index: 100000;
+    z-index: var(--z-dropdown);
     background: var(--surface);
     max-height: 95vh;
     overflow-x: hidden;

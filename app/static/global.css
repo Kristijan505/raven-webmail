@@ -10,12 +10,56 @@
     --selected-bg: #c2dbff;
     --selected-border: #a5bad9;
     --border: rgba(0, 0, 0, 0.18);
-    --btn-transition: background-color 300ms ease;
+    --btn-transition: background-color var(--duration) ease;
     --btn-dark-bg: rgba(0, 0, 0, 0.075);
     --btn-light-bg: rgba(255, 255, 255, 0.075);
     --btn-radius: 0.25em;
     --btn-padding: 0.75rem;
     --top-h: 4rem;
+
+    /* --- Design tokens (theme-independent: NOT repeated in the dark blocks) --- */
+
+    /* Spacing scale (0.25rem / 4px base). Only EXACT matches were migrated;
+       off-grid one-offs (0.4/0.6/0.85rem…) and font-relative `em` spacing were
+       left as-is on purpose, so the migration is visually identical. */
+    --space-1: 0.25rem;
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1rem;
+    --space-5: 1.25rem;
+    --space-6: 1.5rem;
+    --space-8: 2rem;
+    --space-10: 2.5rem;
+    --space-12: 3rem;
+
+    /* Corner radius scale. Pill (100px/1000px) and stray px radii are left
+       untouched to avoid normalizing their exact rounding. */
+    --radius-sm: 0.125rem;
+    --radius: 0.25rem;
+    --radius-md: 0.5rem;
+    --radius-lg: 1rem;
+    --radius-full: 50%;
+
+    /* Stacking order. Small, spaced values — only the relative order matters,
+       since these are the app's portal/overlay layers. Replaces ad-hoc magic
+       numbers that had crept up to 99999999999. Components with internal
+       sub-layers offset from their base token via calc(). */
+    --z-below: -1;
+    --z-base: 1;
+    --z-raised: 2;
+    --z-sticky: 100;
+    --z-nav: 200;
+    --z-dropdown: 300;
+    --z-compose: 400;
+    --z-drawer: 500;
+    --z-modal: 600;
+    --z-popover: 700;
+    --z-tooltip: 750;
+    --z-toast: 800;
+
+    /* Motion durations. */
+    --duration-fast: 150ms;
+    --duration: 300ms;
 
     /* Semantic / UI tokens — dark overrides live in the two dark blocks below.
        Tokens not repeated there keep this light value in dark mode too. */
@@ -114,7 +158,7 @@ body {
     width: 100%;
     height: 100%;
     position: fixed;
-    z-index: -1;
+    z-index: var(--z-below);
     background: #ec1e24;
     flex-direction: column;
     align-items: center;
@@ -231,15 +275,15 @@ button {
 .tooltip {
     position: fixed;
     display: inline-block;
-    padding: 0.5rem 0.75rem;
+    padding: var(--space-2) var(--space-3);
     font-size: 0.85rem;
     pointer-events: none;
     transition: opacity 200ms ease;
     opacity: 0;
     color: #fff;
     background: rgba(0, 0, 0, 0.8);
-    z-index: 999999999;
-    border-radius: 0.25rem;
+    z-index: var(--z-tooltip);
+    border-radius: var(--radius);
     max-width: calc(100vw - 32px);
 }
 

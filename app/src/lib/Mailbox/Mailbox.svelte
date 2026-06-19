@@ -169,7 +169,7 @@ import { locale } from "$lib/locale";
   
   .empty {
     flex: none;
-    margin: 3rem auto;
+    margin: var(--space-12) auto;
     text-align: center;
     display: flex;
     flex-direction: column;
@@ -190,9 +190,9 @@ import { locale } from "$lib/locale";
     justify-content: center;
     color: var(--red);
     font-size: 2rem;
-    border-radius: 50%; 
-    padding: 1rem;
-    margin-top: 0.5rem;
+    border-radius: var(--radius-full); 
+    padding: var(--space-4);
+    margin-top: var(--space-2);
   }
 
   .loading-more{
@@ -200,9 +200,9 @@ import { locale } from "$lib/locale";
     align-items: center;
     justify-content: center;
     font-size: 2rem;
-    border-radius: 50%; 
-    padding: 1rem;
-    margin-top: 0.5rem;
+    border-radius: var(--radius-full); 
+    padding: var(--space-4);
+    margin-top: var(--space-2);
   }
 </style>
 

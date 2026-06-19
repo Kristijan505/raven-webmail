@@ -29,9 +29,9 @@
     display: flex;
     flex-direction: row;
     align-items: center;
-    gap: 1.5rem;
-    padding: var(--spacing, 1.5rem);
-    padding-top: calc(var(--spacing, 1.5rem) * 2);
+    gap: var(--space-6);
+    padding: var(--spacing, var(--space-6));
+    padding-top: calc(var(--spacing, var(--space-6)) * 2);
   }
 
   .fields {

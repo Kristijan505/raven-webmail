@@ -95,7 +95,7 @@ import { locale } from "$lib/locale";
 
   .mailbox {
     position: relative;
-    padding: 1rem 0.75rem 1rem 0.5rem;
+    padding: var(--space-4) var(--space-3) var(--space-4) var(--space-2);
     display: flex;
     flex-direction: row;
     align-items: center;
@@ -103,7 +103,7 @@ import { locale } from "$lib/locale";
   }
 
   .mailbox.menu-open {
-    z-index: 100;
+    z-index: var(--z-sticky);
   }
 
   .mailbox.current {
@@ -111,7 +111,7 @@ import { locale } from "$lib/locale";
   }
 
  .icon {
-    margin-inline-end: 1rem;
+    margin-inline-end: var(--space-4);
     display: flex;
     flex: none;
     align-items: center;
@@ -124,7 +124,7 @@ import { locale } from "$lib/locale";
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    padding-right: 1rem;
+    padding-right: var(--space-4);
   }
 
   .menu-out {
@@ -146,13 +146,13 @@ import { locale } from "$lib/locale";
     width: 2.5rem;
     height: 2.5rem;
     font-size: 1.3rem;
-    border-radius: 50%;
+    border-radius: var(--radius-full);
   }
 
   .anchor {
     position: fixed;
     top: var(--scroll-top);
-    margin-top: 2.5rem;
+    margin-top: var(--space-10);
     bottom: 0;
     left: 0;
   }
@@ -174,7 +174,7 @@ import { locale } from "$lib/locale";
   }
 
   .delete-label, .clear-label {
-    margin-bottom: 1.5rem;
+    margin-bottom: var(--space-6);
   }
 
   .delete-confirm, .clear-confirm {
@@ -182,7 +182,7 @@ import { locale } from "$lib/locale";
   }
 
   .rename-confirm {
-    margin-top: 1.5rem;
+    margin-top: var(--space-6);
     margin-inline-start: auto;
   }
 

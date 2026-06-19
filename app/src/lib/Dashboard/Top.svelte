@@ -65,11 +65,11 @@
   .logo {
     font-weight: 500;
     font-size: 1.25rem;
-    margin-inline-end: 1rem;
+    margin-inline-end: var(--space-4);
     display: inline-flex;
     align-items: center;
     cursor: pointer;
-    transition: opacity 150ms ease;
+    transition: opacity var(--duration-fast) ease;
   }
 
   .logo:hover {
@@ -83,7 +83,7 @@
   }
 
   .q-wrap-wrap {
-    margin-inline-end: 0.75rem;
+    margin-inline-end: var(--space-3);
     display: flex;
     flex: 1;
     flex-basis: 14rem;
@@ -107,13 +107,13 @@
     align-items: center;
     justify-content: center;
     color: rgba(255,255,255,0.8);
-    margin-inline-end: 1rem;
+    margin-inline-end: var(--space-4);
   }
 
   .q {
     display: block;
     flex: 1;
-    padding: 0.6rem 1rem 0.6rem 2.5rem;
+    padding: 0.6rem var(--space-4) 0.6rem var(--space-10);
     border-radius: 100px;
     border: 0;
     outline: 0;
