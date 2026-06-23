@@ -65,6 +65,23 @@
       const el = toRemove[i];
       el.parentNode?.removeChild(el);
     }
+    // Quoted reply/forward content keeps the original <img> etc. The compose iframe
+    // is same-origin + authenticated, so a remote src / srcset / CSS url() would
+    // fetch (tracking) the moment the window opens — and there's no "load images"
+    // opt-in while composing. Neutralize fetch-capable refs; data:/cid: stay.
+    for(const $el of [].slice.call(div.querySelectorAll("[srcset]")) as Element[]) $el.removeAttribute("srcset");
+    for(const $img of [].slice.call(div.querySelectorAll("img, source")) as Element[]) {
+      const s = ($img.getAttribute("src") || "").trim();
+      if(s && !/^(data:|cid:)/i.test(s)) $img.removeAttribute("src");
+    }
+    for(const $el of [].slice.call(div.querySelectorAll("[style]")) as HTMLElement[]) {
+      const st = $el.getAttribute("style") || "";
+      const cleaned = st.replace(/url\(\s*(['"]?)([^'")]*)\1\s*\)/gi, (whole: string, _q: string, ref: string) => {
+        const u = (ref || "").trim();
+        return (!u || /^(data:|cid:)/i.test(u)) ? whole : "none";
+      });
+      if(cleaned !== st) $el.setAttribute("style", cleaned);
+    }
     const html = div.innerHTML;
     const text = div.textContent;
     return { html, text }

@@ -188,10 +188,11 @@ export const messageHTML = (node: HTMLElement, opts: string | { html: string, me
   // url() / @import — bypassing the image opt-in and leaking a "message opened"
   // tracking signal. Strip @import outright; for url() keep data:/cid:, route
   // http(s) refs through the proxy when images are opted in, neutralize otherwise.
-  for(const $style of [].slice.call(fragment.querySelectorAll("style")) as HTMLStyleElement[]) {
-    let css = $style.textContent || "";
-    css = css.replace(/@import\b[^;]*;?/gi, "");
-    css = css.replace(/url\(\s*(['"]?)([^'")]*)\1\s*\)/gi, (whole: string, _q: string, ref: string) => {
+  // Rewrite url() refs in CSS — keep data:/cid:, route http(s)/app-absolute
+  // through the proxy when opted in, neutralize otherwise. Used for both <style>
+  // blocks and inline style="" attributes (@import only appears in blocks).
+  const rewriteCssUrls = (css: string): string =>
+    css.replace(/url\(\s*(['"]?)([^'")]*)\1\s*\)/gi, (whole: string, _q: string, ref: string) => {
       const u = (ref || "").trim();
       if(!u || /^(data:|cid:)/i.test(u)) return whole;        // inline / attachment — safe
       if(/^(https?:)?\/\//i.test(u) || u.startsWith("/")) {   // remote or app-absolute
@@ -199,7 +200,18 @@ export const messageHTML = (node: HTMLElement, opts: string | { html: string, me
       }
       return whole;                                            // bare relative — inert in the iframe
     });
-    $style.textContent = css;
+
+  for(const $style of [].slice.call(fragment.querySelectorAll("style")) as HTMLStyleElement[]) {
+    $style.textContent = rewriteCssUrls(($style.textContent || "").replace(/@import\b[^;]*;?/gi, ""));
+  }
+
+  // Inline style="" attributes (DOMPurify keeps these) carry the same url()
+  // vector — e.g. <div style="background:url(https://tracker/p.png)"> fetches the
+  // moment the iframe renders, even with images hidden. Rewrite them too.
+  for(const $el of [].slice.call(fragment.querySelectorAll("[style]")) as HTMLElement[]) {
+    const style = $el.getAttribute("style") || "";
+    const cleaned = rewriteCssUrls(style);
+    if(cleaned !== style) $el.setAttribute("style", cleaned);
   }
 
   // srcset (on <img> and <picture>/<video> <source>) is fetch-capable but was

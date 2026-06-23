@@ -6,7 +6,11 @@ const MongoStore = MongoSession(ExpressSession);
 
 export const session = (config: Config) => {
   const maxAge = config.session_cookie_max_age_ms ?? 7 * 24 * 60 * 60 * 1000;
-  const trustProxy = config.trust_proxy != null;
+  // Only a real trusted-proxy value counts. An explicit trust_proxy=false means
+  // "not behind a proxy", so it must NOT enable proxy-derived cookie handling
+  // (secure="auto" from X-Forwarded-Proto, proxy:true) — `!= null` alone would,
+  // since false != null.
+  const trustProxy = config.trust_proxy != null && config.trust_proxy !== false;
   // When TLS is terminated at a reverse proxy (trust_proxy set, ssl=false), tie the
   // Secure flag to the forwarded protocol ("auto") instead of leaving it off, so the
   // session cookie is never issued over a plaintext hop. Direct TLS => always secure.
