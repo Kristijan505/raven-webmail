@@ -111,7 +111,11 @@ const BulkMessageUpdateSchema = z.object({
 
 // Address used in draft creation (To / Cc / Bcc fields).
 const AddressSchema = z.object({
-  name: z.string().optional(),
+  // WildDuck uses name: null when an address has no display name, and the reply
+  // flow forwards message.from straight into the draft — so null must validate,
+  // not just an omitted name (rejecting it broke replying to no-display-name
+  // senders).
+  name: z.string().nullable().optional(),
   address: z.string().min(1),
 });
 
@@ -167,18 +171,22 @@ const enforceSameOrigin: RequestHandler = (req, res, next) => {
   }
   const origin = req.get("origin");
   if (!origin) return next();
-  let originHost: string | null = null;
+  let originValue: string | null = null;
   try {
-    originHost = new URL(origin).host;   // hostname[:port]
+    originValue = new URL(origin).origin;   // scheme://hostname[:port]
   } catch {
-    originHost = null;
+    originValue = null;
   }
-  // Compare the FULL host:port, not just the hostname. A different-port app on the
-  // same hostname is a separate origin but still shares the host-scoped cookie, so
-  // a hostname-only check would let it pass this CSRF guard. Behind Traefik the
-  // original Host header is preserved, so req's Host carries the external host:port.
+  // Compare the FULL origin — scheme + host + port. Host-only (or even host:port)
+  // ignores scheme, so a plain-HTTP page on the same hostname could submit unsafe
+  // requests to the HTTPS app when cross-site cookies are enabled (same_site=none).
+  // A different port is likewise a different origin that still shares the
+  // host-scoped cookie. req.protocol is X-Forwarded-Proto-aware behind Traefik and
+  // req's Host carries the external host:port, so rebuild the expected origin.
   const reqHost = req.get("host");
-  if (originHost === null || !reqHost || originHost.toLowerCase() !== reqHost.toLowerCase()) {
+  let expected: string | null = null;
+  try { expected = reqHost ? new URL(`${req.protocol}://${reqHost}`).origin : null; } catch { expected = null; }
+  if (originValue === null || expected === null || originValue !== expected) {
     res.status(StatusCodes.FORBIDDEN).json({ error: { status: 403, message: errMsg(req, "cross_origin_blocked", "Cross-origin request blocked") } });
     return;
   }
@@ -212,9 +220,9 @@ export const isPrivateIp = (ip: string): boolean => {
   return addr.range() !== "unicast";
 };
 
-// Returns the parsed URL together with the validated IP we will connect to, so
-// the fetch can be pinned to it (see pinnedGet) instead of re-resolving the host.
-export const assertPublicHttpUrl = async (raw: string): Promise<{ url: URL; ip: string }> => {
+// Returns the parsed URL together with the validated IPs we will connect to, so
+// the fetch can be pinned to them (see pinnedGet) instead of re-resolving the host.
+export const assertPublicHttpUrl = async (raw: string): Promise<{ url: URL; ips: string[] }> => {
   let u: URL;
   try { u = new URL(raw); } catch { throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid image url"); }
   if (u.protocol !== "http:" && u.protocol !== "https:") {
@@ -230,8 +238,10 @@ export const assertPublicHttpUrl = async (raw: string): Promise<{ url: URL; ip: 
     ips = records.map(r => r.address);
   }
   if (ips.some(isPrivateIp)) throw new ApiError(StatusCodes.BAD_REQUEST, "Image host not allowed");
-  // Every resolved address passed the private-range check; pin to the first.
-  return { url: u, ip: ips[0] };
+  // Every resolved address passed the private-range check; keep them all so the
+  // fetch can fall back from an unreachable address (e.g. an AAAA before an A on an
+  // IPv4-only host) to a working one before failing.
+  return { url: u, ips };
 };
 
 // GET with the TCP connection pinned to a pre-validated IP. assertPublicHttpUrl
@@ -240,7 +250,7 @@ export const assertPublicHttpUrl = async (raw: string): Promise<{ url: URL; ip: 
 // during validation and a private/link-local one for the actual fetch (TOCTOU),
 // re-opening the SSRF. `servername` keeps TLS SNI and the Host header keeps
 // routing on the original hostname; redirects are followed manually (re-validated).
-const pinnedGet = (url: URL, ip: string): Promise<http.IncomingMessage> => {
+const pinnedGetOne = (url: URL, ip: string): Promise<http.IncomingMessage> => {
   const isHttps = url.protocol === "https:";
   const lib = isHttps ? https : http;
   return new Promise<http.IncomingMessage>((resolve, reject) => {
@@ -257,6 +267,18 @@ const pinnedGet = (url: URL, ip: string): Promise<http.IncomingMessage> => {
     req.on("error", reject);
     req.end();
   });
+};
+
+// Try each validated address until one connects: a DNS set can list an
+// unreachable AAAA before a working A (IPv4-only hosts), and all of them already
+// passed the isPrivateIp check, so falling back stays within the SSRF guard.
+const pinnedGet = async (url: URL, ips: string[]): Promise<http.IncomingMessage> => {
+  let lastErr: unknown;
+  for (const ip of ips) {
+    try { return await pinnedGetOne(url, ip); }
+    catch (e) { lastErr = e; }
+  }
+  throw lastErr ?? new Error("No reachable address for image host");
 };
 
 // Brute-force / credential-stuffing protection for the login endpoint. Only
@@ -575,7 +597,7 @@ export const api = (config: Config) => {
 
     // Follow up to 3 redirects, re-validating AND re-pinning each hop.
     for (let i = 0; i <= MAX_IMAGE_REDIRECTS; i++) {
-      upstream = await pinnedGet(target.url, target.ip).catch(() => {
+      upstream = await pinnedGet(target.url, target.ips).catch(() => {
         throw new ApiError(StatusCodes.BAD_GATEWAY, "Cannot fetch image");
       });
 

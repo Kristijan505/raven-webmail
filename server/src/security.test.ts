@@ -67,9 +67,9 @@ describe("assertPublicHttpUrl() — image proxy URL validation", () => {
   });
 
   it("accepts a public IP-literal host and pins to its validated IP", async () => {
-    const { url, ip } = await assertPublicHttpUrl("https://8.8.8.8/logo.png");
+    const { url, ips } = await assertPublicHttpUrl("https://8.8.8.8/logo.png");
     expect(url).toBeInstanceOf(URL);
     expect(url.hostname).toBe("8.8.8.8");
-    expect(ip).toBe("8.8.8.8");
+    expect(ips).toContain("8.8.8.8");
   });
 });
