@@ -11,8 +11,11 @@ import { RAVEN_SIGNATURE_META_KEY } from "./metadata";
 import { Readable, Transform } from "stream";
 import * as dns from "dns/promises";
 import * as net from "net";
+import * as http from "http";
+import * as https from "https";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
+import ipaddr from "ipaddr.js";
 
 const fromWeb = (Readable as any).fromWeb as ((stream: any) => NodeJS.ReadableStream);
 
@@ -166,13 +169,16 @@ const enforceSameOrigin: RequestHandler = (req, res, next) => {
   if (!origin) return next();
   let originHost: string | null = null;
   try {
-    originHost = new URL(origin).hostname;
+    originHost = new URL(origin).host;   // hostname[:port]
   } catch {
     originHost = null;
   }
-  // req.hostname honors X-Forwarded-Host when trust proxy is set, so this works
-  // behind a reverse proxy; compare hostnames (port-insensitive) to avoid false 403s.
-  if (originHost === null || originHost !== req.hostname) {
+  // Compare the FULL host:port, not just the hostname. A different-port app on the
+  // same hostname is a separate origin but still shares the host-scoped cookie, so
+  // a hostname-only check would let it pass this CSRF guard. Behind Traefik the
+  // original Host header is preserved, so req's Host carries the external host:port.
+  const reqHost = req.get("host");
+  if (originHost === null || !reqHost || originHost.toLowerCase() !== reqHost.toLowerCase()) {
     res.status(StatusCodes.FORBIDDEN).json({ error: { status: 403, message: errMsg(req, "cross_origin_blocked", "Cross-origin request blocked") } });
     return;
   }
@@ -185,52 +191,30 @@ const enforceSameOrigin: RequestHandler = (req, res, next) => {
 // http://169.254.169.254 cloud metadata, http://127.0.0.1). We resolve the host
 // and reject any non-public IP before fetching, and re-validate across redirects.
 
-const ipv4ToInt = (ip: string): number | null => {
-  const parts = ip.split(".");
-  if (parts.length !== 4) return null;
-  let n = 0;
-  for (const p of parts) {
-    if (!/^\d{1,3}$/.test(p)) return null;
-    const o = Number(p);
-    if (o > 255) return null;
-    n = n * 256 + o;
-  }
-  return n >>> 0;
-};
-
-const isPrivateIpv4 = (ip: string): boolean => {
-  const n = ipv4ToInt(ip);
-  if (n === null) return true; // unparseable -> treat as unsafe
-  const inRange = (base: string, bits: number) => {
-    const b = ipv4ToInt(base)!;
-    const mask = (0xffffffff << (32 - bits)) >>> 0;
-    return (n & mask) === (b & mask);
-  };
-  return (
-    inRange("0.0.0.0", 8) || inRange("10.0.0.0", 8) || inRange("100.64.0.0", 10) ||
-    inRange("127.0.0.0", 8) || inRange("169.254.0.0", 16) || inRange("172.16.0.0", 12) ||
-    inRange("192.0.0.0", 24) || inRange("192.0.2.0", 24) || inRange("192.168.0.0", 16) ||
-    inRange("198.18.0.0", 15) || inRange("198.51.100.0", 24) || inRange("203.0.113.0", 24) ||
-    inRange("224.0.0.0", 4) || inRange("240.0.0.0", 4)
-  );
-};
-
+// Classify an IP literal with ipaddr.js instead of hand-rolled IPv6 parsing.
+// The old code matched only the dotted IPv4-mapped form (::ffff:127.0.0.1), but
+// Node serializes those in hex (::ffff:7f00:1 / ::ffff:a9fe:a9fe for the cloud
+// metadata IP), so a crafted email image URL like http://[::ffff:7f00:1]/ slipped
+// the guard. ipaddr collapses mapped/compatible forms and knows every reserved
+// range, so only ordinary public unicast is treated as safe.
 export const isPrivateIp = (ip: string): boolean => {
-  const fam = net.isIP(ip);
-  if (fam === 4) return isPrivateIpv4(ip);
-  if (fam === 6) {
-    const lower = ip.toLowerCase();
-    const mapped = lower.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
-    if (mapped) return isPrivateIpv4(mapped[1]);
-    if (lower === "::1" || lower === "::") return true;
-    if (/^fe[89ab]/.test(lower)) return true; // fe80::/10 link-local
-    if (lower.startsWith("fc") || lower.startsWith("fd")) return true; // fc00::/7 ULA
-    return false;
+  let addr: ipaddr.IPv4 | ipaddr.IPv6;
+  try {
+    addr = ipaddr.parse(ip);
+  } catch {
+    return true; // unparseable -> unsafe
   }
-  return true; // not a valid IP literal -> unsafe
+  if (addr.kind() === "ipv6" && (addr as ipaddr.IPv6).isIPv4MappedAddress()) {
+    addr = (addr as ipaddr.IPv6).toIPv4Address();
+  }
+  // Everything that isn't plain public unicast (loopback, private, link-local,
+  // CGNAT, ULA, multicast, reserved, NAT64-embedded, …) is unsafe for the proxy.
+  return addr.range() !== "unicast";
 };
 
-export const assertPublicHttpUrl = async (raw: string): Promise<URL> => {
+// Returns the parsed URL together with the validated IP we will connect to, so
+// the fetch can be pinned to it (see pinnedGet) instead of re-resolving the host.
+export const assertPublicHttpUrl = async (raw: string): Promise<{ url: URL; ip: string }> => {
   let u: URL;
   try { u = new URL(raw); } catch { throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid image url"); }
   if (u.protocol !== "http:" && u.protocol !== "https:") {
@@ -246,7 +230,33 @@ export const assertPublicHttpUrl = async (raw: string): Promise<URL> => {
     ips = records.map(r => r.address);
   }
   if (ips.some(isPrivateIp)) throw new ApiError(StatusCodes.BAD_REQUEST, "Image host not allowed");
-  return u;
+  // Every resolved address passed the private-range check; pin to the first.
+  return { url: u, ip: ips[0] };
+};
+
+// GET with the TCP connection pinned to a pre-validated IP. assertPublicHttpUrl
+// resolves+validates the host, and we connect to THAT address rather than letting
+// fetch re-resolve — a DNS-rebinding host could otherwise answer with a public IP
+// during validation and a private/link-local one for the actual fetch (TOCTOU),
+// re-opening the SSRF. `servername` keeps TLS SNI and the Host header keeps
+// routing on the original hostname; redirects are followed manually (re-validated).
+const pinnedGet = (url: URL, ip: string): Promise<http.IncomingMessage> => {
+  const isHttps = url.protocol === "https:";
+  const lib = isHttps ? https : http;
+  return new Promise<http.IncomingMessage>((resolve, reject) => {
+    const req = lib.request({
+      host: ip,
+      port: url.port || (isHttps ? 443 : 80),
+      path: url.pathname + url.search,
+      method: "GET",
+      servername: isHttps ? url.hostname : undefined,
+      headers: { host: url.host, "user-agent": "RavenImageProxy/1.0", accept: "image/*" },
+      timeout: PROXY_FETCH_TIMEOUT_MS,
+    }, resolve);
+    req.on("timeout", () => req.destroy(new Error("Proxy fetch timed out")));
+    req.on("error", reject);
+    req.end();
+  });
 };
 
 // Brute-force / credential-stuffing protection for the login endpoint. Only
@@ -258,7 +268,6 @@ const loginLimiter = rateLimit({
   skipSuccessfulRequests: true,
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { trustProxy: false },
   // Resolve the 429 body per-request so it honors the caller's language. The i18n
   // middleware runs before this limiter (api.use order), so req.locale is set.
   message: (req: Request) => ({ error: { status: 429, message: errMsg(req, "too_many_logins", "Too many login attempts, please try again later") } }),
@@ -561,62 +570,58 @@ export const api = (config: Config) => {
       throw new ApiError(StatusCodes.FORBIDDEN, "Forbidden", "forbidden");
     }
 
-    let current = await assertPublicHttpUrl(String(req.query.url || ""));
-    let upstream: Awaited<ReturnType<typeof fetch>> | null = null;
+    let target = await assertPublicHttpUrl(String(req.query.url || ""));
+    let upstream: http.IncomingMessage | null = null;
 
-    // Follow up to 3 redirects, re-validating each hop against private ranges.
+    // Follow up to 3 redirects, re-validating AND re-pinning each hop.
     for (let i = 0; i <= MAX_IMAGE_REDIRECTS; i++) {
-      upstream = await fetch(current.toString(), {
-        method: "GET",
-        redirect: "manual",
-        headers: { "user-agent": "RavenImageProxy/1.0", accept: "image/*" },
-        signal: AbortSignal.timeout(PROXY_FETCH_TIMEOUT_MS),
-      }).catch(() => { throw new ApiError(StatusCodes.BAD_GATEWAY, "Cannot fetch image"); });
+      upstream = await pinnedGet(target.url, target.ip).catch(() => {
+        throw new ApiError(StatusCodes.BAD_GATEWAY, "Cannot fetch image");
+      });
 
-      if (upstream.status >= 300 && upstream.status < 400) {
-        const location = upstream.headers.get("location");
+      const status = upstream.statusCode || 0;
+      if (status >= 300 && status < 400) {
+        const location = upstream.headers.location;
+        upstream.resume(); // drain the redirect body before the next hop
         if (!location) break;
-        current = await assertPublicHttpUrl(new URL(location, current).toString());
+        target = await assertPublicHttpUrl(new URL(location, target.url).toString());
         continue;
       }
       break;
     }
 
-    if (!upstream || !upstream.ok) {
+    const status = upstream?.statusCode || 0;
+    if (!upstream || status < 200 || status >= 300) {
+      upstream?.resume();
       throw new ApiError(StatusCodes.BAD_GATEWAY, "Cannot fetch image");
     }
 
-    const contentType = (upstream.headers.get("content-type") || "").toLowerCase().split(";")[0].trim();
+    const contentType = (upstream.headers["content-type"] || "").toLowerCase().split(";")[0].trim();
     if (!ALLOWED_IMAGE_TYPES.has(contentType)) {
+      upstream.resume();
       throw new ApiError(StatusCodes.UNSUPPORTED_MEDIA_TYPE, "Not a supported image type");
     }
 
     // Reject immediately if Content-Length is present and already over the limit.
-    const contentLength = Number(upstream.headers.get("content-length") || "0");
+    const contentLength = Number(upstream.headers["content-length"] || "0");
     if (contentLength > IMAGE_SIZE_LIMIT) {
+      upstream.resume();
       throw new ApiError(StatusCodes.BAD_GATEWAY, "Image too large");
     }
 
     res.setHeader("content-type", contentType);
     res.setHeader("x-content-type-options", "nosniff");
     res.setHeader("cache-control", "private, max-age=86400");
-    if (upstream.body) {
-      // Enforce the byte cap while streaming so that servers omitting
-      // Content-Length (chunked transfer encoding) cannot bypass the check.
-      const src = fromWeb(upstream.body as any) as Readable;
-      const limiter = byteLimiter(IMAGE_SIZE_LIMIT);
-      limiter.on("error", () => {
-        // Abort both the upstream read and the response mid-stream. The client
-        // receives a truncated body and a connection reset — the correct outcome
-        // for an oversize image since we cannot send a proper HTTP error after
-        // headers are already flushed.
-        src.destroy();
-        res.destroy();
-      });
-      src.pipe(limiter).pipe(res);
-    } else {
-      res.end();
-    }
+    // upstream is a Node Readable; enforce the byte cap while streaming so servers
+    // omitting Content-Length (chunked) cannot bypass the check.
+    const limiter = byteLimiter(IMAGE_SIZE_LIMIT);
+    limiter.on("error", () => {
+      // Abort both the upstream read and the response mid-stream — the client gets
+      // a truncated body + reset, the right outcome once headers are flushed.
+      upstream!.destroy();
+      res.destroy();
+    });
+    upstream.pipe(limiter).pipe(res);
   }))
 
   const pages = Router();

@@ -34,6 +34,10 @@ describe("isPrivateIp() — image-proxy SSRF guard", () => {
     "127.0.0.1", "169.254.169.254", "10.0.0.5", "172.18.0.2", "192.168.1.1",
     "0.0.0.0", "100.64.0.1", "224.0.0.1",
     "::1", "fc00::1", "fd12:3456::1", "fe80::1", "::ffff:127.0.0.1", "::ffff:10.0.0.1",
+    // Hex-serialized IPv4-mapped form — how Node actually normalizes
+    // ::ffff:127.0.0.1 / the cloud-metadata IP. The old dotted-only regex missed
+    // these, so they reached the proxy as "public" (SSRF).
+    "::ffff:7f00:1", "::ffff:a9fe:a9fe",
   ];
   const allowed = [
     "8.8.8.8", "1.1.1.1", "93.184.216.34", "151.101.0.1",
@@ -62,9 +66,10 @@ describe("assertPublicHttpUrl() — image proxy URL validation", () => {
     await expect(assertPublicHttpUrl("http://[::1]/x")).rejects.toThrow();
   });
 
-  it("accepts a public IP-literal host", async () => {
-    const u = await assertPublicHttpUrl("https://8.8.8.8/logo.png");
-    expect(u).toBeInstanceOf(URL);
-    expect(u.hostname).toBe("8.8.8.8");
+  it("accepts a public IP-literal host and pins to its validated IP", async () => {
+    const { url, ip } = await assertPublicHttpUrl("https://8.8.8.8/logo.png");
+    expect(url).toBeInstanceOf(URL);
+    expect(url.hostname).toBe("8.8.8.8");
+    expect(ip).toBe("8.8.8.8");
   });
 });

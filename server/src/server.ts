@@ -122,6 +122,13 @@ export const start = async (config: Config) => {
   app.disable("x-powered-by");
 
   if(config.trust_proxy != null) {
+    // `true` is permissive: Express then trusts the ENTIRE X-Forwarded-For chain,
+    // so a client can spoof the leftmost entry — defeating the IP-keyed login rate
+    // limit (express-rate-limit's ERR_ERL_PERMISSIVE_TRUST_PROXY). Require an
+    // explicit hop count / subnet instead so req.ip can't be forged.
+    if(config.trust_proxy === true) {
+      throw new Error("config.trust_proxy=true is unsafe (clients can spoof X-Forwarded-For and bypass rate limiting); set the number of proxy hops, e.g. trust_proxy=1");
+    }
     app.set("trust proxy", config.trust_proxy);
   }
 
@@ -130,6 +137,14 @@ export const start = async (config: Config) => {
   app.use(pinoHttp({
     logger,
     autoLogging: { ignore: (req) => req.url === "/api/healthz" },
+    // pino-http's default serializers log request AND response headers, which
+    // include `Cookie: raven.sid=...` on every authenticated request and
+    // `Set-Cookie` on login. Without redaction, anyone with log access could
+    // replay live sessions until expiry — strip the session-bearing headers.
+    redact: {
+      paths: ['req.headers.cookie', 'req.headers.authorization', 'res.headers["set-cookie"]'],
+      remove: true,
+    },
   }));
 
   // Security headers (defense-in-depth). The app renders untrusted email HTML, so a
