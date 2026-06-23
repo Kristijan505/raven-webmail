@@ -1,6 +1,7 @@
 <script lang="ts">
   export let html: string;
   export let onChange: ((html: string) => void) | null = null;
+  export let onDirty: (() => void) | null = null;
 
   $: lines = html.split("\n").length;
 </script>
@@ -53,5 +54,5 @@
       <div class="line">{i + 1}</div>
     {/each}
   </div>
-  <textarea bind:value={html} on:input={() => onChange?.(html)} aria-label="HTML" spellcheck="false"></textarea>
+  <textarea bind:value={html} on:input={() => { onChange?.(html); onDirty?.(); }} aria-label="HTML" spellcheck="false"></textarea>
 </div>

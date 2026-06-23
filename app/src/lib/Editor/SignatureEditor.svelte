@@ -131,7 +131,7 @@
     </div>
   {:else}
     <div class="code">
-      <CodeEditor bind:html {onChange} />
+      <CodeEditor bind:html {onChange} {onDirty} />
     </div>
   {/if}
   
