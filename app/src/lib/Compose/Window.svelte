@@ -24,7 +24,11 @@
   let saved = true;
   $: onCurrent(current);
   const onCurrent = (current: Draft) => {
-    if(isDraftEquals(prev, current)) return;
+    // Same teardown race as dosave(): a null current here would make
+    // isDraftEquals destructure null and throw — which breaks the Svelte flush
+    // and leaves the draft state stale (lost recipients/subject/files until a
+    // page refresh). Bail out cleanly instead.
+    if(!current || isDraftEquals(prev, current)) return;
     prev = clone(current);
     saved = false;
     const t = ++token;
