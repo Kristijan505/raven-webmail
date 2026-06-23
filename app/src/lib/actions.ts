@@ -178,13 +178,38 @@ export const messageHTML = (node: HTMLElement, opts: string | { html: string, me
     a.rel = "noopener noreferrer external nofollow";
   }
 
-  // Keep <style> (it's inert in a no-allow-scripts iframe and email layout
-  // often depends on it); drop <link> so no remote stylesheet is fetched.
+  // Drop <link> so no remote stylesheet is fetched.
   for(const $el of [].slice.call(fragment.querySelectorAll("link, script, meta, object, head, title")) as HTMLElement[]) {
     $el.remove();
   }
 
-  for(const $img of [].slice.call(fragment.querySelectorAll("img")) as HTMLImageElement[]) {
+  // <style> is kept (email layout often depends on it, and it's inert in the
+  // no-allow-scripts iframe), but its CSS can still fetch remote assets via
+  // url() / @import — bypassing the image opt-in and leaking a "message opened"
+  // tracking signal. Strip @import outright; for url() keep data:/cid:, route
+  // http(s) refs through the proxy when images are opted in, neutralize otherwise.
+  for(const $style of [].slice.call(fragment.querySelectorAll("style")) as HTMLStyleElement[]) {
+    let css = $style.textContent || "";
+    css = css.replace(/@import\b[^;]*;?/gi, "");
+    css = css.replace(/url\(\s*(['"]?)([^'")]*)\1\s*\)/gi, (whole: string, _q: string, ref: string) => {
+      const u = (ref || "").trim();
+      if(!u || /^(data:|cid:)/i.test(u)) return whole;        // inline / attachment — safe
+      if(/^(https?:)?\/\//i.test(u) || u.startsWith("/")) {   // remote or app-absolute
+        return loadRemote ? `url("/api/proxy-image?url=${encodeURIComponent(u)}")` : "none";
+      }
+      return whole;                                            // bare relative — inert in the iframe
+    });
+    $style.textContent = css;
+  }
+
+  // srcset (on <img> and <picture>/<video> <source>) is fetch-capable but was
+  // never gated — browsers could load a remote candidate pre-opt-in or prefer it
+  // over the proxied src. Strip every srcset; the src below stays gated.
+  for(const $el of [].slice.call(fragment.querySelectorAll("[srcset]")) as HTMLElement[]) {
+    $el.removeAttribute("srcset");
+  }
+
+  for(const $img of [].slice.call(fragment.querySelectorAll("img, source")) as HTMLElement[]) {
     const src = ($img.getAttribute("src") || "").trim();
     const m = src.match(/^(cid|attachment):(.+)/i);
     if(m) {
