@@ -65,10 +65,22 @@
       const el = toRemove[i];
       el.parentNode?.removeChild(el);
     }
-    // Quoted reply/forward content keeps the original <img> etc. The compose iframe
-    // is same-origin + authenticated, so a remote src / srcset / CSS url() would
-    // fetch (tracking) the moment the window opens — and there's no "load images"
-    // opt-in while composing. Neutralize fetch-capable refs; data:/cid: stay.
+    // NB: remote images are NOT stripped here. sanitize() also runs over the
+    // user's OWN signature (blank(), and the signature half of createBody), which
+    // may legitimately use a remote logo — stripping it would silently drop the
+    // saved signature image. Untrusted QUOTED content is stripped separately via
+    // stripRemote() before it's appended in createBody.
+    const html = div.innerHTML;
+    const text = div.textContent;
+    return { html, text }
+  }
+
+  // Strip fetch-capable refs from untrusted quoted reply/forward content: the
+  // compose iframe is same-origin + authenticated and has no "load images" opt-in,
+  // so a remote <img>/srcset/CSS url() would fetch (tracking) on open. data:/cid:
+  // stay. Applied to quoted HTML only — never to the user's signature.
+  const stripRemote = (html: string): string => {
+    const div = DOMPurify.sanitize(html || "", { RETURN_DOM: true }) as HTMLElement;
     for(const $el of [].slice.call(div.querySelectorAll("[srcset]")) as Element[]) $el.removeAttribute("srcset");
     for(const $img of [].slice.call(div.querySelectorAll("img, source")) as Element[]) {
       const s = ($img.getAttribute("src") || "").trim();
@@ -82,9 +94,7 @@
       });
       if(cleaned !== st) $el.setAttribute("style", cleaned);
     }
-    const html = div.innerHTML;
-    const text = div.textContent;
-    return { html, text }
+    return div.innerHTML;
   }
 
   const createBody = (action: "re" | "fwd", ref: FullMessage) => {
@@ -99,7 +109,7 @@
         l["Subject:"] + " " + s(ref.subject),
         l["Date:"] + " " + s(new Date(ref.date).toUTCString())
       ].filter(Boolean).join("<br />") + "<br/>".repeat(4) +
-      (ref.html?.join("") || "");
+      stripRemote(ref.html?.join("") || "");
   }
 
   export const blank = async (drafts: Mailbox) => {

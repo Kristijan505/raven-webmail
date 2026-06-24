@@ -191,12 +191,22 @@ export const messageHTML = (node: HTMLElement, opts: string | { html: string, me
   // Rewrite url() refs in CSS — keep data:/cid:, route http(s)/app-absolute
   // through the proxy when opted in, neutralize otherwise. Used for both <style>
   // blocks and inline style="" attributes (@import only appears in blocks).
+  // Protocol-relative URLs (//cdn/p.png) carry no scheme, so new URL() on the
+  // proxy server rejects them and the image never loads after opt-in — give them
+  // an explicit scheme before proxying.
+  const toFetchable = (u: string): string => u.startsWith("//") ? "https:" + u : u;
+
   const rewriteCssUrls = (css: string): string =>
-    css.replace(/url\(\s*(['"]?)([^'")]*)\1\s*\)/gi, (whole: string, _q: string, ref: string) => {
+    // image-set()/-webkit-image-set() can name remote OR same-origin-proxy URLs
+    // that CSP 'self' would still fetch, and a multi-candidate set isn't worth
+    // proxying — drop them wholesale (rare in mail). Then gate plain url() refs.
+    css
+    .replace(/(-webkit-)?image-set\([^)]*\)/gi, "none")
+    .replace(/url\(\s*(['"]?)([^'")]*)\1\s*\)/gi, (whole: string, _q: string, ref: string) => {
       const u = (ref || "").trim();
       if(!u || /^(data:|cid:)/i.test(u)) return whole;        // inline / attachment — safe
       if(/^(https?:)?\/\//i.test(u) || u.startsWith("/")) {   // remote or app-absolute
-        return loadRemote ? `url("/api/proxy-image?url=${encodeURIComponent(u)}")` : "none";
+        return loadRemote ? `url("/api/proxy-image?url=${encodeURIComponent(toFetchable(u))}")` : "none";
       }
       return whole;                                            // bare relative — inert in the iframe
     });
@@ -236,7 +246,7 @@ export const messageHTML = (node: HTMLElement, opts: string | { html: string, me
       if(loadRemote) {
         // Routed through our SSRF-guarded server proxy: the sender sees the
         // server's IP, not the user's, and it loads from our own origin.
-        $img.setAttribute("src", `/api/proxy-image?url=${encodeURIComponent(src)}`);
+        $img.setAttribute("src", `/api/proxy-image?url=${encodeURIComponent(toFetchable(src))}`);
       } else {
         // Hidden by default (no broken-image glyph); user opts in via "Load images".
         $img.removeAttribute("src");
@@ -259,7 +269,18 @@ export const messageHTML = (node: HTMLElement, opts: string | { html: string, me
   // iframe shows the dark app background behind it in dark mode.
   iframe.style.background = "#fff";
   iframe.style.colorScheme = "light";
-  iframe.srcdoc = "";
+  // Defense-in-depth CSP for the email document, enforced by the BROWSER rather
+  // than the regex above (CSS can fetch via image-set(), -webkit-image-set(),
+  // cursor:url(), … which a regex can't fully cover). img-src is 'self' in BOTH
+  // states: 'self' covers inline cid: attachment images (always safe — already
+  // downloaded with the mail) and, once opted in, the same-origin proxy. Off-origin
+  // (remote) fetches are always blocked; when not opted in, the DOM/CSS rewriting
+  // strips every proxy URL too, so the only thing 'self' can still load is a cid
+  // attachment. style-src 'unsafe-inline' keeps layout CSS; default-src 'none'
+  // blocks script/connect/frame/object. Set via <meta> at parse time so it covers
+  // the fragment appended on load; link navigation is unaffected.
+  const csp = `default-src 'none'; img-src 'self' data: blob:; style-src 'unsafe-inline'; font-src data:`;
+  iframe.srcdoc = `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="${csp}"></head><body></body></html>`;
   iframe.onload = () => {
     const doc = iframe.contentDocument;
     if(!doc) return;
