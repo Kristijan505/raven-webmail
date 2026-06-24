@@ -6,7 +6,11 @@ const KEY = "raven.theme";
 
 const initial = (): Theme => {
   if (typeof localStorage === "undefined") return "auto";
-  const v = localStorage.getItem(KEY);
+  // localStorage access can throw (SecurityError when storage is disabled or
+  // third-party storage is blocked); this runs at module import, so guard it or
+  // the whole app fails to render.
+  let v: string | null = null;
+  try { v = localStorage.getItem(KEY); } catch (_e) { return "auto"; }
   return v === "light" || v === "dark" || v === "auto" ? v : "auto";
 };
 

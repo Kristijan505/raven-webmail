@@ -245,5 +245,11 @@ export const middleware = (config: Config) => {
     res.json({ lang, locale });
   })
 
+  // Expose the available locale codes so the language menu can offer custom
+  // locales loaded from extra_locales_dirs, not just the four built-ins.
+  i18n.get("/locales", (_req: Request, res: Response) => {
+    res.json({ codes: Object.keys(locales) });
+  })
+
   return i18n;
 }

@@ -7,6 +7,12 @@
   // `user.name = ...` edit in editName() isn't re-derived away (see mailbox/search).
   $: if (data !== lastData) { lastData = data; user = data?.user ?? null; }
 
+  import { getContext } from "svelte";
+  import type { DashContext } from "$lib/Dashboard/Dashboard.svelte";
+  // The navbar account menu reads from the shared layout user (a separate fetch),
+  // so a name edit here must also update that store, not just local data.user.
+  const dash = getContext("dash") as DashContext;
+
 	import LockReset from '~icons/mdi/lock-reset';
 	import DrawPen from '~icons/mdi/draw';
 	import CircularGraph from '$lib/CircularGraph.svelte';
@@ -58,6 +64,7 @@
     if(!newName?.trim()) return;
     await _put("/api/me", { name: newName });
     user.name = newName
+    dash.user.update(u => ({ ...u, name: newName }));
     nameOpen = false;
     _message($locale.notifier.Name_updated);
   })

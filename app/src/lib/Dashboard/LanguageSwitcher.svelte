@@ -10,13 +10,22 @@
   import { lang, locale, persistLang } from "$lib/locale";
   import { action, _get } from "$lib/util";
   import { clickable } from "$lib/actions";
+  import { onMount } from "svelte";
 
-  const LANGS = [
-    { code: "en", name: "English" },
-    { code: "hr", name: "Hrvatski" },
-    { code: "es", name: "Español" },
-    { code: "it", name: "Italiano" },
-  ];
+  // Display names for the built-ins; custom locales (extra_locales_dirs) fall back
+  // to their ISO code. Seed with the built-ins so the menu works offline, then
+  // replace from the server so custom locales appear and stay switchable.
+  const NAMES: Record<string, string> = { en: "English", hr: "Hrvatski", es: "Español", it: "Italiano" };
+  let LANGS = Object.entries(NAMES).map(([code, name]) => ({ code, name }));
+
+  onMount(async () => {
+    try {
+      const { codes } = await _get("/api/locales");
+      if (Array.isArray(codes) && codes.length) {
+        LANGS = codes.map((code: string) => ({ code, name: NAMES[code] || code }));
+      }
+    } catch (_e) { /* keep the built-in list */ }
+  });
 
   // Persist the choice and apply it live. The server honors ?accept-language as
   // an override, so no reload is needed — the stores update and every $locale

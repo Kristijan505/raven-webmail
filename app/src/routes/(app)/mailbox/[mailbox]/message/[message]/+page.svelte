@@ -34,7 +34,16 @@
     const key = `${message.mailbox}-${message.id}`;
     if (key !== shownKey) { shownKey = key; loadRemote = false; }
   }
-  $: hasRemoteImages = /<img\b[^>]*\bsrc\s*=\s*["']?\s*https?:/i.test(html || "");
+  // Detect every remote vector messageHTML neutralizes — otherwise the warning +
+  // "Load images" button won't render while the images are still hidden, leaving
+  // them broken with no way to opt in. Covers <img>/<source> src or srcset to an
+  // http(s)/protocol-relative URL, CSS url() backgrounds, and @import.
+  $: hasRemoteImages = (() => {
+    const h = html || "";
+    return /<(?:img|source)\b[^>]*\b(?:src|srcset)\s*=\s*["']?\s*(?:https?:)?\/\//i.test(h)
+      || /url\(\s*["']?\s*(?:https?:)?\/\//i.test(h)
+      || /@import\b/i.test(h);
+  })();
 
   let scrolled = false;
   const onScroll = (event: Event) => {
@@ -90,7 +99,7 @@
 
   const reply = action(async () => {
     const drafts = $mailboxes.find(isDrafts)!;
-    await _replyAll(user, drafts, mailbox, message.id);
+    await _replyAll($user, drafts, mailbox, message.id);
   })
 
   const forward = action(async () => {
@@ -293,7 +302,12 @@
             </div>
           {/if}
 
-          <MessageSecurity {message} {mailbox} />
+          <!-- Only inbound mail carries SPF/DKIM/DMARC results. Sent/Drafts (and
+               any message without verificationResults) would otherwise render as
+               "Sender NOT verified", making the user's own mail look spoofed. -->
+          {#if message.verificationResults}
+            <MessageSecurity {message} {mailbox} />
+          {/if}
         </div>
       </div>
 

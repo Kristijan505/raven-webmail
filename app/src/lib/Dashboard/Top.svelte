@@ -146,5 +146,5 @@
   </div>
   <ThemeSwitcher />
   <LanguageSwitcher />
-  <AccountButton {user} />
+  <AccountButton user={$user} />
 </div>

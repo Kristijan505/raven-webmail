@@ -1,7 +1,7 @@
 <script lang="ts" context="module">
   import type { Writable } from "svelte/store";
   export type DashContext = {
-    user: User,
+    user: Writable<User>,
     mailboxes: Writable<Mailbox[]>
     drawerOpen: {
       narrow: Writable<boolean>,
@@ -35,12 +35,17 @@
     }
   }
 
+  // Keep the shared user reactive so consumers (e.g. the navbar account menu)
+  // reflect a profile edit instead of holding a stale snapshot from mount.
+  const userStore = writable(user);
+  $: userStore.set(user);
+
   const context: DashContext = {
     drawerOpen: {
       narrow: writable(false),
       wide: writable(true),
     },
-    user,
+    user: userStore,
     toggle,
     mailboxes,
     reloadMailboxes

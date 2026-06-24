@@ -37,13 +37,15 @@ wildduck_api_token="same as in wildduck config"
 # set this to false if you use a reverse proxy like nginx
 compression=false 
 
-# trust proxy hops when behind a reverse proxy (example: true or 1)
+# trust proxy hops when behind a reverse proxy (example: 1)
 # SECURITY: this MUST be set correctly when the app runs behind a load balancer
 # or reverse proxy. If left false behind a proxy, req.ip is the proxy's IP and
 # the login rate-limiter keys on the proxy address instead of the real client,
 # making it trivially bypassable. Set to the number of trusted proxy hops (e.g.
-# trust_proxy=1 for a single nginx/caddy in front), or true to trust all hops.
-# @boolean|number (optional default=false)
+# trust_proxy=1 for a single nginx/caddy in front). NOTE: trust_proxy=true is
+# rejected at startup — it trusts the entire X-Forwarded-For chain, which a
+# client can spoof to bypass rate limiting; use a hop count instead.
+# @number (optional default=false)
 # trust_proxy=1
 
 # max JSON request size accepted by /api (example "1mb", "5mb")
