@@ -31,7 +31,7 @@
   setContext("editor", context);
 
   import css from "./iframe.css?raw";
-  import dompurify from "dompurify";
+  import { proxyRemoteImages } from "$lib/actions";
   import { setContext } from "svelte";
   import { writable } from "svelte/store";
   import type { Writable } from "svelte/store";
@@ -69,7 +69,7 @@
       // spam "Blocked script execution" to the console; stripping them here also
       // keeps them out of what we send. Formatting, inline styles and (base64)
       // images are preserved.
-      _document.body.innerHTML = dompurify.sanitize(draft.html, { ADD_DATA_URI_TAGS: ["img"] });
+      _document.body.innerHTML = proxyRemoteImages(draft.html);
       
       const obs = new MutationObserver(() => {
         draft.html = _document.body.innerHTML;

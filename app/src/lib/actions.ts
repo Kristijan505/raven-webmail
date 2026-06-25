@@ -155,6 +155,23 @@ export const clickOut = (node: Node) => {
 import dompurify from "dompurify";
 import type { FullMessage, Message } from "./types";
 
+// Sanitize editor HTML and route any remote <img> (e.g. a signature's remote
+// logo) through the same-origin SSRF-guarded proxy, so it renders under the
+// editor iframe's INHERITED CSP (img-src 'self' — a raw https logo would be
+// blocked). cid:/data:/attachment: and already app-absolute (/api/...) srcs are
+// left untouched. Used by the compose & signature editors.
+export const proxyRemoteImages = (html: string): string => {
+  const div = dompurify.sanitize(html || "", { RETURN_DOM: true, ADD_DATA_URI_TAGS: ["img"] }) as HTMLElement;
+  for(const $img of [].slice.call(div.querySelectorAll("img")) as HTMLImageElement[]) {
+    const src = ($img.getAttribute("src") || "").trim();
+    if(/^(https?:)?\/\//i.test(src)) {
+      const abs = src.startsWith("//") ? "https:" + src : src;
+      $img.setAttribute("src", `/api/proxy-image?url=${encodeURIComponent(abs)}`);
+    }
+  }
+  return div.innerHTML;
+};
+
 export const messageHTML = (node: HTMLElement, opts: string | { html: string, message: FullMessage, loadRemote?: boolean }) => {
 
   let html = typeof opts === "string" ? opts : opts?.html || "";

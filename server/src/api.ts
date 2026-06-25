@@ -164,32 +164,31 @@ export const seg = (value: string | string[] | undefined): string => {
 // unsafe-method request whose Origin doesn't match the host. Requests with no
 // Origin header (same-origin navigations, non-browser clients) pass through and
 // remain gated by the session cookie.
-const enforceSameOrigin: RequestHandler = (req, res, next) => {
+const enforceSameOrigin = (config: Config): RequestHandler => (req, res, next) => {
   const method = req.method.toUpperCase();
   if (method === "GET" || method === "HEAD" || method === "OPTIONS") {
     return next();
   }
   const origin = req.get("origin");
   if (!origin) return next();
-  let originValue: string | null = null;
-  try {
-    originValue = new URL(origin).origin;   // scheme://hostname[:port]
-  } catch {
-    originValue = null;
-  }
-  // Compare the FULL origin — scheme + host + port. Host-only (or even host:port)
-  // ignores scheme, so a plain-HTTP page on the same hostname could submit unsafe
-  // requests to the HTTPS app when cross-site cookies are enabled (same_site=none).
-  // A different port is likewise a different origin that still shares the
-  // host-scoped cookie. req.protocol is X-Forwarded-Proto-aware behind Traefik and
-  // req's Host carries the external host:port, so rebuild the expected origin.
+  const reject = () => res.status(StatusCodes.FORBIDDEN).json({ error: { status: 403, message: errMsg(req, "cross_origin_blocked", "Cross-origin request blocked") } });
+  let originUrl: URL | null = null;
+  try { originUrl = new URL(origin); } catch { originUrl = null; }
   const reqHost = req.get("host");
-  let expected: string | null = null;
-  try { expected = reqHost ? new URL(`${req.protocol}://${reqHost}`).origin : null; } catch { expected = null; }
-  if (originValue === null || expected === null || originValue !== expected) {
-    res.status(StatusCodes.FORBIDDEN).json({ error: { status: 403, message: errMsg(req, "cross_origin_blocked", "Cross-origin request blocked") } });
-    return;
-  }
+  if (originUrl === null || !reqHost) return reject();
+  // host:port must always match — a different-port app on the same hostname is a
+  // separate origin that still shares the host-scoped cookie. (req's Host carries
+  // the external host:port; Traefik preserves it.)
+  if (originUrl.host.toLowerCase() !== reqHost.toLowerCase()) return reject();
+  // Scheme is only enforced when our view of the protocol is trustworthy: direct
+  // TLS, or a configured trusted proxy that sets X-Forwarded-Proto (req.protocol
+  // honors it). Behind a TLS-terminating proxy WITHOUT trust_proxy, req.protocol is
+  // the INTERNAL http while the browser sends Origin: https — a scheme check there
+  // would wrongly reject same-origin login/draft/profile writes. Where we CAN
+  // trust it, comparing scheme blocks a plain-HTTP same-host page under
+  // same_site=none cookies.
+  const schemeTrusted = config.ssl || (config.trust_proxy != null && config.trust_proxy !== false);
+  if (schemeTrusted && originUrl.protocol !== `${req.protocol}:`) return reject();
   return next();
 };
 
@@ -302,7 +301,7 @@ export const api = (config: Config) => {
 
   api.use(i18n.middleware(config));
 
-  api.use(enforceSameOrigin);
+  api.use(enforceSameOrigin(config));
 
   api.get("/healthz", handler(async (_req, res) => {
     res.json({
@@ -643,6 +642,12 @@ export const api = (config: Config) => {
       upstream!.destroy();
       res.destroy();
     });
+    // If upstream aborts/errors mid-body (e.g. closes the socket before delivering
+    // its promised Content-Length), tear down the client response too — otherwise
+    // the image load hangs and ties up the connection.
+    const abortDownstream = () => { if (!res.destroyed) res.destroy(); };
+    upstream.on("error", abortDownstream);
+    upstream.on("aborted", abortDownstream);
     upstream.pipe(limiter).pipe(res);
   }))
 
