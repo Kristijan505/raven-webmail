@@ -18,7 +18,7 @@ ssl=false
 # Generate one with: openssl rand -hex 32   (min 32 chars; changing it invalidates sessions)
 # `raven create-config` fills this in automatically with a random value.
 # @string (required, min 32 characters)
-secret_token="CHANGE_ME"
+secret_token="CHANGE_ME__run_openssl_rand_hex_32__min_32_chars"
 
 # mongodb url
 # @string (required)

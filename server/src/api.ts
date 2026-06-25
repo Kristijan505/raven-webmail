@@ -604,7 +604,7 @@ export const api = (config: Config) => {
       const status = upstream.statusCode || 0;
       if (status >= 300 && status < 400) {
         const location = upstream.headers.location;
-        upstream.resume(); // drain the redirect body before the next hop
+        upstream.destroy(); // close the redirect response; only its Location was needed
         if (!location) break;
         target = await assertPublicHttpUrl(new URL(location, target.url).toString());
         continue;
@@ -614,20 +614,20 @@ export const api = (config: Config) => {
 
     const status = upstream?.statusCode || 0;
     if (!upstream || status < 200 || status >= 300) {
-      upstream?.resume();
+      upstream?.destroy();
       throw new ApiError(StatusCodes.BAD_GATEWAY, "Cannot fetch image");
     }
 
     const contentType = (upstream.headers["content-type"] || "").toLowerCase().split(";")[0].trim();
     if (!ALLOWED_IMAGE_TYPES.has(contentType)) {
-      upstream.resume();
+      upstream.destroy();
       throw new ApiError(StatusCodes.UNSUPPORTED_MEDIA_TYPE, "Not a supported image type");
     }
 
     // Reject immediately if Content-Length is present and already over the limit.
     const contentLength = Number(upstream.headers["content-length"] || "0");
     if (contentLength > IMAGE_SIZE_LIMIT) {
-      upstream.resume();
+      upstream.destroy();
       throw new ApiError(StatusCodes.BAD_GATEWAY, "Image too large");
     }
 
