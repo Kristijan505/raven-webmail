@@ -30,7 +30,7 @@
   setContext("editor", context);
 
   import css from "./iframe.css?raw";
-  import { proxyRemoteImages } from "$lib/actions";
+  import { proxyRemoteImages, serializeEditorBody } from "$lib/actions";
   import { setContext } from "svelte";
   import { writable } from "svelte/store";
   import type { Writable } from "svelte/store";
@@ -71,7 +71,7 @@
       _document.body.innerHTML = proxyRemoteImages(html);
       
       const obs = new MutationObserver(() => {
-        html = _document.body.innerHTML;
+        html = serializeEditorBody(_document.body);
         onChange?.(html);
       });
 

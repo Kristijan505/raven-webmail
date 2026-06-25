@@ -648,6 +648,12 @@ export const api = (config: Config) => {
     const abortDownstream = () => { if (!res.destroyed) res.destroy(); };
     upstream.on("error", abortDownstream);
     upstream.on("aborted", abortDownstream);
+    // If the CLIENT disconnects after headers (navigates away / closes the message),
+    // stop pulling from the remote host instead of draining it to completion — else
+    // a client could start many proxy fetches to slow hosts and disconnect to waste
+    // outbound sockets/bandwidth. (close also fires on normal end; destroy is then
+    // a no-op on the already-ended stream.)
+    res.on("close", () => { upstream!.destroy(); limiter.destroy(); });
     upstream.pipe(limiter).pipe(res);
   }))
 

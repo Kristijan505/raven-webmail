@@ -156,20 +156,35 @@ import dompurify from "dompurify";
 import type { FullMessage, Message } from "./types";
 
 // Sanitize editor HTML and route any remote <img> (e.g. a signature's remote
-// logo) through the same-origin SSRF-guarded proxy, so it renders under the
+// logo) through the same-origin SSRF-guarded proxy, so it RENDERS under the
 // editor iframe's INHERITED CSP (img-src 'self' — a raw https logo would be
-// blocked). cid:/data:/attachment: and already app-absolute (/api/...) srcs are
-// left untouched. Used by the compose & signature editors.
+// blocked). This is render-only: the original URL is stashed in data-raven-src
+// and restored by serializeEditorBody() before the body is copied back into the
+// draft, so saved/sent mail keeps the public URL (recipients can't load our
+// /api/proxy-image path). cid:/data:/attachment: srcs are left untouched.
 export const proxyRemoteImages = (html: string): string => {
   const div = dompurify.sanitize(html || "", { RETURN_DOM: true, ADD_DATA_URI_TAGS: ["img"] }) as HTMLElement;
   for(const $img of [].slice.call(div.querySelectorAll("img")) as HTMLImageElement[]) {
     const src = ($img.getAttribute("src") || "").trim();
     if(/^(https?:)?\/\//i.test(src)) {
       const abs = src.startsWith("//") ? "https:" + src : src;
+      $img.setAttribute("data-raven-src", src);   // original, restored on serialize
       $img.setAttribute("src", `/api/proxy-image?url=${encodeURIComponent(abs)}`);
     }
   }
   return div.innerHTML;
+};
+
+// Serialize an editor body for storage, undoing proxyRemoteImages(): restore the
+// original remote src and drop the proxy URL + marker so the saved/sent HTML
+// carries the public URL, not our same-origin proxy path.
+export const serializeEditorBody = (body: HTMLElement): string => {
+  const clone = body.cloneNode(true) as HTMLElement;
+  for(const $img of [].slice.call(clone.querySelectorAll("img[data-raven-src]")) as HTMLImageElement[]) {
+    $img.setAttribute("src", $img.getAttribute("data-raven-src") || "");
+    $img.removeAttribute("data-raven-src");
+  }
+  return clone.innerHTML;
 };
 
 export const messageHTML = (node: HTMLElement, opts: string | { html: string, message: FullMessage, loadRemote?: boolean }) => {
