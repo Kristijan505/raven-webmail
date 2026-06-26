@@ -28,13 +28,13 @@
 
   .button {
     font-size: 0.9rem;
-    padding: 0.75rem;
+    padding: var(--space-3);
     border-radius: 1000px;
     white-space: nowrap;
     display: flex;
     flex-direction: row;
     align-items: center;
-    border: rgba(0,0,0,0.18) 1px solid;
+    border: var(--border) 1px solid;
   }
 </style>
 

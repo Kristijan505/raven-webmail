@@ -1,41 +1,50 @@
 <script lang="ts">
   export let html: string;
   export let onChange: ((html: string) => void) | null = null;
+  export let onDirty: (() => void) | null = null;
 
   $: lines = html.split("\n").length;
 </script>
 
 <style>
+  /* The HTML source view is the same white "paper" as the rendered editor, so it
+     uses fixed light colours in every theme (the theme border would be invisible
+     on white in dark mode). */
   .wrap {
     flex-grow: 1;
     display: flex;
     flex-direction: row;
     font-size: 1rem;
     --line-height: 1.1rem;
+    background: #ffffff;
+    color: #111111;
   }
 
   .lines {
     font-size: 0.8rem;
-    padding: 0.5rem;
+    padding: var(--space-2);
     flex: none;
     font-family: monospace;
-    border-right: #ccc 1px solid;
+    border-right: #dddddd 1px solid;
+    color: #999999;
     text-align: right;
     line-height: var(--line-height);
   }
-  
+
   textarea {
     line-height: var(--line-height);
     flex: 1;
     font-size: inherit;
     font-family: monospace;
-    padding: 0.5rem;
+    padding: var(--space-2);
     outline: 0;
     border: 0;
     margin: 0;
     display: block;
     resize: none;
     white-space: nowrap;
+    background: transparent;
+    color: inherit;
   }
 </style>
 
@@ -45,5 +54,5 @@
       <div class="line">{i + 1}</div>
     {/each}
   </div>
-  <textarea bind:value={html} on:input={() => onChange?.(html)}></textarea>
+  <textarea bind:value={html} on:input={() => { onChange?.(html); onDirty?.(); }} aria-label="HTML" spellcheck="false"></textarea>
 </div>

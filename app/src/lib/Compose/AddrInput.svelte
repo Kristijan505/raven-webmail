@@ -18,11 +18,16 @@
     margin-top: 0.5em;
     margin-bottom: 0.25em;
     border-radius: 1em;
-    background: #eee;
+    background: var(--surface-2);
 
     display: flex;
     flex-direction: row;
     align-items: center;
+  }
+
+  x-addr.invalid {
+    background: var(--error-bg);
+    color: var(--error-text);
   }
 
   x-addr:first-child{
@@ -34,7 +39,7 @@
     height: 1.5em;
     margin: 0.25em 0.25em 0.25em 0;
     cursor: pointer;
-    border-radius: 50%;
+    border-radius: var(--radius-full);
     flex: none;
     display: flex;
     align-items: center;
@@ -52,12 +57,25 @@
     font-size: inherit;
     font-family: inherit;
     min-width: 12em;
+    /* Follow the surrounding theme instead of the <input> UA default (white bg /
+       black text), which would otherwise stand out on the dark compose chrome. */
+    background: transparent;
+    color: inherit;
+  }
+
+  /* Keyboard-focus affordance for the otherwise borderless address input. */
+  input:focus-visible {
+    outline: 2px solid var(--selected-border);
+    outline-offset: -2px;
+    border-radius: 2px;
   }
 
 </style>
 
 <script>
   import Close from "~icons/mdi/close";
+  import { isMail } from "$lib/util";
+  import { locale } from "$lib/locale";
 
   export let name = "";
   export let id = ""
@@ -68,6 +86,9 @@
 
   const add = () => {
     const address = value.trim();
+    // Accept any non-empty value (WildDuck validates envelope addresses on
+    // submit, and self-hosted setups use dotless/internal addresses); invalid
+    // ones are flagged visually below instead of being silently dropped.
     if( address ) {
       if (!addrs.some(a => a.address === address)) {
         addrs = [...addrs, {address, name: ""}];
@@ -106,7 +127,7 @@
 
 <label class="addr-input">
   {#each addrs as addr, i}
-    <x-addr>
+    <x-addr class:invalid={!isMail(addr.address)} title={isMail(addr.address) ? "" : $locale.validation.Invalid_email}>
       {addr.address}
       <x-addr-close on:click={() => remove(i)} >
         <Close />

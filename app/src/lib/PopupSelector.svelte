@@ -44,21 +44,21 @@
 
   .button {
     font-size: 0.9rem;
-    padding: 0.75rem;
-    border-radius: 0.25rem;
+    padding: var(--space-3);
+    border-radius: var(--radius);
     white-space: nowrap;
     display: flex;
     flex-direction: row;
     align-items: center;
-    border: rgba(0,0,0,0.18) 1px solid;
+    border: var(--border) 1px solid;
   }
 
   .arrow {
     display: flex;
     font-size: 0.5rem;
-    margin-inline-start: 0.5rem;
+    margin-inline-start: var(--space-2);
     transform: scaleY(-1);
-    padding-inline-start: 1rem;
+    padding-inline-start: var(--space-4);
     margin-inline-start: auto;
   }
 </style>

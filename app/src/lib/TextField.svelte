@@ -49,13 +49,13 @@
     };
    
     if(required && (value === "" || value == null)) {
-      validationError = "Oops! You missed this field";
+      validationError = $locale.validation.Field_required;
       console.log("[Formy] validation fails [TextField] [Required]", label, value);
       return false;
     }
 
     if(type === "e-mail" && value !== "" && value != null && !isMail(value)) {
-      validationError = "Oops! This is not a valid email address"
+      validationError = $locale.validation.Invalid_email
       console.log("[Formy] validation fails [TextField] [Email]", label, value);
       return false;
     }
@@ -99,6 +99,7 @@
   import ArrowRight from "~icons/mdi/arrow-right";
   import OpenInNew from "~icons/mdi/open-in-new";
   import { isMail } from "$lib/util";
+  import { locale } from "$lib/locale";
   import type { Context } from "./Formy/Formy.svelte";
   import ValidationError from "./Formy/ValidationError.svelte";
   import Ripple from "./Ripple.svelte";
@@ -111,7 +112,7 @@
   }
 
   .date.empty:not(:focus-within) {
-    color: #fff;
+    color: var(--surface);
   }
 
   input,
@@ -122,13 +123,13 @@
     outline: none;
     flex: 1;
     margin: 0;
-    border: 1px rgba(0, 0, 0, 0.23) solid;
+    border: 1px solid var(--border);
     border-radius: 3px;
     padding: 0.9em 0.75em;
     width: 100%;
-    color: inherit;
-    transition: border-color 150ms ease-in-out;
-    background-color: #fff;
+    color: var(--text);
+    transition: border-color var(--duration-fast) ease-in-out;
+    background-color: var(--surface-2);
   }
 
   textarea {
@@ -138,7 +139,7 @@
 
   input:disabled,
   textarea:disabled {
-    color: rgba(0, 0, 0, 0.5);
+    color: var(--text-muted);
   }
 
   input:focus,
@@ -153,9 +154,9 @@
     padding: 0 0.4em;
     margin: 0 -0.4em;
     pointer-events: none;
-    background: #fff;
-    color: rgba(0, 0, 0, 0.5);
-    transition: color 150ms ease, transform 150ms ease-in-out;
+    background: var(--surface-2);
+    color: var(--text-muted);
+    transition: color var(--duration-fast) ease, transform var(--duration-fast) ease-in-out;
     transform-origin: top left;
     max-width: calc(100% - 1em);
     overflow: hidden;
@@ -185,7 +186,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 50%;
+    border-radius: var(--radius-full);
   }
 
   .with-link > input {
@@ -248,7 +249,7 @@
       on:keypress
       on:keydown
       on:keyup
-      style={resize ? `resize: " ${resize}` : ''}></textarea>
+      style={resize ? `resize: ${resize}` : ''}></textarea>
     {#if label != null}
       <span class="label">{label}</span>
     {/if}
@@ -260,7 +261,7 @@
       <Ripple/>
     </a>
   {:else if external != null}
-    <a class="na link btn-dark" rel="nofollow nopener" target="_blank" href={external}>
+    <a class="na link btn-dark" rel="nofollow noreferrer noopener" target="_blank" href={external}>
       <OpenInNew />
       <Ripple/>
     </a>

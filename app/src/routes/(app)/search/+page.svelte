@@ -3,12 +3,26 @@
   import type { Mailbox, Message } from "$lib/types";
   export let data: { query: string; results: Message[]; nextCursor: string | null; total: number };
 
-  let query: string;
-  let results: Message[];
-  let nextCursor: string | null;
-  let total: number;
+  // Local, mutable copy of the loaded data. `SearchTop` / `SearchResult`
+  // mutate `results` and `selection` through `bind:` (delete, move) and
+  // `next()` appends paged results. Re-deriving these from `data` on every
+  // reactive pass would re-run on each child mutation and overwrite the
+  // optimistic change with the stale server value (deletions reappearing
+  // until refresh). Only re-sync when SvelteKit delivers a fresh `data`
+  // object (new query or an explicit refresh via `prev()`).
+  let query = data.query;
+  let results = data.results;
+  let nextCursor = data.nextCursor;
+  let total = data.total;
+  let lastData = data;
 
-  $: ({ query, results, nextCursor, total } = data);
+  $: if (data !== lastData) {
+    lastData = data;
+    query = data.query;
+    results = data.results;
+    nextCursor = data.nextCursor;
+    total = data.total;
+  }
 
   let selection: Message[] = [];
   let scrolled = false;
@@ -79,8 +93,8 @@ import { locale } from "$lib/locale";
         delay,
         duration,
         easing,
-        css: (t: number, u: number) => 
-            'box-sizing: border-box' +
+        css: (t: number, u: number) =>
+            'box-sizing: border-box;' +
             'overflow: hidden;' +
             `opacity: ${t};` +
             `height: ${t * height}px;`
@@ -116,12 +130,12 @@ import { locale } from "$lib/locale";
   
   .empty {
     flex: none;
-    margin: 3rem auto;
+    margin: var(--space-12) auto;
     text-align: center;
     display: flex;
     flex-direction: column;
     align-items: center;
-    color: #333;
+    color: var(--text-muted);
     font-size: 1rem;
   }
 
@@ -137,9 +151,9 @@ import { locale } from "$lib/locale";
     justify-content: center;
     color: var(--red);
     font-size: 2rem;
-    border-radius: 50%; 
-    padding: 1rem;
-    margin-top: 0.5rem;
+    border-radius: var(--radius-full); 
+    padding: var(--space-4);
+    margin-top: var(--space-2);
   }
 
   .loading-more{
@@ -147,9 +161,9 @@ import { locale } from "$lib/locale";
     align-items: center;
     justify-content: center;
     font-size: 2rem;
-    border-radius: 50%; 
-    padding: 1rem;
-    margin-top: 0.5rem;
+    border-radius: var(--radius-full); 
+    padding: var(--space-4);
+    margin-top: var(--space-2);
   }
 </style>
 

@@ -4,6 +4,7 @@ const pkg = require("../../package.json");
 import pc from "picocolors";
 import fs from "fs";
 import path from "path";
+import crypto from "crypto";
 
 import en from "./i18n/src/en";
 
@@ -21,8 +22,14 @@ const createConfig = (opts: {output: string}) => {
     return process.exit(1);
   }
 
-  fs.copyFileSync(sample, dest);
+  // Generate a strong random session secret instead of shipping the placeholder.
+  const secret = crypto.randomBytes(32).toString("hex");
+  const template = fs.readFileSync(sample, "utf8");
+  const contents = template.replace(/^secret_token=.*$/m, `secret_token="${secret}"`);
+  fs.writeFileSync(dest, contents);
+
   console.log("> Config file created in " + pc.yellow(dest));
+  console.log("> A random secret_token was generated for you")
   console.log("> Before start edit the settings as needed")
   console.log("> Then run " + pc.yellow("raven start") + " in the config directory")
 }

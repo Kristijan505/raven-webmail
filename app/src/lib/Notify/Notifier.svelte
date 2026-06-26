@@ -8,6 +8,7 @@
   import errorIcon from "~icons/mdi/close-circle-outline";
   import infoIcon from "~icons/mdi/information-outline";
   import warningIcon from "~icons/mdi/alert-outline";
+  import DOMPurify from "dompurify";
 
   const icons = {
     success: successIcon,
@@ -101,7 +102,7 @@
       {/if}
       <div class="message-content {message.html != null ? 'html' : 'text'}">
         {#if message.html != null}
-          {@html message.html}
+          {@html DOMPurify.sanitize(message.html)}
         {:else}
           {message.text}
         {/if}
@@ -121,7 +122,7 @@
 <style>
   .messenger {
     position: fixed;
-    z-index: 99999999999;
+    z-index: var(--z-toast);
     bottom: 0.5em;
     left: 0.5em;
     display: flex;
@@ -136,28 +137,34 @@
     display: flex;
     flex-direction: row;
     padding: 0.5em 0.5em 0.5em 1em;
-    color: #fff;
-    background-color: rgb(50, 50, 50);
+    color: var(--text);
+    background-color: var(--surface);
     box-shadow: 0px 3px 5px -1px rgba(0, 0, 0, 0.2),
       0px 6px 10px 0px rgba(0, 0, 0, 0.14), 0px 1px 18px 0px rgba(0, 0, 0, 0.12);
     margin: 0.5em;
     border-radius: 0.25em;
   }
 
+  /* Fixed, theme-agnostic toast colours (white text always readable on them);
+     the adaptive --color-* tokens lighten in dark mode and would lose contrast. */
   .success {
     background-color: #43a047;
+    color: #fff;
   }
 
   .error {
     background-color: #d32f2f;
+    color: #fff;
   }
 
   .info {
     background-color: #1976d2;
+    color: #fff;
   }
 
   .warning {
     background-color: #ffa000;
+    color: #fff;
   }
 
   .message-icon {

@@ -1,0 +1,28 @@
+<script lang="ts">
+  // RedCode "<R/>" mark, inlined so `fill: currentColor` lets it adopt the
+  // surrounding text colour: white on the red navbars, --text in the drawer.
+  export let size = "1.2em";
+</script>
+
+<svg
+  class="redcode-logo"
+  viewBox="0 0 382 209"
+  style="height: {size};"
+  fill="currentColor"
+  xmlns="http://www.w3.org/2000/svg"
+  aria-hidden="true"
+  focusable="false"
+>
+  <path fill-rule="evenodd" clip-rule="evenodd" d="M91.9628 57.3121L91.5815 3.35938L0.172852 99.3783V131.75L91.9628 200.284V156.948L38.3272 115.747L91.9628 57.3121Z" />
+  <path fill-rule="evenodd" clip-rule="evenodd" d="M310.268 103.358L346.178 4.4707L381.346 4.65211L344.484 103.271L310.268 103.358Z" />
+  <path fill-rule="evenodd" clip-rule="evenodd" d="M344.416 103.158L305.85 208.024L270.682 207.843L310.2 103.245L344.416 103.158Z" />
+  <path d="M185.457 131.863H151.231V207.847H108.252V0.328613H185.751C210.393 0.328613 229.366 5.77641 242.763 16.7215C256.111 27.6667 262.81 43.0872 262.81 63.0317C262.81 77.1876 259.729 89.008 253.569 98.4444C247.408 107.882 238.069 115.422 225.552 121.016L271.113 206.704L270.681 207.847H224.574L185.457 131.863V131.863ZM151.231 97.2285H185.897C196.655 97.2285 205.017 94.5043 210.932 89.0565C216.848 83.5591 219.832 76.0681 219.832 66.4367C219.832 56.6591 217.044 48.973 211.47 43.3789C205.846 37.7852 197.29 34.9631 185.751 34.9631H151.231V97.2285V97.2285Z" />
+</svg>
+
+<style>
+  .redcode-logo {
+    display: block;
+    width: auto;
+    flex: none;
+  }
+</style>

@@ -6,7 +6,9 @@ export const validate = <T>(fn: () => T): T => {
   try {
     return fn();
   } catch(e: any) {
-    throw new ApiError(StatusCodes.BAD_REQUEST, String(e?.message || "Bad request"))
+    // Zod messages are English and technical; surface a localized generic instead
+    // of leaking them to the user (the raw message stays on the Error for logs).
+    throw new ApiError(StatusCodes.BAD_REQUEST, String(e?.message || "Bad request"), "bad_request")
   }
 }
 
@@ -25,14 +27,15 @@ export const pageHandler = (fn: (req: Request, res: Response, next: NextFunction
         } else {
           return res.status(e.status).json({
             status: e.status,
-            error: e.message,
+            error: errMsg(req, e.key, e.message),
           })
         }
       }
 
       const status = Number(e?.status) || 500;
-      const message = DISPLAY_ERRORS ? String(e?.message) : "Internal server error";
-      
+      (req as any).log?.error({ err: e }, "unhandled error in /api page handler");
+      const message = DISPLAY_ERRORS ? String(e?.message) : errMsg(req, "internal_server_error", "Internal server error");
+
       return res.status(status).json({
         status,
         error: message,
@@ -53,14 +56,15 @@ export const handler = (fn: (req: Request, res: Response, next: NextFunction) =>
           .json({
             error: {
               status: e.status,
-              message: e.message
+              message: errMsg(req, e.key, e.message)
             }
           })
       }
 
       const status = Number(e?.status) || 500;
-      const message = DISPLAY_ERRORS ? String(e?.message) : "Internal server error";
-          
+      (req as any).log?.error({ err: e }, "unhandled error in /api handler");
+      const message = DISPLAY_ERRORS ? String(e?.message) : errMsg(req, "internal_server_error", "Internal server error");
+
       return res
         .status(status)
         .json({ error: { status, message } })
@@ -70,8 +74,21 @@ export const handler = (fn: (req: Request, res: Response, next: NextFunction) =>
 
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  // Optional i18n key into the locale `errors` group. The handlers below resolve
+  // it against req.locale (the user's language) and fall back to `message` (an
+  // English string kept for logs and the pre-locale window).
+  key?: string;
+  constructor(status: number, message: string, key?: string) {
     super(message);
     this.status = status;
+    this.key = key;
   }
 }
+
+// Resolve a user-facing error string in the request language. Errors thrown deep
+// in client.ts / proxy code carry an i18n `key` instead of a localized string,
+// because only here (request scope) do we have req.locale.
+export const errMsg = (req: Request, key: string | undefined, fallback: string): string => {
+  const table = req.locale?.errors as Record<string, string> | undefined;
+  return (key && table?.[key]) || fallback;
+};

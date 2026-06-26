@@ -33,7 +33,7 @@
 <svg {height} {width} viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">
   <circle 
     style="
-      stroke: rgba(0,0,0,0.075); stroke-width: {strokeWidth};
+      stroke: var(--surface-2); stroke-width: {strokeWidth};
       fill: transparent"
     cx={50}
     cy={50}

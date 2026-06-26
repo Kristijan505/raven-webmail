@@ -22,6 +22,7 @@
   import Menu from "$lib/Menu/Menu.svelte"
   import MenuItem from "$lib/Menu/MenuItem.svelte"
   import { tooltip } from "$lib/actions";
+  import { locale } from "$lib/locale";
 </script>
 
 <x-command class="multiple" class:hover={open} use:tooltip={open ? null : label} on:click={toggle}>
@@ -30,13 +31,13 @@
     <Popup anchor="bottom-left" bind:open>
       <Menu>
         <MenuItem on:click={() => cmd("fontName", "sans-serif")} iconPlaceholder={false}>
-          <span style="font-family: sans-serif">Sans Serif</span>
+          <span style="font-family: sans-serif">{$locale.font.Sans_serif}</span>
         </MenuItem>
         <MenuItem on:click={() => cmd("fontName", "serif")} iconPlaceholder={false}>
-          <span style="font-family: serif">Serif</span>
+          <span style="font-family: serif">{$locale.font.Serif}</span>
         </MenuItem>
         <MenuItem on:click={() => cmd("fontName", "monospace")} iconPlaceholder={false}>
-          <span style="font-family: monospace">Monospace</span>
+          <span style="font-family: monospace">{$locale.font.Monospace}</span>
         </MenuItem>
       </Menu>
     </Popup>

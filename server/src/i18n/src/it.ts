@@ -4,8 +4,65 @@
 import type { Locale } from "../locale";
 
 const locale: Locale = {
-
-  "Raven": "Raven",
+  "errors": {
+    "request_failed": "Richiesta non riuscita",
+    "cannot_connect": "Impossibile connettersi al server",
+    "invalid_response": "Risposta del server non valida",
+    "unknown_error": "Qualcosa è andato storto",
+    "internal_server_error": "Si è verificato un errore imprevisto del server",
+    "bad_request": "Richiesta non valida",
+    "forbidden": "Accesso negato",
+    "session_expired": "La tua sessione è scaduta, accedi di nuovo",
+    "bad_gateway": "Impossibile raggiungere il server di posta, riprova",
+    "too_many_logins": "Troppi tentativi di accesso, riprova più tardi",
+    "invalid_path_parameter": "Richiesta non valida",
+    "invalid_message_id": "Messaggio non valido",
+    "path_required": "È richiesto un nome per la cartella",
+    "cross_origin_blocked": "Richiesta bloccata per motivi di sicurezza",
+  },
+  "compose": {
+    "reply_divider": "Messaggio di risposta",
+    "forward_divider": "Messaggio inoltrato",
+  },
+  "From:": "Da:",
+  "Date:": "Data:",
+  "No_mailbox": "Non hai nessuna casella",
+  "Not_found": "Non trovato",
+  "Page_not_found": "Ops, questa pagina non esiste più.",
+  "Language": "Lingua",
+  "File_too_large": "Il file è troppo grande",
+  "datePicker": {
+    "weekDays": ["Domenica", "Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato"],
+    "months": ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"],
+  },
+  "font": {
+    "Small": "Piccolo",
+    "Normal": "Normale",
+    "Big": "Grande",
+    "Giant": "Gigante",
+    "Sans_serif": "Sans Serif",
+    "Serif": "Serif",
+    "Monospace": "Monospace",
+  },
+  "theme": {
+    "Theme": "Tema",
+    "Light": "Chiaro",
+    "Dark": "Scuro",
+    "Auto": "Automatico",
+  },
+  "validation": {
+    "Field_required": "Ops! Hai saltato questo campo",
+    "Invalid_email": "Indirizzo email non valido",
+    "No_recipients": "Questo messaggio non ha destinatari",
+    "Password_too_short": "La password deve avere almeno 6 caratteri",
+    "Passwords_dont_match": "Le password non corrispondono",
+  },
+  "Unsaved_changes": "Modifiche non salvate",
+  "Unsaved_changes_body": "Hai modifiche non salvate alla firma. Salvarle prima di uscire?",
+  "Discard": "Scarta",
+  "Name": "Nome",
+  "Email_address": "Indirizzo email",
+  "Cancel": "Annulla",
 
   "daily": "quotidiano",
   "by_minute": "al minuto",
@@ -80,8 +137,11 @@ const locale: Locale = {
   "Sent": "Inviata",
   "Forwarded": "Inoltrata",
 
-  "messages": "messaggi",
-  "message": "messaggio",
+  "message_count": {
+    "one": "messaggio",
+    "few": "messaggi",
+    "other": "messaggi",
+  },
 
   "To:": "A:",
   "Subject:": "Oggetto:",
@@ -109,6 +169,7 @@ const locale: Locale = {
   "Numbered_list": "Lista numerata",
   "Remove_format": "Rimuovi formato",
   "Send": "Invia",
+  "Save": "Salva",
   "Attach": "Allega",
   "Remove": "Rimuovi",
   "Add": "Aggiungi",
@@ -116,6 +177,8 @@ const locale: Locale = {
   "of": "di",
 
   "notifier": {
+    "Signature_saved": "Firma salvata",
+    "Email_address_copied": "Indirizzo email copiato",
     "New_folder_created": "Nuova cartella creata",
     "Folder_deleted": "Cartella eliminata",
     "Folder_renamed": "Cartella rinominata",
@@ -151,7 +214,28 @@ const locale: Locale = {
   "Take_me_to_my_inbox": "Vai alla posta in arrivo",
 
   "Toggle_code_view": "Codice on/off",
-  "Edit_your_signature": "Modifica la tua firma"
+  "Edit_your_signature": "Modifica la tua firma",
+
+  "Remote_images_hidden": "Le immagini remote sono nascoste per proteggere la tua privacy.",
+  "Load_images": "Carica immagini",
+
+  "security": {
+    "Verified_sender": "Mittente verificato",
+    "Partially_verified": "Parzialmente verificato",
+    "Not_verified": "Mittente NON verificato",
+    "Details": "Dettagli",
+    "Sender": "Mittente",
+    "Mailed_by": "Inviato da",
+    "Signed_by": "Firmato da",
+    "Encrypted": "Crittografato",
+    "Not_encrypted": "Non crittografato",
+    "View_original": "Visualizza originale",
+    "SPF": "SPF",
+    "DKIM": "DKIM",
+    "DMARC": "DMARC",
+    "Aligned": "allineato",
+    "Not_aligned": "non allineato"
+  }
 }
 
 export default locale;

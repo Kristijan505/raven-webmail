@@ -59,30 +59,64 @@
 
   const sanitize = (src: string | string[] | null) => {
     if(src instanceof Array) src = src.join("");
-    const div = DOMPurify.sanitize(src || "", { RETURN_DOM: true }) as HTMLElement;
+    const div = DOMPurify.sanitize(src || "", { RETURN_DOM: true, FORBID_ATTR: ["data-raven-src"] }) as HTMLElement;
     const toRemove = div.querySelectorAll("style, link, script, meta, object, head, title");
     for(let i = 0; i < toRemove.length; i++) {
       const el = toRemove[i];
       el.parentNode?.removeChild(el);
     }
+    // NB: remote images are NOT stripped here. sanitize() also runs over the
+    // user's OWN signature (blank(), and the signature half of createBody), which
+    // may legitimately use a remote logo — stripping it would silently drop the
+    // saved signature image. Untrusted QUOTED content is stripped separately via
+    // stripRemote() before it's appended in createBody.
     const html = div.innerHTML;
     const text = div.textContent;
     return { html, text }
   }
 
-  const createBody = (action: "re" | "fwd", ref: FullMessage) => {
+  // Strip fetch-capable refs from untrusted quoted reply/forward content: the
+  // compose iframe is same-origin + authenticated and has no "load images" opt-in,
+  // so a remote <img>/srcset/CSS url() would fetch (tracking) on open. data:/cid:
+  // stay. Applied to quoted HTML only — never to the user's signature.
+  const stripRemote = (html: string): string => {
+    const div = DOMPurify.sanitize(html || "", { RETURN_DOM: true, FORBID_ATTR: ["data-raven-src"] }) as HTMLElement;
+    for(const $el of [].slice.call(div.querySelectorAll("[srcset]")) as Element[]) $el.removeAttribute("srcset");
+    for(const $img of [].slice.call(div.querySelectorAll("img, source")) as Element[]) {
+      const s = ($img.getAttribute("src") || "").trim();
+      if(s && !/^(data:|cid:)/i.test(s)) $img.removeAttribute("src");
+    }
+    // Legacy background="https://…" fetches a remote image on open just like
+    // <img src>; the compose iframe has no opt-in/CSP, so strip it from quoted
+    // content too (keep data:/cid:).
+    for(const $el of [].slice.call(div.querySelectorAll("[background]")) as Element[]) {
+      const b = ($el.getAttribute("background") || "").trim();
+      if(b && !/^(data:|cid:)/i.test(b)) $el.removeAttribute("background");
+    }
+    for(const $el of [].slice.call(div.querySelectorAll("[style]")) as HTMLElement[]) {
+      const st = $el.getAttribute("style") || "";
+      const cleaned = st.replace(/url\(\s*(['"]?)([^'")]*)\1\s*\)/gi, (whole: string, _q: string, ref: string) => {
+        const u = (ref || "").trim();
+        return (!u || /^(data:|cid:)/i.test(u)) ? whole : "none";
+      });
+      if(cleaned !== st) $el.setAttribute("style", cleaned);
+    }
+    return div.innerHTML;
+  }
 
+  const createBody = (action: "re" | "fwd", ref: FullMessage) => {
+    const l = get(locale);
     return [
       "<br />".repeat(6),
-      get(signature),    
+      get(signature),
       "<br/>".repeat(2),
-        "-".repeat(10) + " " + (action === "re" ? "Reply message" : "Forwarded message") + " " + "-".repeat(10),
-        ref.from && (`From: <b>${s(ref.from.name) || ""}</b> ${s("<" + ref.from.address + ">")}`),
-        ref.to && ref.to.length && (`To: ${ref.to.map(to => s(to.address)).join(", ")}`),
-        "Subject: " + s(ref.subject),      
-        "Date: " + s(new Date(ref.date).toUTCString())
+        "-".repeat(10) + " " + (action === "re" ? l.compose.reply_divider : l.compose.forward_divider) + " " + "-".repeat(10),
+        ref.from && (`${l["From:"]} <b>${s(ref.from.name) || ""}</b> ${s("<" + ref.from.address + ">")}`),
+        ref.to && ref.to.length && (`${l["To:"]} ${ref.to.map(to => s(to.address)).join(", ")}`),
+        l["Subject:"] + " " + s(ref.subject),
+        l["Date:"] + " " + s(new Date(ref.date).toUTCString())
       ].filter(Boolean).join("<br />") + "<br/>".repeat(4) +
-      ref.html?.join("") || "";
+      stripRemote(ref.html?.join("") || "");
   }
 
   export const blank = async (drafts: Mailbox) => {
@@ -224,7 +258,7 @@
     flex-wrap: wrap-reverse;
     flex-direction: row-reverse;
     position: fixed;
-    z-index: 100100;
+    z-index: calc(var(--z-compose) + 1);
     bottom: 0;
     right: 2.5rem;
   }
@@ -232,7 +266,7 @@
   .tab-holder {
     width: 10rem;
     height: 2rem;
-    margin: 0.5rem 0.25rem 0 0.25rem;
+    margin: var(--space-2) var(--space-1) 0 var(--space-1);
   }
 
   .tab {
@@ -242,9 +276,9 @@
     width: 10rem;
     height: 2rem;
     box-sizing: border-box;
-    padding: 0 0 0 0.5rem;
-    border-radius: 0.25rem 0.25rem 0 0;
-    background: #333;
+    padding: 0 0 0 var(--space-2);
+    border-radius: var(--radius) var(--radius) 0 0;
+    background: #333; /* intentional dark compose chrome (white text), like the navbar */
     user-select: none;
     cursor: pointer;
     white-space: nowrap;
@@ -262,19 +296,19 @@
     right: 0;
     bottom: 0;
     opacity: 0;
-    z-index: -1;
+    z-index: var(--z-below);
   }
 
   .tab-remove {
     display: flex;
-    border-radius: 0.125rem;
+    border-radius: var(--radius-sm);
     margin-inline-start: auto;
     display: flex;
     align-items: center;
     justify-content: center;
     height: 2rem;
     font-size: 1rem;
-    padding: 0 0.5rem 0 0.5rem;
+    padding: 0 var(--space-2) 0 var(--space-2);
     box-sizing: border-box;
   }
 
@@ -284,8 +318,8 @@
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0,0,0,0.4);
-    z-index: 100050;
+    background: var(--overlay-bg);
+    z-index: var(--z-compose);
 
   }
 

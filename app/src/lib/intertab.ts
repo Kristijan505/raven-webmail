@@ -5,16 +5,21 @@ export const intertab = <T>(key: string) => {
 
   const handle = (event: StorageEvent) => {
     if(event.key !== key) return;
-    
+
     let old_value: T | undefined;
-    
     try {
-      old_value = JSON.parse(event.oldValue);
+      old_value = event.oldValue == null ? undefined : JSON.parse(event.oldValue);
     } catch {
       old_value = undefined;
     }
 
-    const new_value = JSON.parse(event.newValue);
+    let new_value: T | undefined;
+    try {
+      new_value = event.newValue == null ? undefined : JSON.parse(event.newValue);
+    } catch {
+      new_value = undefined;
+    }
+
     internal_dispatch(new_value, old_value);
   }
 
@@ -28,9 +33,9 @@ export const intertab = <T>(key: string) => {
     window.removeEventListener("storage", handle);
   }
 
-  const internal_dispatch = (old_value: T, new_value: T | undefined) => {
+  const internal_dispatch = (new_value: T | undefined, old_value: T | undefined) => {
     for(const fn of listeners) {
-      fn(old_value, new_value);
+      fn(new_value as T, old_value);
     }
   }
 

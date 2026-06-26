@@ -14,12 +14,12 @@
     flex-direction: row;
     align-items: center;
     height: 2.5rem;
-    color: #333;
-    padding-inline-end: 1rem;
+    color: var(--text);
+    padding-inline-end: var(--space-4);
   }
 
   .noplaceholder {
-    padding-inline-start: 1rem;
+    padding-inline-start: var(--space-4);
   }
 
   .icon {
@@ -41,7 +41,11 @@
   class:noplaceholder={!icon && !iconPlaceholder}
   {href}
   {target}
+  role={href ? undefined : "button"}
+  tabindex={href ? undefined : 0}
   on:click
+  on:mousedown={(e) => { if (e.button === 0) e.preventDefault(); }}
+  on:keydown={(e) => { if(!href && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); e.currentTarget.click(); } }}
   on:pointerdown
   {download}
  >

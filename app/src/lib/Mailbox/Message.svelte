@@ -1,10 +1,10 @@
 <script lang="ts" context="module">
-  const from = (mailbox: Mailbox, message: Message): string => {
+  const from = (mailbox: Mailbox, message: Message, l: any): string => {
     if(mailbox.specialUse === "\\Drafts" || mailbox.specialUse === "\\Sent") {
-      return `To: ${message.to[0]?.name || message.to[0]?.address || ""}`;
+      return `${l["To:"]} ${message.to[0]?.name || message.to[0]?.address || ""}`;
     }
 
-    return message.from.name || message.from.address || "";
+    return message.from?.name || message.from?.address || "";
   }  
 </script>
 
@@ -13,7 +13,16 @@
   export let message: Message;
   export let selection: Message[];
 
-  $: selected = selection.some(m => m.id === message.id)
+  // When a row is deleted, Svelte clears the bound `message` to undefined while
+  // the row is still sliding out (transition outro). Reading props off that
+  // undefined threw inside the flush and froze the whole list (dead toolbar,
+  // broken select-all). Keep the last value so the outro keeps its content and
+  // nothing reads off undefined.
+  let lastRow: Message;
+  $: if (message) lastRow = message;
+  $: row = message || lastRow;
+
+  $: selected = row ? selection.some(m => m.id === row.id) : false
 
   const toggleSelection = () => {
     const v = selection.filter(m => m.id !== message.id);
@@ -22,6 +31,7 @@
   }
 
   import Ripple from "$lib/Ripple.svelte";
+  import { clickable } from "$lib/actions";
   import type { Message, Mailbox } from "$lib/types";
 
   import NotSelected from "~icons/mdi/checkbox-blank-outline";
@@ -31,6 +41,7 @@
   import Paperclip from "~icons/mdi/paperclip";
   
   import { action, isDrafts, messageDate, _put } from "$lib/util";
+  import { locale } from "$lib/locale";
   import { _open } from "$lib/Compose/compose";
   const flag = action(async () => {
     message.flagged = !message.flagged;
@@ -53,7 +64,7 @@
 
 <style>
   .message {
-    border-bottom: rgba(0,0,0,0.1) 1px solid;
+    border-bottom: var(--border) 1px solid;
     display: flex;
     flex-direction: row;
     align-items: center;
@@ -77,28 +88,28 @@
   }
 
   .cell-icon:hover {
-    z-index: 1;
+    z-index: var(--z-base);
   }
 
   .cell-icon + .cell-icon {
-    margin-inline-start: -0.75rem;
+    margin-inline-start: calc(-1 * var(--space-3));
   }
 
   .cell-icon:first-child {
-    margin-inline-start: 0.5rem;
+    margin-inline-start: var(--space-2);
   }
 
   .selected {
-    background-color: #c2dbff;
-    border-bottom-color: #a5bad9;
+    background-color: var(--selected-bg);
+    border-bottom-color: var(--selected-border);
   }
 
   .flag {
-    transition: var(btn-transition), color 200ms ease;
+    transition: var(--btn-transition), color 200ms ease;
   }
 
   .flagged > .flag {
-    color: #e3c066;
+    color: var(--flag-color);
   }
 
   .from {
@@ -110,27 +121,27 @@
 
   .subject-intro {
     flex: 6;
-    color: rgb(127, 127, 127);
+    color: var(--text-muted);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    margin-inline-end: 1rem;
-    margin-inline-start: 1rem;
+    margin-inline-end: var(--space-4);
+    margin-inline-start: var(--space-4);
   }
 
   .subject {
-    color: #000;
+    color: var(--text);
   }
 
   .intro {
-    margin-inline-start: 1rem;
+    margin-inline-start: var(--space-4);
   }
 
   .date {
     flex: none;
-    color: #555;
+    color: var(--text-muted);
     font-size: 0.8rem;
-    margin-inline-end: 1rem;
+    margin-inline-end: var(--space-4);
   }
 
   .flex {
@@ -150,16 +161,16 @@
   .attachments {
     display: flex;
     font-size: 1.25rem;
-    margin-inline-end: 1rem;
+    margin-inline-end: var(--space-4);
     justify-self: flex-end;
-    color: #555;
+    color: var(--text-muted);
   }
 
   @media screen and (max-width: 650px) {
     .flex {
       flex-direction: column;
       align-items: flex-start;
-      padding: 0.75rem 0;
+      padding: var(--space-3) 0;
     }
 
     .end {
@@ -168,13 +179,13 @@
     }
     
     .subject-intro {
-      margin-top: 0.5rem;
+      margin-top: var(--space-2);
       margin-inline-start: 0;
       width: calc(100% - 1rem);
     }
 
     .date {
-      margin-top: 0.5rem;
+      margin-top: var(--space-2);
     }
 
     .select {
@@ -187,8 +198,8 @@
 
     .attachments {
       margin-inline-start: auto;
-      margin-top: 0.5rem;
-      margin-bottom: -0.5rem;
+      margin-top: var(--space-2);
+      margin-bottom: calc(-1 * var(--space-2));
     }
   }
 
@@ -199,14 +210,14 @@
   }
 </style>
 
-<a href="/mailbox/{mailbox.id}/message/{message.id}" 
-  class="na message" 
-  class:seen={message.seen} 
-  class:selected 
-  class:flagged={message.flagged}
+<a href="/mailbox/{mailbox.id}/message/{row.id}"
+  class="na message"
+  class:seen={row.seen}
+  class:selected
+  class:flagged={row.flagged}
   on:click={click}
 >
-  <div class="select cell-icon btn-dark" on:click|stopPropagation|preventDefault={toggleSelection}>
+  <div class="select cell-icon btn-dark" use:clickable on:click|stopPropagation|preventDefault={toggleSelection}>
     {#if selected}
       <Selected />
     {:else}
@@ -215,8 +226,8 @@
     <Ripple />
   </div>
 
-  <div class="cell-icon btn-dark flag" on:click|stopPropagation|preventDefault={flag}>
-    {#if message.flagged}
+  <div class="cell-icon btn-dark flag" use:clickable on:click|stopPropagation|preventDefault={flag}>
+    {#if row.flagged}
       <Flagged />
     {:else}
       <NotFlagged />
@@ -226,25 +237,25 @@
 
   <div class="flex">
     <div class="from">
-      {from(mailbox, message)}
+      {from(mailbox, row, $locale)}
     </div>
 
     <div class="end">
       <div class="subject-intro">
         <span class="subject">
-          {message.subject || ""}
+          {row.subject || ""}
         </span>
         <span class="intro">
-          {message.intro || ""}
+          {row.intro || ""}
         </span>
       </div>
 
       <div class="date-attachments">
         <div class="date">
-          {messageDate(message.date)}
+          {messageDate(row.date, $locale)}
         </div>
-    
-        {#if message.attachments}
+
+        {#if row.attachments}
           <div class="attachments">
             <Paperclip />
           </div>

@@ -175,7 +175,7 @@
     position: absolute;
     top: 0;
     left: 0;
-    border-radius: 50%;
+    border-radius: var(--radius-full);
     opacity: 0;
     pointer-events: none;
     overflow: hidden;
@@ -190,7 +190,7 @@
       opacity 0.1s cubic-bezier(0.4, 0, 0.2, 1);
   }
   .ripple :global(.animation--out) {
-    transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: opacity var(--duration) cubic-bezier(0.4, 0, 0.2, 1);
   }
 </style>
 

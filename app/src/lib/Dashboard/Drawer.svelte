@@ -10,12 +10,19 @@
   const scrollTop = writable(0);
   setContext("drawer", { scrollTop })
 
+  // Logo in the drawer header is a home button too: go to the inbox and close
+  // the drawer (mailboxes[0] is the inbox; the bare "/" route redirects there).
+  $: inbox = $mailboxes.find(isInbox) ?? $mailboxes[0];
+  $: inboxHref = inbox ? `/mailbox/${inbox.id}` : "/";
+
   const onScroll = (event: Event) => {
     const target = event.target as HTMLElement;
     $scrollTop = target.scrollTop;
   }
 
   import DrawerMailbox from './DrawerMailbox.svelte';
+  import Brand from "$lib/Brand/Brand.svelte";
+  import { clickable } from "$lib/actions";
   import ComposeIcon from "~icons/mdi/email-edit-outline";
   import Ripple from "$lib/Ripple.svelte";
 
@@ -38,7 +45,7 @@
 
   import Menu from "~icons/mdi/menu"; 
 
-  import { action, isDrafts, isNarrow, _post } from "$lib/util";
+  import { action, isDrafts, isInbox, isNarrow, _post } from "$lib/util";
   import type { DashContext } from "./Dashboard.svelte";
   import { getContext, setContext } from "svelte";
   import Plus from "~icons/mdi/plus";
@@ -70,9 +77,9 @@
     bottom: 0;
     left: 0;
     right: 0;
-    background: rgba(0,0,0,0.4);
-    z-index: 101100;
-    transition: opacity 300ms ease;
+    background: var(--overlay-bg);
+    z-index: var(--z-drawer);
+    transition: opacity var(--duration) ease;
   }
 
   .overlay:not(.open) {
@@ -90,7 +97,7 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
-    transition: margin 300ms ease;
+    transition: margin var(--duration) ease;
   }
 
   @media (max-width: 800px) {
@@ -99,7 +106,7 @@
       top: 0;
       bottom: 0;
       left: 0;
-      z-index: 101200;
+      z-index: calc(var(--z-drawer) + 1);
     }
 
     .drawer:not(.narrow-open) {
@@ -118,9 +125,9 @@
     flex-direction: row;
     align-items: center;
     box-sizing: border-box;
-    color: #111;
+    color: var(--text);
     height: var(--top-h);
-    margin-bottom: -0.75rem;
+    margin-bottom: calc(-1 * var(--space-3));
   }
 
   .menu {
@@ -136,16 +143,19 @@
   .logo {
     font-weight: 500;
     font-size: 1.25rem;
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
   }
 
   .drawer {
-    background: #fff;
+    background: var(--surface);
   }
 
   .compose-wrap {
     z-index: 10;
     position: relative;
-    padding: 1rem;
+    padding: var(--space-4);
     transition: box-shadow 200ms ease;
   }
 
@@ -165,14 +175,14 @@
     align-items: center;
     border: var(--border) 1px solid;
     border-radius: 100px;
-    padding: 0.75rem 1.25rem 0.75rem 0.75rem;
+    padding: var(--space-3) var(--space-5) var(--space-3) var(--space-3);
     font-size: 1rem;
     box-shadow: 0 1px 2px 0 rgb(60 64 67 / 30%), 0 1px 3px 1px rgb(60 64 67 / 15%);
     transition: box-shadow 400ms ease;
     user-select: none;
     cursor: pointer;
     --ripple-color: rgba(0,0,0,0.2);
-    background: #fff;
+    background: var(--surface-2);
   }
 
   .compose:hover {
@@ -182,8 +192,8 @@
   .compose-icon {
     display: flex;
     font-size: 1.25rem;
-    margin-inline-end: 0.75rem;
-    margin-inline-start: 0.25rem;
+    margin-inline-end: var(--space-3);
+    margin-inline-start: var(--space-1);
   }
 
   .sep {
@@ -194,12 +204,12 @@
     display: flex;
     flex-direction: row;
     align-items: center;
-    padding: 1rem 0.75rem 1rem 0.5rem;
+    padding: var(--space-4) var(--space-3) var(--space-4) var(--space-2);
   }
 
   .new-icon {
     font-size: 1.25rem;
-    margin-inline-end: 1rem;
+    margin-inline-end: var(--space-4);
   }
 
   .create-form {
@@ -208,7 +218,7 @@
   }
 
   .create-name {
-    margin-bottom: 1.25rem;
+    margin-bottom: var(--space-5);
   }
 
   .create-send {
@@ -223,13 +233,13 @@
 <div class="drawer" class:narrow-open={$narrow} class:wide-open={$wide}>
   
   <div class="top only-narrow">
-    <div class="menu btn-dark" on:click={() => narrow.set(false)}>
+    <div class="menu btn-dark" use:clickable on:click={() => narrow.set(false)}>
       <Menu />
       <Ripple />
     </div>
-    <div class="logo">
-      {$locale.Raven}
-    </div>
+    <a class="logo na" href={inboxHref} aria-label={$locale.mailboxes.Inbox} on:click={() => narrow.set(false)}>
+      <Brand />
+    </a>
   </div>
 
   <div class="compose-wrap" class:scrolled={$scrollTop !== 0}>
@@ -251,7 +261,7 @@
 
     <div class="sep"></div>
 
-    <div class="new btn-dark" on:click={openCreate}>
+    <div class="new btn-dark" use:clickable on:click={openCreate}>
       <div class="new-icon">
         <Plus />
       </div>

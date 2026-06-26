@@ -117,31 +117,7 @@
   import ChevronLeft from "~icons/mdi/chevron-left";
   import ChevronRight from "~icons/mdi/chevron-right";
   import Ripple from "./Ripple.svelte";
-
-  const weekDays = [
-    "Domingo",
-    "Lunes",
-    "Martes",
-    "Miércoles",
-    "Jueves",
-    "Viernes",
-    "Sábabo",
-  ];
-
-  const months = [
-    "Enero",
-    "Febrero",
-    "Marzo",
-    "Abril",
-    "Mayo",
-    "Junio",
-    "Julio",
-    "Agosto",
-    "Septiempre",
-    "Octubre",
-    "Noviembre",
-    "Diciembre"
-  ];
+  import { locale } from "$lib/locale";
 
   type Days = {
     leading: Date[]
@@ -187,17 +163,17 @@
     flex-direction: column;
     overflow: hidden;
     box-shadow: rgba(0,0,0,0.4) 0 0 8px 0;
-    border-radius: 0.25rem;
-    padding: 1rem;
-    color: #333;
-    background: #fff;
+    border-radius: var(--radius);
+    padding: var(--space-4);
+    color: var(--text);
+    background: var(--surface);
   }
 
   .title-bar {
     display: flex;
     flex-direction: row;
     align-items: center;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
   }
 
   .title {
@@ -214,8 +190,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 0.5rem;
-    border-radius: 50%;
+    padding: var(--space-2);
+    border-radius: var(--radius-full);
   }
 
   .days-top {
@@ -247,7 +223,7 @@
     align-items: center;
     justify-content: center;
     text-align: center;
-    border-radius: 50%;
+    border-radius: var(--radius-full);
     transition: background-color 250ms ease, color 250ms ease;
     font-weight: 500;
   }
@@ -271,7 +247,7 @@
     </div>
     {#each [0] as _ (currentMonth.getMonth())}
       <div class="title">
-        {months[currentMonth.getMonth()]} de {currentMonth.getFullYear()}
+        {$locale.datePicker.months[currentMonth.getMonth()]} {currentMonth.getFullYear()}
       </div>
     {/each}
     <div class="next btn-dark" on:click={gotoNextMonth}>
@@ -280,7 +256,7 @@
     </div>
   </div>
   <div class="days-top">
-    {#each weekDays as weekDay}
+    {#each $locale.datePicker.weekDays as weekDay}
       <div>{weekDay[0]}</div>
     {/each}
   </div>

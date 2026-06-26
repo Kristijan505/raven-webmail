@@ -1,12 +1,12 @@
 <script>
-  import { locale } from "$lib/locale";
+  import Brand from "$lib/Brand/Brand.svelte";
 </script>
 
 <style>
   .dash {
     width: 100%;
     min-height: 100%;
-    background: #fff;
+    background: var(--bg);
   }
 
   .top {
@@ -21,13 +21,13 @@
   .logo {
     font-weight: 500;
     font-size: 1.25rem;
-    margin: 0 1.5rem;
+    margin: 0 var(--space-6);
   }
 </style>
 
 <div class="dash">
   <div class="top">
-    <div class="logo">{$locale.Raven}</div>
+    <div class="logo"><Brand /></div>
   </div>
 
   <div class="page">

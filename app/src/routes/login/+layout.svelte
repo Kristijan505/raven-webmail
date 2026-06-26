@@ -2,7 +2,9 @@
   import { watchAuth } from "$lib/util";
   import { onMount } from "svelte";
   import { fly } from "svelte/transition";
-  import { locale } from '$lib/locale';
+  import Brand from "$lib/Brand/Brand.svelte";
+  import ThemeSwitcher from "$lib/Dashboard/ThemeSwitcher.svelte";
+  import LanguageSwitcher from "$lib/Dashboard/LanguageSwitcher.svelte";
   onMount(() => watchAuth(null));
 </script>
 
@@ -10,7 +12,7 @@
   .dash {
     width: 100%;
     min-height: 100%;
-    background: #fff;
+    background: var(--bg);
   }
 
   .top {
@@ -25,14 +27,25 @@
   .logo {
     font-weight: 500;
     font-size: 1.25rem;
-    margin: 0 1.5rem;
+    margin: 0 var(--space-6);
+  }
+
+  .actions {
+    margin-inline-start: auto;
+    margin-inline-end: var(--space-3);
+    display: flex;
+    align-items: center;
   }
 </style>
 
 <div class="dash" in:fly|local={{duration: 400, y: -25}}>
   <div class="top">
     <div class="logo">
-      {$locale.Raven}
+      <Brand />
+    </div>
+    <div class="actions">
+      <ThemeSwitcher />
+      <LanguageSwitcher />
     </div>
   </div>
 

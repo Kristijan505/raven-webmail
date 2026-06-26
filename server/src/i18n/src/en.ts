@@ -1,5 +1,63 @@
 export default {
-  Raven: "Raven",
+  errors: {
+    request_failed: "Request failed",
+    cannot_connect: "Cannot connect to the server",
+    invalid_response: "Invalid response from the server",
+    unknown_error: "Something went wrong",
+    internal_server_error: "An unexpected server error occurred",
+    bad_request: "Invalid request",
+    forbidden: "Access denied",
+    session_expired: "Your session has expired, please sign in again",
+    bad_gateway: "Could not reach the mail server, please try again",
+    too_many_logins: "Too many login attempts, please try again later",
+    invalid_path_parameter: "Invalid request",
+    invalid_message_id: "Invalid message",
+    path_required: "A folder name is required",
+    cross_origin_blocked: "Request blocked for security reasons",
+  },
+  compose: {
+    reply_divider: "Reply message",
+    forward_divider: "Forwarded message",
+  },
+  "From:": "From:",
+  "Date:": "Date:",
+  No_mailbox: "You don't have any mailbox",
+  Not_found: "Not found",
+  Page_not_found: "Oops, this page no longer exists.",
+  Language: "Language",
+  File_too_large: "File is too large",
+  datePicker: {
+    weekDays: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
+    months: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
+  },
+  font: {
+    Small: "Small",
+    Normal: "Normal",
+    Big: "Big",
+    Giant: "Giant",
+    Sans_serif: "Sans Serif",
+    Serif: "Serif",
+    Monospace: "Monospace",
+  },
+  theme: {
+    Theme: "Theme",
+    Light: "Light",
+    Dark: "Dark",
+    Auto: "Auto",
+  },
+  validation: {
+    Field_required: "Oops! You missed this field",
+    Invalid_email: "Invalid email address",
+    No_recipients: "This message has no recipients",
+    Password_too_short: "Password must have 6 characters or more",
+    Passwords_dont_match: "Passwords do not match",
+  },
+  Unsaved_changes: "Unsaved changes",
+  Unsaved_changes_body: "You have unsaved signature changes. Save them before leaving?",
+  Discard: "Discard",
+  Name: "Name",
+  Email_address: "Email address",
+  Cancel: "Cancel",
   
   daily: "daily",
   by_minute: "by minute",
@@ -63,7 +121,7 @@ export default {
   Discard_drafts: "Discard drafts",
 
   Common_actions: "Common actions",
-  Edit_your_name: "Editar your name",
+  Edit_your_name: "Edit your name",
   Update_your_password: "Update your password",
   
   Storage: "Storage",
@@ -74,8 +132,11 @@ export default {
   Sent: "Sent",
   Forwarded: "Forwarded",
 
-  messages: "messages",
-  message: "message",
+  message_count: {
+    one: "message",
+    few: "messages",
+    other: "messages",
+  },
 
   "To:": "To:",
   "Subject:": "Subject:",
@@ -103,6 +164,7 @@ export default {
   Numbered_list: "Numbered list",
   Remove_format: "Remove format",
   Send: "Send",
+  Save: "Save",
   Attach: "Attach",
   Remove: "Remove",
   Add: "Add",
@@ -110,6 +172,8 @@ export default {
   of: "of",
 
   notifier: {
+    Signature_saved: "Signature saved",
+    Email_address_copied: "Email address copied",
     New_folder_created: "New folder created",
     Folder_deleted: "Folder deleted",
     Folder_renamed: "Folder renamed",
@@ -118,6 +182,24 @@ export default {
     Password_updated: "Password updated",
     Name_updated: "Name updated",
     All_messages_deleted: "All messages deleted",
+  },
+
+  security: {
+    Verified_sender: "Verified sender",
+    Partially_verified: "Partially verified",
+    Not_verified: "Sender NOT verified",
+    Details: "Details",
+    Sender: "Sender",
+    Mailed_by: "Mailed by",
+    Signed_by: "Signed by",
+    Encrypted: "Encrypted",
+    Not_encrypted: "Not encrypted",
+    View_original: "View original",
+    SPF: "SPF",
+    DKIM: "DKIM",
+    DMARC: "DMARC",
+    Aligned: "aligned",
+    Not_aligned: "not aligned",
   },
 
   Back_to: "Back to",
@@ -132,10 +214,10 @@ export default {
   This_action_is_permanent_all_messages_will_be_deleted: "This action is permanent, all messages will be deleted",
 
   This_mailbox_is_empty: "This mailbox is empty",
-  There_are_no_search_results_for_this_query: "There_are_no_search_results_for_this_query", 
+  There_are_no_search_results_for_this_query: "There are no search results for this query",
 
   Folder_name: "Folder name",
-  New_name: "Nuevo nombre",
+  New_name: "New name",
 
   Retry: "Retry",
   Offline_title: "Oops! looks that you are offline",
@@ -146,4 +228,7 @@ export default {
 
   Toggle_code_view: "Toggle code view",
   Edit_your_signature: "Edit your signature",
+
+  Remote_images_hidden: "Remote images are hidden to protect your privacy.",
+  Load_images: "Load images",
 }

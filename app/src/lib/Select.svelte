@@ -18,6 +18,7 @@
   });
 
   import { getContext, onMount } from "svelte";
+  import { locale } from "$lib/locale";
   import { equals } from "./util";
   import type { Context } from "./Formy/Formy.svelte";
   import ValidationError from "./Formy/ValidationError.svelte";
@@ -33,7 +34,7 @@
     }
 
     if (!options.find((option) => equals(value, option.value))) {
-      validationError = "Oops! You missed this field";
+      validationError = $locale.validation.Field_required;
       console.log("[Formy] validation fails [Select]", label, value);
       return false;
     }
@@ -125,8 +126,8 @@
     top: 100%;
     width: 100%;
     left: 0;
-    z-index: 100000;
-    background: #fff;
+    z-index: var(--z-dropdown);
+    background: var(--surface);
     max-height: 95vh;
     overflow-x: hidden;
     overflow-y: auto;

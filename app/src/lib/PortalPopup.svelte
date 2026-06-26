@@ -1,5 +1,6 @@
 <script lang="ts">
 	export let autoClose: boolean = true;
+	export let closeOnInsideClick: boolean = true;
 	export let wide = false;
 	export let anchor: Anchor = 'top-right';
 
@@ -30,11 +31,23 @@
 
 	import { onMount } from 'svelte';
 
-	const click = () =>
-		open &&
+	const click = (e?: Event) => {
+		if (!open) return;
+		const target = e?.target;
+		// Keep the popup open for clicks INSIDE it when closeOnInsideClick is false
+		// (account menu: copy-email row + selectable details). Match the DOM (.popup),
+		// not a bound ref — a listener added in onMount doesn't see bind:this update
+		// in legacy mode.
+		if (!closeOnInsideClick && target instanceof Element && target.closest(".popup")) return;
+		// The blur listener is capture-phase, so it ALSO fires when the trigger button
+		// blurs as you click inside the popup (e.g. clicking its background moves focus
+		// off the button). For closeOnInsideClick=false, ignore those element blurs —
+		// the page is still focused; only a real window blur (tab/app switch) dismisses.
+		if (!closeOnInsideClick && e?.type === "blur" && document.hasFocus()) return;
 		setTimeout(() => {
 			if (autoClose) open = false;
 		}, 5);
+	};
 
 	onMount(() => {
     const off = [  
@@ -129,9 +142,10 @@
 		display: flex;
 		flex-direction: column;
 		min-width: 10em;
-		background: #fff;
+		background: var(--surface);
+		color: var(--text);
 		border-radius: 3px;
-		z-index: 100000000;
+		z-index: var(--z-popover);
     max-width: calc(100% - 10px);
     max-height: calc(100% - 10px);
     overflow: auto;

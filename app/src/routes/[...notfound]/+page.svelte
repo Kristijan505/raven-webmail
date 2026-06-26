@@ -1,23 +1,24 @@
 <script lang="ts">
   import Ripple from "$lib/Ripple.svelte";
+  import { locale } from "$lib/locale";
 </script>
 
 <style>
   .page {
-    padding: 2rem;
+    padding: var(--space-8);
   }
 
   p {
     font-size: 1.25rem;
-    margin-bottom: 3rem;
+    margin-bottom: var(--space-12);
   }
 </style>
 
 <div class="page">
-  <h1>404 Not found</h1>
-  <p>Oops! this page doesn't exists anymore</p>
+  <h1>404 {$locale.Not_found}</h1>
+  <p>{$locale.Page_not_found}</p>
   <a href="/" class="na btn-primary elev2">
-    Take me to my inbox
+    {$locale.Take_me_to_my_inbox}
     <Ripple />
   </a>
 </div>

@@ -1,8 +1,65 @@
 import type { Locale } from "../locale";
 
 const locale: Locale = {
-
-  Raven: "Raven",
+  errors: {
+    request_failed: "La solicitud falló",
+    cannot_connect: "No se puede conectar al servidor",
+    invalid_response: "Respuesta no válida del servidor",
+    unknown_error: "Algo salió mal",
+    internal_server_error: "Se produjo un error inesperado en el servidor",
+    bad_request: "Solicitud no válida",
+    forbidden: "Acceso denegado",
+    session_expired: "Su sesión ha caducado, inicie sesión de nuevo",
+    bad_gateway: "No se pudo conectar con el servidor de correo, inténtelo de nuevo",
+    too_many_logins: "Demasiados intentos de inicio de sesión, inténtelo de nuevo más tarde",
+    invalid_path_parameter: "Solicitud no válida",
+    invalid_message_id: "Mensaje no válido",
+    path_required: "Se requiere un nombre de carpeta",
+    cross_origin_blocked: "Solicitud bloqueada por razones de seguridad",
+  },
+  compose: {
+    reply_divider: "Mensaje de respuesta",
+    forward_divider: "Mensaje reenviado",
+  },
+  "From:": "De:",
+  "Date:": "Fecha:",
+  No_mailbox: "No tienes ningún buzón",
+  Not_found: "No encontrado",
+  Page_not_found: "Vaya, esta página ya no existe.",
+  Language: "Idioma",
+  File_too_large: "El archivo es demasiado grande",
+  datePicker: {
+    weekDays: ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"],
+    months: ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"],
+  },
+  font: {
+    Small: "Pequeño",
+    Normal: "Normal",
+    Big: "Grande",
+    Giant: "Gigante",
+    Sans_serif: "Sans Serif",
+    Serif: "Serif",
+    Monospace: "Monospace",
+  },
+  theme: {
+    Theme: "Tema",
+    Light: "Claro",
+    Dark: "Oscuro",
+    Auto: "Automático",
+  },
+  validation: {
+    Field_required: "¡Ups! Te faltó completar este campo",
+    Invalid_email: "Dirección de correo no válida",
+    No_recipients: "Este mensaje no tiene destinatarios",
+    Password_too_short: "La contraseña debe tener 6 caracteres o más",
+    Passwords_dont_match: "Las contraseñas no coinciden",
+  },
+  Unsaved_changes: "Cambios sin guardar",
+  Unsaved_changes_body: "Tienes cambios sin guardar en la firma. ¿Guardarlos antes de salir?",
+  Discard: "Descartar",
+  Name: "Nombre",
+  Email_address: "Dirección de correo",
+  Cancel: "Cancelar",
   
   daily: "por día",
   by_minute: "por minuto",
@@ -78,8 +135,11 @@ const locale: Locale = {
   Sent: "Enviados",
   Forwarded: "Redirigidos",
 
-  messages: "mensajes",
-  message: "mensaje",
+  message_count: {
+    one: "mensaje",
+    few: "mensajes",
+    other: "mensajes",
+  },
 
   "To:": "Para:",
   "Subject:": "Asunto:",
@@ -107,6 +167,7 @@ const locale: Locale = {
   Numbered_list: "Lista numerada",
   Remove_format: "Remover formato",
   Send: "Enviar",
+  Save: "Guardar",
   Attach: "Adjuntar",
   Remove: "Remover",
   Add: "Agregar",
@@ -114,6 +175,8 @@ const locale: Locale = {
   of: "de",
 
   notifier: {
+    Signature_saved: "Firma guardada",
+    Email_address_copied: "Dirección de correo copiada",
     New_folder_created: "Nueva carpeta creada",
     Folder_deleted: "Carpeta eliminada",
     Folder_renamed: "Carpeta renombrada",
@@ -150,6 +213,27 @@ const locale: Locale = {
 
   Toggle_code_view: "Vista de código",
   Edit_your_signature: "Editar mi firma",
+
+  Remote_images_hidden: "Las imágenes remotas están ocultas para proteger tu privacidad.",
+  Load_images: "Cargar imágenes",
+
+  security: {
+    Verified_sender: "Remitente verificado",
+    Partially_verified: "Parcialmente verificado",
+    Not_verified: "Remitente NO verificado",
+    Details: "Detalles",
+    Sender: "Remitente",
+    Mailed_by: "Enviado por",
+    Signed_by: "Firmado por",
+    Encrypted: "Cifrado",
+    Not_encrypted: "Sin cifrar",
+    View_original: "Ver original",
+    SPF: "SPF",
+    DKIM: "DKIM",
+    DMARC: "DMARC",
+    Aligned: "alineado",
+    Not_aligned: "no alineado",
+  },
 }
 
 export default locale;

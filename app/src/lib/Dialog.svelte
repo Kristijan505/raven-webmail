@@ -4,7 +4,7 @@
 
   export let title: string | undefined = void 0;
   export let width: string = "800px";
-  export let padding: string = "1.5rem";
+  export let padding: string = "var(--space-6)";
   export let onClose: () => void = () => {};
 
   onMount(() => add(window, "keydown", (event: Event) => {
@@ -25,15 +25,15 @@
   .overlay {
     display: flex;
     box-sizing: border-box;
-    padding: 5rem 1rem;
+    padding: 5rem var(--space-4);
     cursor: pointer;
     position: absolute;
-    background: rgba(0,0,0,0.4);
+    background: var(--overlay-bg);
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
-    z-index: 1000000;
+    z-index: var(--z-modal);
   }
 
   .dialog {
@@ -41,14 +41,14 @@
     width: var(--width);
     max-width: 90%;
     margin: auto;
-    background: #fff;
+    background: var(--surface);
     margin: auto;
     box-sizing: border-box;
     /*overflow: hidden;*/
   }
 
   .title {
-    padding: 1rem;
+    padding: var(--space-4);
     font-size: 1.1rem;
     font-weight: 500;
     /*

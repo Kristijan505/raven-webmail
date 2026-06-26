@@ -12,6 +12,7 @@
 <script lang="ts">
   export let html: string;
   export let onChange: ((html: string) => void) | null = null;
+  export let onDirty: (() => void) | null = null;
 
   let codeMode = false;
 
@@ -29,6 +30,7 @@
   setContext("editor", context);
 
   import css from "./iframe.css?raw";
+  import { proxyRemoteImages, serializeEditorBody } from "$lib/actions";
   import { setContext } from "svelte";
   import { writable } from "svelte/store";
   import type { Writable } from "svelte/store";
@@ -62,10 +64,14 @@
       _document.head.appendChild(style);
 
       _document.body.contentEditable = "true";
-      _document.body.innerHTML = html;
+      // Sandboxed (no allow-scripts) iframe: sanitize so scripts / inline event
+      // handlers / nested srcdoc-iframes in a saved signature are stripped instead
+      // of being blocked by the sandbox and logged to the console. Keeps
+      // formatting, inline styles and (base64) images.
+      _document.body.innerHTML = proxyRemoteImages(html);
       
       const obs = new MutationObserver(() => {
-        html = _document.body.innerHTML;
+        html = serializeEditorBody(_document.body);
         onChange?.(html);
       });
 
@@ -75,6 +81,11 @@
         attributes: true,
         subtree: true,
       });
+
+      // `input` fires only on real user editing (typing, paste, toolbar
+      // execCommand) — not on the programmatic load above — so it's a clean
+      // "the user touched the signature" signal for the unsaved-changes guard.
+      _document.body.addEventListener("input", () => onDirty?.());
     })
 
     return {
@@ -120,7 +131,7 @@
     </div>
   {:else}
     <div class="code">
-      <CodeEditor bind:html {onChange} />
+      <CodeEditor bind:html {onChange} {onDirty} />
     </div>
   {/if}
   

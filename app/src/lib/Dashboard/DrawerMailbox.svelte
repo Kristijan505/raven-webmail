@@ -2,6 +2,7 @@
   export let mailbox: Mailbox;
 
   import type { Mailbox } from "$lib/types";
+  import { clickable } from "$lib/actions";
   import { action, isDrafts, isInbox, isNarrow, isSent, isTrash, mailboxIcon, mailboxIsDeletable, mailboxName, _delete, _post, _put } from "../util";
 
   import Ripple from "$lib/Ripple.svelte";
@@ -94,7 +95,7 @@ import { locale } from "$lib/locale";
 
   .mailbox {
     position: relative;
-    padding: 1rem 0.75rem 1rem 0.5rem;
+    padding: var(--space-4) var(--space-3) var(--space-4) var(--space-2);
     display: flex;
     flex-direction: row;
     align-items: center;
@@ -102,15 +103,15 @@ import { locale } from "$lib/locale";
   }
 
   .mailbox.menu-open {
-    z-index: 100;
+    z-index: var(--z-sticky);
   }
 
   .mailbox.current {
-    background: rgba(0,0,0,0.1);
+    background: var(--surface-2);
   }
 
  .icon {
-    margin-inline-end: 1rem;
+    margin-inline-end: var(--space-4);
     display: flex;
     flex: none;
     align-items: center;
@@ -123,7 +124,7 @@ import { locale } from "$lib/locale";
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    padding-right: 1rem;
+    padding-right: var(--space-4);
   }
 
   .menu-out {
@@ -145,13 +146,13 @@ import { locale } from "$lib/locale";
     width: 2.5rem;
     height: 2.5rem;
     font-size: 1.3rem;
-    border-radius: 50%;
+    border-radius: var(--radius-full);
   }
 
   .anchor {
     position: fixed;
     top: var(--scroll-top);
-    margin-top: 2.5rem;
+    margin-top: var(--space-10);
     bottom: 0;
     left: 0;
   }
@@ -163,7 +164,7 @@ import { locale } from "$lib/locale";
     font-size: 0.85em;
     transform: translateY(-50%);
     pointer-events: none;
-    color: #444;
+    color: var(--text-muted);
     font-weight: 500;
   }
 
@@ -173,7 +174,7 @@ import { locale } from "$lib/locale";
   }
 
   .delete-label, .clear-label {
-    margin-bottom: 1.5rem;
+    margin-bottom: var(--space-6);
   }
 
   .delete-confirm, .clear-confirm {
@@ -181,7 +182,7 @@ import { locale } from "$lib/locale";
   }
 
   .rename-confirm {
-    margin-top: 1.5rem;
+    margin-top: var(--space-6);
     margin-inline-start: auto;
   }
 
@@ -201,12 +202,12 @@ import { locale } from "$lib/locale";
     <svelte:component this={mailboxIcon(mailbox)} />
   </div>
   <div class="name">
-    {mailboxName(mailbox)}
+    {mailboxName(mailbox, $locale)}
   </div>
   {#if hover || menuOpen} 
     <div class="menu-out" transition:scale|local={{ duration: 200 }}>
       <div class="menu-in">
-        <div class="menu-btn btn-dark" class:hover={menuOpen} on:click|preventDefault|stopPropagation={() => menuOpen = !menuOpen}>
+        <div class="menu-btn btn-dark" use:clickable class:hover={menuOpen} on:click|preventDefault|stopPropagation={() => menuOpen = !menuOpen}>
           <Dots />
           <Ripple />
         </div>
@@ -235,7 +236,7 @@ import { locale } from "$lib/locale";
 
 <div class="portal" use:portal>
   {#if deleteOpen}
-    <Dialog title="{$locale.Delete_folder} {mailboxName(mailbox)}" width="550px" onClose={() => deleteOpen = false}>
+    <Dialog title="{$locale.Delete_folder} {mailboxName(mailbox, $locale)}" width="550px" onClose={() => deleteOpen = false}>
       <div class="delete-body">
         <div class="delete-label">{$locale.This_action_is_permanent_all_messages_will_be_deleted}</div>
         <button class="delete-confirm btn-light btn-primary elev2" on:click={del}>
@@ -246,7 +247,7 @@ import { locale } from "$lib/locale";
   {/if}
 
   {#if renameOpen}
-    <Dialog title="{$locale.Rename_folder} {mailboxName(mailbox)}" width="550px" onClose={() => renameOpen = false}>
+    <Dialog title="{$locale.Rename_folder} {mailboxName(mailbox, $locale)}" width="550px" onClose={() => renameOpen = false}>
       <div class="rename-body">
         <TextField validate required trim bind:value={renamePath} />
         <button class="rename-confirm btn-light btn-primary elev2" on:click={rename}>
@@ -257,7 +258,7 @@ import { locale } from "$lib/locale";
   {/if}
 
   {#if clearOpen}
-    <Dialog title="{$locale.Delete_all_messages} {$locale.of} {mailboxName(mailbox)}" width="550px" onClose={() => clearOpen = false}>
+    <Dialog title="{$locale.Delete_all_messages} {$locale.of} {mailboxName(mailbox, $locale)}" width="550px" onClose={() => clearOpen = false}>
       <div class="clear-body">
         <div class="clear-label">
           {$locale.This_action_will_delete_all_messages_in_the_folder}

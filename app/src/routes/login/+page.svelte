@@ -20,25 +20,25 @@ import { locale } from "$lib/locale";
     font-weight: 600;
     font-size: 1.75rem;
     text-align: center;
-    margin: 4rem 0 2rem 0;
+    margin: 4rem 0 var(--space-8) 0;
   }
 
   .box {
     width: 400px;
     box-sizing: border-box;
     max-width: 90%;
-    margin: 0 auto 3rem auto;
-    padding: 2rem;
+    margin: 0 auto var(--space-12) auto;
+    padding: var(--space-8);
     display: flex;
     flex-direction: column;
   }
 
   .password {
-    margin-top: 1.5rem;
+    margin-top: var(--space-6);
   }
 
   .submit {
-    margin: 1.5rem 0.5rem 0 auto;
+    margin: var(--space-6) var(--space-2) 0 auto;
   }
 </style>
 

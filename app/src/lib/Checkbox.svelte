@@ -23,8 +23,8 @@
     position: relative;
     width: 2rem;
     height: 2rem;
-    border-radius: 50%;
-    color: #111;
+    border-radius: var(--radius-full);
+    color: var(--text);
     transition: color 200ms ease;
     display: flex;
     align-items: center;

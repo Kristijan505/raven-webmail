@@ -1,19 +1,23 @@
 <script lang="ts">
-  export let username: string;
   import { page } from "$app/stores";
   let q = ($page.url.pathname === "/search" && $page.url.searchParams.get("query")) || "";
 
   import Menu from "~icons/mdi/menu";
   import AccountButton from "./AccountButton.svelte";
+  import Brand from "$lib/Brand/Brand.svelte";
+  import LanguageSwitcher from "./LanguageSwitcher.svelte";
+  import ThemeSwitcher from "./ThemeSwitcher.svelte";
 
   import { getContext } from "svelte";
   import type { DashContext } from "./Dashboard.svelte";
   import Ripple from "$lib/Ripple.svelte";
-  const { toggle } = getContext("dash") as DashContext;
+  const { toggle, mailboxes, user } = getContext("dash") as DashContext;
 
   import Magnify from "~icons/mdi/magnify";
   import { goto } from "$app/navigation";
   import { locale } from "$lib/locale";
+  import { clickable } from "$lib/actions";
+  import { isInbox } from "$lib/util";
 
   let searching = false;
   const onkeypress = async (event: KeyboardEvent) => {
@@ -28,6 +32,11 @@
       }
     }
   }
+
+  // The logo doubles as a home button: jump to the inbox on click
+  // (mailboxes[0] is the inbox; the bare "/" route redirects there too).
+  $: inbox = $mailboxes.find(isInbox) ?? $mailboxes[0];
+  $: inboxHref = inbox ? `/mailbox/${inbox.id}` : "/";
 </script>
 
 <style>
@@ -56,7 +65,15 @@
   .logo {
     font-weight: 500;
     font-size: 1.25rem;
-    margin-inline-end: 1rem;
+    margin-inline-end: var(--space-4);
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+    transition: opacity var(--duration-fast) ease;
+  }
+
+  .logo:hover {
+    opacity: 0.85;
   }
 
   @media screen and (max-width: 600px) {
@@ -66,7 +83,7 @@
   }
 
   .q-wrap-wrap {
-    margin-inline-end: 0.75rem;
+    margin-inline-end: var(--space-3);
     display: flex;
     flex: 1;
     flex-basis: 14rem;
@@ -90,13 +107,13 @@
     align-items: center;
     justify-content: center;
     color: rgba(255,255,255,0.8);
-    margin-inline-end: 1rem;
+    margin-inline-end: var(--space-4);
   }
 
   .q {
     display: block;
     flex: 1;
-    padding: 0.6rem 1rem 0.6rem 2.5rem;
+    padding: 0.6rem var(--space-4) 0.6rem var(--space-10);
     border-radius: 100px;
     border: 0;
     outline: 0;
@@ -112,11 +129,13 @@
 </style>
 
 <div class="top">
-  <div class="menu btn-light" on:click={toggle}>
+  <div class="menu btn-light" use:clickable on:click={toggle}>
     <Menu />
     <Ripple />
   </div>
-  <div class="logo">{$locale.Raven}</div>
+  <a class="logo na" href={inboxHref} aria-label={$locale.mailboxes.Inbox} title={$locale.mailboxes.Inbox}>
+    <Brand />
+  </a>
   <div class="q-wrap-wrap">
     <div class="q-wrap">
       <div class="search-icon">
@@ -125,5 +144,7 @@
       <input type="text" on:keypress={onkeypress} class="q" placeholder={$locale["Search..."]} bind:value={q} />
     </div>
   </div>
-  <AccountButton {username} />
+  <ThemeSwitcher />
+  <LanguageSwitcher />
+  <AccountButton user={$user} />
 </div>

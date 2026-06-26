@@ -19,7 +19,7 @@ import { locale } from "$lib/locale";
       easing: quadOut,
       ...params,
       css: (t: number, u: number) => {
-        return `z-index: 1; margin-top: -${u * h}px; opacity: ${t};`
+        return `z-index: var(--z-base); margin-top: -${u * h}px; opacity: ${t};`
       }
     }
   }
@@ -29,7 +29,7 @@ import { locale } from "$lib/locale";
   x-file {
     position: relative;
     min-width: auto;
-    z-index: 2;
+    z-index: var(--z-raised);
     flex: 1;
     display: flex;
     flex-direction: row;
@@ -37,7 +37,7 @@ import { locale } from "$lib/locale";
     align-content: center;
     padding: 0.5em 0;
     flex: none;
-    background: #fff;
+    background: var(--surface);
   }
 
   x-file:not(:only-child) {
@@ -48,7 +48,7 @@ import { locale } from "$lib/locale";
     flex: none;
     width: 3em;
     height: 3em;
-    background: #ddd;
+    background: var(--surface-2);
     border-radius: 3px;
     margin-inline-end: 1em;
     position: relative;
@@ -68,27 +68,27 @@ import { locale } from "$lib/locale";
     height: 3px;
     left: 0;
     bottom: 0;
-    transition: width 300ms ease; 
+    transition: width var(--duration) ease; 
   }
 
   x-state {
     font-size: 1.5em;
-    border-radius: 50%;
+    border-radius: var(--radius-full);
     display: flex;
     flex: none;
     padding: 0.25em;
   }
 
   .complete {
-    color: #558b2f;
+    color: var(--color-success);
   }
 
   .error {
-    color: #7f0000;
+    color: var(--color-error);
   }
 
   .remove {
-    border-radius: 50%;
+    border-radius: var(--radius-full);
     padding: 0.75em;
     display: flex;
     flex: none;

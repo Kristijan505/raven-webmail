@@ -24,7 +24,11 @@
   let saved = true;
   $: onCurrent(current);
   const onCurrent = (current: Draft) => {
-    if(isDraftEquals(prev, current)) return;
+    // Same teardown race as dosave(): a null current here would make
+    // isDraftEquals destructure null and throw — which breaks the Svelte flush
+    // and leaves the draft state stale (lost recipients/subject/files until a
+    // page refresh). Bail out cleanly instead.
+    if(!current || isDraftEquals(prev, current)) return;
     prev = clone(current);
     saved = false;
     const t = ++token;
@@ -33,7 +37,9 @@
   }
 
   const dosave = async (current: Draft, t: number) => {
-    if(current[kSent]) return;
+    // current can be null if the compose tab/window was torn down before this
+    // debounced save fired (navigating away mid-edit) — guard the kSent read.
+    if(!current || current[kSent]) return;
     const newId = await save(current);
     // here we dont trigger an invalidate
     current.id = newId;
@@ -104,9 +110,10 @@ import { locale } from "$lib/locale";
     height: 87.5%;
     top: 5%;
     left: 5%;
-    background: #fff;
-    border-radius: 0.5rem;
-    z-index: 100200;
+    background: var(--surface);
+    color: var(--text);
+    border-radius: var(--radius-md);
+    z-index: calc(var(--z-compose) + 2);
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -121,15 +128,15 @@ import { locale } from "$lib/locale";
     box-sizing: border-box;
     align-items: center;
     justify-content: flex-end;
-    background: #333;
+    background: #333; /* intentional dark compose chrome (white text), like the navbar */
     cursor: pointer;
   }
 
   .window-title {
-    color: #ddd;
+    color: #ddd; /* light title on the dark compose chrome */
     font-size: 0.9rem;
     margin-inline-end: auto;
-    margin-inline-start: 1rem;
+    margin-inline-start: var(--space-4);
     display: flex;
     flex-direction: row;
     align-items: center;
@@ -146,7 +153,7 @@ import { locale } from "$lib/locale";
     align-items: center;
     justify-content: center;
     font-size: 2rem;
-    margin-inline-start: -0.75rem;
+    margin-inline-start: calc(-1 * var(--space-3));
   }
 
   .window-btn {
@@ -158,7 +165,7 @@ import { locale } from "$lib/locale";
     width: 2.25rem;
     height: 2.25rem;
     margin: 0.125rem;
-    border-radius: 0.125rem;
+    border-radius: var(--radius-sm);
     color: #fff;
   }
 
@@ -187,7 +194,7 @@ import { locale } from "$lib/locale";
 
   .label-input {
     position: relative;
-    border-bottom: #eee 1px solid;
+    border-bottom: var(--border) 1px solid;
     display: flex;
     flex-direction: row;
     flex: none;
@@ -200,7 +207,7 @@ import { locale } from "$lib/locale";
 
   x-label {
     font-size: 0.9rem;
-    color: #777;
+    color: var(--text-muted);
     align-self: flex-start;
     line-height: 2.5rem;
     height: 2.25rem;
@@ -218,6 +225,9 @@ import { locale } from "$lib/locale";
     flex: 1;
     font-size: inherit;
     font-family: inherit;
+    /* Inherit the dark compose chrome rather than the <input> UA white/black. */
+    background: transparent;
+    color: inherit;
   }
 
   x-toggle-cc {
@@ -231,7 +241,7 @@ import { locale } from "$lib/locale";
     display: flex;
     align-items: center;
     justify-content: center;
-    background: #fff;
+    background: var(--surface);
     font-size: 0.9rem;
     height: 2.75rem;
   }
@@ -245,7 +255,7 @@ import { locale } from "$lib/locale";
     justify-content: center;
     padding: 0.25em;
     cursor: pointer;
-    color: #777;
+    color: var(--text-muted);
   }
 
   x-toggle-cc > span:hover {

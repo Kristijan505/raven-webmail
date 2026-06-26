@@ -30,8 +30,8 @@
     width: 2em;
     height: 100%;
     cursor: pointer;
-    color: rgba(0, 0, 0, 0.4);
-    transition: color 300ms ease;
+    color: var(--text-muted);
+    transition: color var(--duration) ease;
     display: flex;
     font-size: 1.5em;
     user-select: none;
@@ -40,7 +40,7 @@
   }
 
   .icon:hover {
-    color: rgba(0, 0, 0, 0.75);
+    color: var(--text);
   }
 </style>
 

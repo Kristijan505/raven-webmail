@@ -1,11 +1,17 @@
 <script lang="ts">
   import type { User } from '$lib/types';
   export let data: { user: User };
-  let user: User | null = null;
-  $: user = data?.user ?? null;
+  let user: User | null = data?.user ?? null;
+  let lastData = data;
+  // Re-sync only when SvelteKit delivers a fresh `data` object, so the optimistic
+  // `user.name = ...` edit in editName() isn't re-derived away (see mailbox/search).
+  $: if (data !== lastData) { lastData = data; user = data?.user ?? null; }
 
-	$: name = user?.name || 'Unnamed';
-	$: letter = name[0] || '';
+  import { getContext } from "svelte";
+  import type { DashContext } from "$lib/Dashboard/Dashboard.svelte";
+  // The navbar account menu reads from the shared layout user (a separate fetch),
+  // so a name edit here must also update that store, not just local data.user.
+  const dash = getContext("dash") as DashContext;
 
 	import LockReset from '~icons/mdi/lock-reset';
 	import DrawPen from '~icons/mdi/draw';
@@ -14,12 +20,13 @@
 	import Password from '$lib/Password.svelte';
 	import Dialog from '$lib/Dialog.svelte';
   import Ripple from '$lib/Ripple.svelte';
-  import { action, _put } from '$lib/util';
+  import { action, plural, _put } from '$lib/util';
 
   import AccountEdit from "~icons/mdi/account-edit-outline";
   import TextField from "$lib/TextField.svelte";
   import { _message } from "$lib/Notify/notify";
   import { locale } from "$lib/locale";
+  import AccountHeader from "$lib/Dashboard/AccountHeader.svelte";
 	import TransitionPage from '$lib/TransitionPage.svelte';
 
 	const gb = (size: number) => (size / 1024 ** 3).toFixed(2);
@@ -30,8 +37,8 @@
 	let confirmPassword = '';
 
 	const updatePassword = action(async () => {
-		if (newPassword.length < 6) throw new Error('Password must have 6 characters or more');
-		if (newPassword !== confirmPassword) throw new Error('Passwords does not match');
+		if (newPassword.length < 6) throw new Error($locale.validation.Password_too_short);
+		if (newPassword !== confirmPassword) throw new Error($locale.validation.Passwords_dont_match);
 			
     await _put(`/api/me`, {
       existingPassword: currentPassword,
@@ -57,6 +64,7 @@
     if(!newName?.trim()) return;
     await _put("/api/me", { name: newName });
     user.name = newName
+    dash.user.update(u => ({ ...u, name: newName }));
     nameOpen = false;
     _message($locale.notifier.Name_updated);
   })
@@ -77,45 +85,10 @@
 		flex: none;
 	}
 
-	.main {
-		flex: none;
-		display: flex;
-		flex-direction: row;
-		align-items: center;
-		padding: var(--spacing);
-		padding-top: calc(var(--spacing) * 2);
-	}
-
-	.main > .end {
-		font-size: 1.1em;
-		display: flex;
-		flex-direction: column;
-		margin-left: 1.5em;
-	}
-
-	.main > .end > div {
-		flex: none;
-		white-space: nowrap;
-		line-height: 1.5em;
-	}
-
-	.letter {
-		font-size: 3em;
-		text-transform: uppercase;
-		width: 6rem;
-		height: 6rem;
-		background: var(--red);
-		color: #fff;
-		border-radius: 50%;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		flex: none;
-	}
-
 	.box {
-		margin: 2rem 1rem;
-    background: #fff;
+		margin: var(--space-8) var(--space-4);
+    background: var(--surface);
+    border: 1px solid var(--border);
     border-radius: 4px;
     display: flex;
     flex-direction: column;
@@ -128,12 +101,12 @@
     font-size: 1.25em;
     flex: none;
     border-bottom: var(--border) 1px solid;
-    padding: 1rem;
+    padding: var(--space-4);
 	}
 
 	.box-title > .comment {
 		font-size: 0.8em;
-		color: #666;
+		color: var(--text-muted);
 		margin-inline-start: 0.5em;
 	}
 
@@ -162,26 +135,26 @@
 
 	.quota-desc > .used {
 		font-size: 1.15em;
-		color: #333;
+		color: var(--text);
 	}
 
 	.quota-desc > .total {
 		font-size: 1.15em;
-		color: #666;
+		color: var(--text-muted);
 	}
 
 	.password-dialog > .field {
-		margin-bottom: 1.5rem;
+		margin-bottom: var(--space-6);
 	}
 
 	.send {
-		margin-top: 1rem;
+		margin-top: var(--space-4);
 		display: flex;
 		justify-content: flex-end;
 	}
 
   .menu {
-    padding: 0.5rem 0;
+    padding: var(--space-2) 0;
   }
 </style>
 
@@ -192,14 +165,7 @@
 <TransitionPage>
   {#if user}
   <div class="account">
-    <div class="main">
-      <div class="letter elev3">{letter}</div>
-      <div class="end">
-        <div class="name">{name}</div>
-        <div class="username">{user.username}</div>
-        <div class="address">{user.address}</div>
-      </div>
-    </div>
+    <AccountHeader {user} />
   
     <div class="box elev3 common-actions">
       <div class="box-title">{$locale.Common_actions}</div>
@@ -349,10 +315,10 @@
             {Math.round((user.limits.recipients.used / user.limits.recipients.allowed) * 100)}%
           </div>
           <div class="used">
-            {user.limits.recipients.used} {user.limits.recipients.used === 1 ? $locale.message : $locale.messages}
+            {user.limits.recipients.used} {plural(user.limits.recipients.used, $locale.message_count)}
           </div>
           <div class="total">
-            {$locale.of} {user.limits.recipients.allowed} {user.limits.recipients.allowed === 1 ? $locale.message : $locale.messages}
+            {$locale.of} {user.limits.recipients.allowed} {plural(user.limits.recipients.allowed, $locale.message_count)}
           </div>
         </div>
       </div>
@@ -373,10 +339,10 @@
             {Math.round((user.limits.forwards.used / user.limits.forwards.allowed) * 100)}%
           </div>
           <div class="used">
-            {user.limits.forwards.used} {user.limits.forwards.used === 1 ? $locale.messages : $locale.messages}
+            {user.limits.forwards.used} {plural(user.limits.forwards.used, $locale.message_count)}
           </div>
           <div class="total">
-            {$locale.of} {user.limits.forwards.allowed} {user.limits.forwards.allowed === 1 ? $locale.message : $locale.messages}
+            {$locale.of} {user.limits.forwards.allowed} {plural(user.limits.forwards.allowed, $locale.message_count)}
           </div>
         </div>
       </div>
@@ -402,7 +368,7 @@
 
 			<div class="send">
 				<button class="btn-light btn-primary elev2">
-          {$locale.Send}
+          {$locale.Save}
           <Ripple />
         </button>
 			</div>
@@ -418,7 +384,7 @@
 			</div>
 			<div class="send">
 				<button class="btn-light btn-primary elev2">
-          {$locale.Send}
+          {$locale.Save}
           <Ripple />
         </button>
 			</div>

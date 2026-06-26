@@ -10,12 +10,12 @@
     justify-content: center;
     width: 3em;
     height: 3em;
-    border-radius: 50%;
-    color: #444;
+    border-radius: var(--radius-full);
+    color: var(--text-muted);
   }
 
   x-action:hover {
-    color: #111;
+    color: var(--text);
   }
 
   x-action > :global(svg) {
@@ -29,7 +29,7 @@
   x-bubble {
     position: absolute;
     background: var(--red);
-    border-radius: 50%;
+    border-radius: var(--radius-full);
     width: 1rem;
     height: 1rem;
     font-size: 0.7em;
@@ -53,7 +53,7 @@
     right: -6em;
     width: 20rem;
     max-height: 70vh;
-    background: #fff;
+    background: var(--surface);
     border-radius: 3px;
     display: flex;
     max-width: 80vw;
@@ -104,9 +104,9 @@
   }
 
   .add {
-    padding: 0.5rem 0.75rem;
-    border-radius: 0.25rem;
-    color: #444;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius);
+    color: var(--text-muted);
   }
 </style>
 
@@ -126,28 +126,43 @@
   import Clip from "~icons/mdi/paperclip"
   import Ripple from "$lib/Ripple.svelte";
   import CircularProgress from "$lib/CircularProgress.svelte";
-  import { tooltip } from "$lib/actions";
+  import { tooltip, add as listen } from "$lib/actions";
+  import { onMount } from "svelte";
 import { locale } from "$lib/locale";
-  
+
+  let root: HTMLElement;
+
+  onMount(() => {
+    // Dismiss the attachments popup when clicking anywhere outside it (incl. while
+    // composing). The toolbar button lives inside `root`, so toggling it never
+    // self-closes; clicks inside the popup (file rows, Add) are kept too.
+    return listen(document, "click", (e: MouseEvent) => {
+      if(open && root && !root.contains(e.target as Node)) open = false;
+    });
+  });
+
   const remove = (file: MessageFile) => {
     draft.files = draft.files.filter(item => item !== file);
   }
 
   const add = async (file: File) => {
     loading++;
-    try {
-      let item: MessageFile = {
-        id: void 0,
-        size: file.size,
-        contentType: file.type,
-        filename: file.name,
-        [fileState]: "uploading",
-        [fileFile]: file,
-        [fileLoaded]: 0,
-      }
-      
-      draft.files = [...draft.files, item];
+    // `item` (the rendered MessageFile) must be declared outside the try block so
+    // the catch can flip ITS state to "error" — the old code mutated the raw File
+    // object instead, leaving failed uploads stuck on "uploading" forever.
+    const item: MessageFile = {
+      id: void 0,
+      size: file.size,
+      contentType: file.type,
+      filename: file.name,
+      [fileState]: "uploading",
+      [fileFile]: file,
+      [fileLoaded]: 0,
+    }
 
+    draft.files = [...draft.files, item];
+
+    try {
       const { id } = await upload(file, event => {
         item[fileLoaded] = event.loaded || 0;
         draft.files = [...draft.files];
@@ -162,9 +177,9 @@ import { locale } from "$lib/locale";
       draft.files = [...draft.files];
       loading--;
     } catch(e: any) {
-      file[fileState] = "error";
-      file[fileError] = String(e?.message);
-      delete file[fileFile];
+      item[fileState] = "error";
+      item[fileError] = String(e?.message);
+      delete item[fileFile];
       draft.files = [...draft.files];
       loading--;
     }
@@ -192,7 +207,7 @@ import { locale } from "$lib/locale";
             throw e;
           }
         } else if (res.status === 413) {
-          throw new Error(`File ${file.name} is too big`);
+          throw new Error($locale.File_too_large);
         } else {
           throw e;
         }
@@ -220,8 +235,8 @@ import { locale } from "$lib/locale";
   }
 </script>
 
-<x-upload>
-  
+<x-upload bind:this={root}>
+
   <input bind:this={input} on:change={change} type="file" name="0-upload" id="0-upload" multiple>
   
   <x-action class="upload btn-dark" class:hover={open} use:tooltip={open ? null : $locale.Attach} on:click={click}>
@@ -242,7 +257,7 @@ import { locale } from "$lib/locale";
   {#if open}
     <x-popup transition:fly|local={{x: 0, y: 20, duration: 250}}>
       <svg class="arrow" viewBox="0 0 24 24" preserveAspectRatio="none">
-        <path d="M0 0 L24 0 L12 24 L 0 0" fill="#fff"/>
+        <path d="M0 0 L24 0 L12 24 L 0 0" fill="var(--surface)"/>
       </svg>
       <x-popup-body>
         <x-scroll>

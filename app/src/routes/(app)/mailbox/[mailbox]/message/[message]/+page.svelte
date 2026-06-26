@@ -8,7 +8,7 @@
   
   import { action, isDrafts, isInbox, isJunk, isSent, isTrash, mailboxName, _delete, _put } from "$lib/util";
   
-  import { messageHTML, purify, tooltip } from "$lib/actions";
+  import { messageHTML, tooltip, clickable } from "$lib/actions";
   import TabTop from "$lib/Tab/TabTop.svelte";
   
   import Delete from "~icons/mdi/delete-outline";
@@ -23,8 +23,29 @@
   import { goto } from "$app/navigation";
   import { getContext } from "svelte";
   import MoveTo from "$lib/MoveTo.svelte";
+  import MessageSecurity from "$lib/Message/MessageSecurity.svelte";
 
   $: html = message.html?.join("").trim();
+
+  let loadRemote = false;
+  let shownKey = `${data.message.mailbox}-${data.message.id}`;
+  // Reset the "load remote images" opt-in when switching to another message.
+  $: {
+    const key = `${message.mailbox}-${message.id}`;
+    if (key !== shownKey) { shownKey = key; loadRemote = false; }
+  }
+  // Detect every remote vector messageHTML neutralizes — otherwise the warning +
+  // "Load images" button won't render while the images are still hidden, leaving
+  // them broken with no way to opt in. Covers <img>/<source> src or srcset to an
+  // http(s)/protocol-relative URL, CSS url() backgrounds, and @import.
+  $: hasRemoteImages = (() => {
+    const h = html || "";
+    return /<(?:img|source)\b[^>]*\b(?:src|srcset)\s*=\s*["']?\s*(?:https?:)?\/\//i.test(h)
+      || /\bbackground\s*=\s*["']?\s*(?:https?:)?\/\//i.test(h)
+      || /url\(\s*["']?\s*(?:https?:)?\/\//i.test(h)
+      || /@import\b/i.test(h);
+  })();
+
   let scrolled = false;
   const onScroll = (event: Event) => {
     let target = event.target as HTMLElement;
@@ -79,7 +100,7 @@
 
   const reply = action(async () => {
     const drafts = $mailboxes.find(isDrafts)!;
-    await _replyAll(user, drafts, mailbox, message.id);
+    await _replyAll($user, drafts, mailbox, message.id);
   })
 
   const forward = action(async () => {
@@ -97,7 +118,7 @@
   }
 
   .first-action {
-    margin-inline-start: 0.5rem;
+    margin-inline-start: var(--space-2);
   }
 
   .message {
@@ -106,7 +127,10 @@
   }
 
   .body {
-    padding: 2rem;
+    padding: var(--space-8);
+    max-width: 64rem;
+    margin-inline: auto;
+    box-sizing: border-box;
   }
 
   .text {
@@ -114,13 +138,16 @@
   }
 
   .detail {
-    padding: 2rem;
+    padding: var(--space-8);
+    max-width: 64rem;
+    margin-inline: auto;
+    box-sizing: border-box;
   }
 
   .subject {
     font-size: 1.65rem;
     font-weight: 500;
-    margin-bottom: 1.25rem;
+    margin-bottom: var(--space-5);
   }
 
   .info {
@@ -128,11 +155,29 @@
   }
 
   .info > div {
-    margin-bottom: 0.75rem;
+    margin-bottom: var(--space-3);
   }
 
   .from-name, .from-only-address, .to-address {
     font-weight: 500;
+  }
+
+  .remote-images {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    background: var(--warning-bg);
+    border: 1px solid var(--warning-border);
+    border-radius: 6px;
+    padding: 0.6rem var(--space-4);
+    margin-bottom: var(--space-4);
+    font-size: 0.9rem;
+    color: var(--warning-text);
+  }
+
+  .remote-images > button {
+    margin-inline-start: auto;
+    flex: none;
   }
 
   /*
@@ -156,7 +201,7 @@
 
     <TabTop {scrolled}>
       <div class="action-group first-action">
-        <a class="na action btn-dark" href="/mailbox/{mailbox.id}" use:tooltip={`${$locale.Back_to} ${mailboxName(mailbox)}`}>
+        <a class="na action btn-dark" href="/mailbox/{mailbox.id}" use:tooltip={`${$locale.Back_to} ${mailboxName(mailbox, $locale)}`}>
           <GoBack />
           <Ripple />
         </a>
@@ -164,7 +209,7 @@
 
       <div class="action-group">
         <div class="action btn-dark"
-          use:tooltip={message.seen ? $locale.Mark_as_seen : $locale.Mark_as_not_seen}
+          use:clickable use:tooltip={message.seen ? $locale.Mark_as_not_seen : $locale.Mark_as_seen}
           on:click={seen}
         >
           {#if message.seen}
@@ -178,14 +223,14 @@
         {#if isJunk(mailbox)}
           <div 
             class="action btn-dark" 
-            use:tooltip={$locale.This_is_not_spam}
+            use:clickable use:tooltip={$locale.This_is_not_spam}
             on:click={spam}  
           >
             <UnMarkSpam />
             <Ripple />
           </div>
         {:else if !isDrafts(mailbox) && !isSent(mailbox) && !isTrash(mailbox)}
-          <div class="action btn-dark" use:tooltip={$locale.Mark_as_spam}
+          <div class="action btn-dark" use:clickable use:tooltip={$locale.Mark_as_spam}
             on:click={spam}
           >
             <MarkSpam />
@@ -193,7 +238,7 @@
           </div>
         {/if}
 
-        <div class="action btn-dark" use:tooltip={
+        <div class="action btn-dark" use:clickable use:tooltip={
             isTrash(mailbox) ? $locale.Delete_permanently :
             isDrafts(mailbox) ? $locale.Discard_drafts :
             $locale.Delete}
@@ -207,13 +252,13 @@
       <div class="action-group">
 
         <div class="action-group">
-          <div class="action btn-dark" use:tooltip={$locale.Forward} on:click={forward}>
+          <div class="action btn-dark" use:clickable use:tooltip={$locale.Forward} on:click={forward}>
             <Resend />
             <Ripple />
           </div>
 
           {#if !isDrafts(mailbox) && !isSent(mailbox)}
-            <div class="action btn-dark" use:tooltip={$locale.Reply} on:click={reply}>
+            <div class="action btn-dark" use:clickable use:tooltip={$locale.Reply} on:click={reply}>
               <Reply />
               <Ripple />
             </div>
@@ -235,9 +280,9 @@
           {#if message.from}
             <div class="from">
               {#if message.from.name}
-                From: <span class="from-name">{message.from.name}</span> {"<"}{message.from.address}{">"}
+                {$locale["From:"]} <span class="from-name">{message.from.name}</span> {"<"}{message.from.address}{">"}
               {:else}
-                From: <span class="from-only-address">{message.from.address}</span>
+                {$locale["From:"]} <span class="from-only-address">{message.from.address}</span>
               {/if}
             </div>
           {/if}
@@ -257,6 +302,13 @@
               {$locale["Sent:"]} {new Date(message.date).toLocaleString()}
             </div>
           {/if}
+
+          <!-- Only inbound mail carries SPF/DKIM/DMARC results. Sent/Drafts (and
+               any message without verificationResults) would otherwise render as
+               "Sender NOT verified", making the user's own mail look spoofed. -->
+          {#if message.verificationResults}
+            <MessageSecurity {message} {mailbox} />
+          {/if}
         </div>
       </div>
 
@@ -266,8 +318,15 @@
             {message.text || ""}
           </div>
         {:else}
-          <div class="html" use:purify={{html, message}}></div>
-          <!--<div class="html" use:messageHTML={{ html, message }} />-->
+          {#if hasRemoteImages && !loadRemote}
+            <div class="remote-images">
+              <span>{$locale.Remote_images_hidden}</span>
+              <button class="btn-light" on:click={() => loadRemote = true}>{$locale.Load_images}</button>
+            </div>
+          {/if}
+          {#key loadRemote}
+            <div class="html" use:messageHTML={{ html, message, loadRemote }}></div>
+          {/key}
         {/if}
       </div>
     </div>

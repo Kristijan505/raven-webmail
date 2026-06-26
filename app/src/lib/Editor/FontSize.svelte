@@ -14,7 +14,7 @@
 <script lang="ts">
 
   export let label: string;
-  
+
   import { getContext } from "svelte";
   import type { EditorContext } from "./Editor.svelte";
   const { cmd } = getContext("editor") as EditorContext;
@@ -27,7 +27,8 @@
   import Popup from "$lib/PortalPopup.svelte";
   import Menu from "$lib/Menu/Menu.svelte"
   import MenuItem from "$lib/Menu/MenuItem.svelte"
-import { tooltip } from "$lib/actions";
+  import { tooltip } from "$lib/actions";
+  import { locale } from "$lib/locale";
 </script>
 
 
@@ -38,23 +39,23 @@ import { tooltip } from "$lib/actions";
         <Menu>
           <MenuItem on:click={() => cmd("fontSize", "1")} iconPlaceholder={false}>
             <div class="size" style="font-size: 0.75em; height: 2.75em;">
-              Small
+              {$locale.font.Small}
             </div>
           </MenuItem>
 
           <MenuItem on:click={() => cmd("fontSize", "3")} iconPlaceholder={false}>
-            Normal
+            {$locale.font.Normal}
           </MenuItem>
 
           <MenuItem on:click={() => cmd("fontSize", "5")} iconPlaceholder={false}>
             <div class="size" style="font-size: 1.5em; height: 2em;">
-              Big
+              {$locale.font.Big}
             </div>
           </MenuItem>
 
           <MenuItem on:click={() => cmd("fontSize", "7")} iconPlaceholder={false}>
             <div class="size" style="font-size: 2em; height: 1.5em;">
-              Giant
+              {$locale.font.Giant}
             </div>
           </MenuItem>
         </Menu>

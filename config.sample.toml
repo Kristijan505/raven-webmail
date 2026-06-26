@@ -14,9 +14,11 @@ ssl=false
 # @string (required if ssl=true)
 # ssl_certificate_key="/path/to/ssl/key.pem"
 
-# secret token (change it will invalidate sessions)
-# @string (required)
-secret_token="some super secret value"
+# secret token used to sign session cookies — MUST be a long random string.
+# Generate one with: openssl rand -hex 32   (min 32 chars; changing it invalidates sessions)
+# `raven create-config` fills this in automatically with a random value.
+# @string (required, min 32 characters)
+secret_token="CHANGE_ME__run_openssl_rand_hex_32__min_32_chars"
 
 # mongodb url
 # @string (required)
@@ -35,9 +37,16 @@ wildduck_api_token="same as in wildduck config"
 # set this to false if you use a reverse proxy like nginx
 compression=false 
 
-# trust proxy hops when behind a reverse proxy (example: true or 1)
-# @boolean|number (optional default=false)
-# trust_proxy=true
+# trust proxy hops when behind a reverse proxy (example: 1)
+# SECURITY: this MUST be set correctly when the app runs behind a load balancer
+# or reverse proxy. If left false behind a proxy, req.ip is the proxy's IP and
+# the login rate-limiter keys on the proxy address instead of the real client,
+# making it trivially bypassable. Set to the number of trusted proxy hops (e.g.
+# trust_proxy=1 for a single nginx/caddy in front). NOTE: trust_proxy=true is
+# rejected at startup — it trusts the entire X-Forwarded-For chain, which a
+# client can spoof to bypass rate limiting; use a hop count instead.
+# @number (optional default=false)
+# trust_proxy=1
 
 # max JSON request size accepted by /api (example "1mb", "5mb")
 # @string|number (optional default="1mb")

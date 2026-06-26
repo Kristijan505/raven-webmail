@@ -21,9 +21,9 @@
   import CheckSome from "~icons/mdi/checkbox-intermediate";
   import Check from "~icons/mdi/check";
   import Ripple from "$lib/Ripple.svelte";
-  import { tooltip } from "$lib/actions";
+  import { tooltip, clickable } from "$lib/actions";
   import { fade } from "svelte/transition";
-  import { action, isDrafts, isTrash, _delete, _post, _put } from "$lib/util";
+  import { action, isDrafts, isTrash, plural, _delete, _post, _put } from "$lib/util";
 
   //import MoveTo from "$lib/MoveTo.svelte";
   import { getContext } from "svelte";
@@ -153,7 +153,7 @@ import { locale } from "$lib/locale";
 
   .reload-inner {
     display: flex;
-    transition: transform 300ms ease;
+    transition: transform var(--duration) ease;
   }
 
   .select {
@@ -172,11 +172,11 @@ import { locale } from "$lib/locale";
     flex-direction: row-reverse;
     align-items: center;
     margin-inline-start: auto;
-    margin-inline-end: 1rem;
-    background: #c2dbff;
+    margin-inline-end: var(--space-4);
+    background: var(--selected-bg);
     padding: 0.4em 0.5em;
     border-radius: 100px;
-    color: #555;
+    color: var(--text-muted);
   }
 
   .selection-info > :global(svg) {
@@ -190,17 +190,17 @@ import { locale } from "$lib/locale";
 
   .count {
     margin-inline-start: auto;
-    margin-inline-end: 1rem;
+    margin-inline-end: var(--space-4);
     font-size: 0.8rem;
-    padding: 0.5rem 1rem;
+    padding: var(--space-2) var(--space-4);
     border-radius: 100px;
-    background: #e6e6e6;
+    background: var(--surface-2);
   }
 </style>
 
 <TabTop {scrolled}>
  <div class="action-group select">
-    <div class="action btn-dark" on:click={toggleAll}>
+    <div class="action btn-dark" use:clickable on:click={toggleAll}>
       {#if selection.length === 0}
         <CheckNone />
       {:else if selection.length === results.length}
@@ -211,7 +211,7 @@ import { locale } from "$lib/locale";
       <Ripple />
     </div>
 
-    <div class="action btn-dark reload" use:tooltip={$locale.Reload} on:click={reload}>
+    <div class="action btn-dark reload" use:clickable use:tooltip={$locale.Reload} on:click={reload}>
       <div class="reload-inner" style="transform: rotate({360 * reloadTimes}deg);">
         <Refresh />
       </div>
@@ -221,28 +221,24 @@ import { locale } from "$lib/locale";
 
  {#if selection.length === 0 && total !== 0}
   <div class="count">
-    {#if total === 1}
-      1 {$locale.message}
-    {:else}
-      {total} {$locale.messages}
-    {/if}
+    {total} {plural(total, $locale.message_count)}
   </div>
  {:else if selection.length !== 0}
     <div class="only-when-selection" in:fade|local={{ duration: 200 }}>
       <div class="action-group">
         {#if !selection.every(m => m.seen)}
-          <div class="action btn-dark" use:tooltip={$locale.Mark_as_seen} on:click={() => markAsSeen(true)}>
+          <div class="action btn-dark" use:clickable use:tooltip={$locale.Mark_as_seen} on:click={() => markAsSeen(true)}>
             <MarkSeen />
             <Ripple />
           </div>
         {:else}
-          <div class="action btn-dark" use:tooltip={$locale.Mark_as_not_seen} on:click={() => markAsSeen(false)}>
+          <div class="action btn-dark" use:clickable use:tooltip={$locale.Mark_as_not_seen} on:click={() => markAsSeen(false)}>
             <MarkUnSeen />
             <Ripple />
           </div>
         {/if}
 
-        <div class="action btn-dark" use:tooltip={$locale.Delete} on:click={del}>
+        <div class="action btn-dark" use:clickable use:tooltip={$locale.Delete} on:click={del}>
           <Delete />
           <Ripple />
         </div>
@@ -257,12 +253,7 @@ import { locale } from "$lib/locale";
       <div class="selection-info">
         <Check />
         <span>
-          {selection.length}
-          {#if selection.length === 1}
-            {$locale.message}
-          {:else}
-            {$locale.messages}
-          {/if}
+          {selection.length} {plural(selection.length, $locale.message_count)}
         </span>
       </div>
     </div>

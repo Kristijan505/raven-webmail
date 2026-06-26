@@ -18,7 +18,7 @@
     margin-top: 0.5em;
     margin-bottom: 0.25em;
     border-radius: 1em;
-    background: #eee;
+    background: var(--surface-2);
 
     display: flex;
     flex-direction: row;
@@ -34,7 +34,7 @@
     height: 1.5em;
     margin: 0.25em 0.25em 0.25em 0;
     cursor: pointer;
-    border-radius: 50%;
+    border-radius: var(--radius-full);
     flex: none;
     display: flex;
     align-items: center;

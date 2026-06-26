@@ -10,7 +10,7 @@
 
   import PortalPopup from "$lib/PortalPopup.svelte";
   import Menu from "$lib/Menu/Menu.svelte";
-  import { tooltip } from "./actions";
+  import { tooltip, clickable } from "./actions";
   import Ripple from "./Ripple.svelte";
 import { locale } from "./locale";
 </script>
@@ -30,7 +30,7 @@ import { locale } from "./locale";
     color: #fff;
     font-weight: 600;
     background: var(--red);
-    border-radius: 50%;
+    border-radius: var(--radius-full);
     width: 1.4em;
     height: 1.4em;
     line-height: 1.4em;
@@ -48,18 +48,18 @@ import { locale } from "./locale";
   .img {
     width: 2rem;
     height: 2rem;
-    margin-inline-start: 0.5rem;
+    margin-inline-start: var(--space-2);
   }
 
   .name {
-    margin-inline-start: 1rem;
-    margin-inline-end: 1rem;
+    margin-inline-start: var(--space-4);
+    margin-inline-end: var(--space-4);
   }
 </style>
 
 {#if message.attachments?.length}
   <div class="action-group">
-    <div class="action btn-dark" class:hover={open} use:tooltip={$locale.Attachments} on:click={() => open = !open}>
+    <div class="action btn-dark" use:clickable class:hover={open} use:tooltip={$locale.Attachments} on:click={() => open = !open}>
       <Paperclip/>
       <div class="count">{message.attachments.length}</div>
       <div class="anchor">
@@ -68,6 +68,7 @@ import { locale } from "./locale";
             {#each message.attachments as attach}
               <a href="/api/mailboxes/{mailbox.id}/messages/{message.id}/attachments/{attach.id}"
                 class="na item btn-dark"
+                on:mousedown={(e) => { if (e.button === 0) e.preventDefault(); }}
                 download={attach.filename}>
                 <div class="img" style="background-image: url({url(attach.filename)})"></div>
                 <div class="name">
