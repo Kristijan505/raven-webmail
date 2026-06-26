@@ -137,13 +137,21 @@ export const start = async (config: Config) => {
   app.use(pinoHttp({
     logger,
     autoLogging: { ignore: (req) => req.url === "/api/healthz" },
-    // pino-http's default serializers log request AND response headers, which
-    // include `Cookie: raven.sid=...` on every authenticated request and
-    // `Set-Cookie` on login. Without redaction, anyone with log access could
-    // replay live sessions until expiry — strip the session-bearing headers.
-    redact: {
-      paths: ['req.headers.cookie', 'req.headers.authorization', 'res.headers["set-cookie"]'],
-      remove: true,
+    // Cookie / Set-Cookie redaction lives on the logger instance (see ./logger) so
+    // it also covers direct logger calls; the request logger is a child of it and
+    // inherits the redaction. Here we only sanitize the access-log URL: the
+    // remote-image proxy carries the sender's image URL as ?url=…, which routinely
+    // embeds per-recipient tracking tokens / signed params. Logging the full query
+    // would persist that beacon and defeat the proxy's privacy purpose — keep the
+    // path, drop the query. (`req` is already pino-std-serialized here: pino-http
+    // wraps our serializer around the std one, so we just rewrite the url field.)
+    serializers: {
+      req(req: any) {
+        if (typeof req?.url === "string" && req.url.startsWith("/api/proxy-image")) {
+          req.url = "/api/proxy-image";
+        }
+        return req;
+      },
     },
   }));
 

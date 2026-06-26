@@ -7,7 +7,13 @@ import { z } from "zod";
 const BaseConfigSchema = z.object({
   port: z.number().int().positive(),
   base_url: z.string().optional(),
-  secret_token: z.string().min(32, "secret_token must be at least 32 characters; generate one with `openssl rand -hex 32`"),
+  secret_token: z.string()
+    .min(32, "secret_token must be at least 32 characters; generate one with `openssl rand -hex 32`")
+    // A copied config.sample.toml ships a >=32-char placeholder, so the length check
+    // alone would accept it and the app would boot with a publicly known session
+    // signing secret (anyone could forge/tamper session cookies). Reject the
+    // placeholder outright so a copied sample fails loudly instead of silently.
+    .refine((v) => !/CHANGE_ME/i.test(v), "secret_token is still the config.sample placeholder; generate a real one with `openssl rand -hex 32`"),
   wildduck_api_url: z.string().min(1),
   wildduck_api_token: z.string().min(1),
   mongodb_url: z.string().min(1),

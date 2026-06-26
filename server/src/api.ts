@@ -591,13 +591,16 @@ export const api = (config: Config) => {
     if (req.session.authentication == null) {
       throw new ApiError(StatusCodes.FORBIDDEN, "Forbidden", "forbidden");
     }
-    // Reject cross-site embeds. enforceSameOrigin skips GETs, so with
-    // same_site=none cookies a third-party page could embed this authenticated GET
-    // as <img> and the browser would attach the session cookie — a blind cross-site
-    // image proxy. Sec-Fetch-Site (modern browsers) is unspoofable from script;
-    // only "cross-site" is blocked (same-origin/same-site/direct loads pass, and an
-    // absent header on old browsers falls through to the session check).
-    if (req.get("sec-fetch-site") === "cross-site") {
+    // Only same-origin loads (the app and the message iframe) and direct address-bar
+    // navigations are legitimate here. enforceSameOrigin skips GETs, so without this
+    // a third-party page — including one on a SIBLING subdomain (Sec-Fetch-Site:
+    // same-site) under a shared parent domain — could embed this authenticated GET
+    // as <img>; the browser would attach the session cookie, turning it into a blind
+    // authenticated image proxy. Sec-Fetch-Site is unspoofable from script: allow
+    // only "same-origin" and "none" (direct/bookmark); reject "same-site" and
+    // "cross-site". An absent header (old browsers) falls through to the session check.
+    const fetchSite = req.get("sec-fetch-site");
+    if (fetchSite === "cross-site" || fetchSite === "same-site") {
       throw new ApiError(StatusCodes.FORBIDDEN, "Forbidden", "forbidden");
     }
 

@@ -219,6 +219,27 @@ export const messageHTML = (node: HTMLElement, opts: string | { html: string, me
     $el.remove();
   }
 
+  // Neutralize any reference to OUR OWN same-origin image proxy that an attacker
+  // planted in a fetch-capable attribute the rewrites below don't visit — e.g.
+  // <svg><image href="/api/proxy-image?url=…">, an xlink:href, or an exotic
+  // attribute. The iframe CSP is img-src 'self', so the browser WOULD fetch a
+  // same-origin proxy URL, contacting the sender before the user clicks "Load
+  // images". Email never legitimately points at our /api/proxy-image; strip it from
+  // every attribute up front (resolved against our origin so off-origin URLs that
+  // merely contain "/api/proxy-image" in their path are left for the gated rewrite).
+  // Our own proxy/attachment URLs are added by the rewrites that run AFTER this.
+  const isSelfProxy = (v: string): boolean => {
+    try {
+      const u = new URL((v || "").trim(), location.origin);
+      return u.host === location.host && /^\/api\/proxy-image\b/i.test(u.pathname);
+    } catch { return false; }
+  };
+  for(const $el of [].slice.call(fragment.querySelectorAll("*")) as Element[]) {
+    for(const attr of [].slice.call($el.attributes) as Attr[]) {
+      if(isSelfProxy(attr.value)) $el.removeAttribute(attr.name);
+    }
+  }
+
   // <style> is kept (email layout often depends on it, and it's inert in the
   // no-allow-scripts iframe), but its CSS can still fetch remote assets via
   // url() / @import — bypassing the image opt-in and leaking a "message opened"

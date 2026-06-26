@@ -86,6 +86,13 @@
       const s = ($img.getAttribute("src") || "").trim();
       if(s && !/^(data:|cid:)/i.test(s)) $img.removeAttribute("src");
     }
+    // Legacy background="https://…" fetches a remote image on open just like
+    // <img src>; the compose iframe has no opt-in/CSP, so strip it from quoted
+    // content too (keep data:/cid:).
+    for(const $el of [].slice.call(div.querySelectorAll("[background]")) as Element[]) {
+      const b = ($el.getAttribute("background") || "").trim();
+      if(b && !/^(data:|cid:)/i.test(b)) $el.removeAttribute("background");
+    }
     for(const $el of [].slice.call(div.querySelectorAll("[style]")) as HTMLElement[]) {
       const st = $el.getAttribute("style") || "";
       const cleaned = st.replace(/url\(\s*(['"]?)([^'")]*)\1\s*\)/gi, (whole: string, _q: string, ref: string) => {
