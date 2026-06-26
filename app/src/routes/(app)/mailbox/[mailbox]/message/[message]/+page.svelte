@@ -41,6 +41,7 @@
   $: hasRemoteImages = (() => {
     const h = html || "";
     return /<(?:img|source)\b[^>]*\b(?:src|srcset)\s*=\s*["']?\s*(?:https?:)?\/\//i.test(h)
+      || /\bbackground\s*=\s*["']?\s*(?:https?:)?\/\//i.test(h)
       || /url\(\s*["']?\s*(?:https?:)?\/\//i.test(h)
       || /@import\b/i.test(h);
   })();

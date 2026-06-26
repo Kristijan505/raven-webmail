@@ -249,7 +249,7 @@ export const assertPublicHttpUrl = async (raw: string): Promise<{ url: URL; ips:
 // during validation and a private/link-local one for the actual fetch (TOCTOU),
 // re-opening the SSRF. `servername` keeps TLS SNI and the Host header keeps
 // routing on the original hostname; redirects are followed manually (re-validated).
-const pinnedGetOne = (url: URL, ip: string): Promise<http.IncomingMessage> => {
+const pinnedGetOne = (url: URL, ip: string, signal: AbortSignal): Promise<http.IncomingMessage> => {
   const isHttps = url.protocol === "https:";
   const lib = isHttps ? https : http;
   return new Promise<http.IncomingMessage>((resolve, reject) => {
@@ -261,6 +261,7 @@ const pinnedGetOne = (url: URL, ip: string): Promise<http.IncomingMessage> => {
       servername: isHttps ? url.hostname : undefined,
       headers: { host: url.host, "user-agent": "RavenImageProxy/1.0", accept: "image/*" },
       timeout: PROXY_FETCH_TIMEOUT_MS,
+      signal,   // aborts the in-flight request (even pre-headers) on client disconnect
     }, resolve);
     req.on("timeout", () => req.destroy(new Error("Proxy fetch timed out")));
     req.on("error", reject);
@@ -271,10 +272,10 @@ const pinnedGetOne = (url: URL, ip: string): Promise<http.IncomingMessage> => {
 // Try each validated address until one connects: a DNS set can list an
 // unreachable AAAA before a working A (IPv4-only hosts), and all of them already
 // passed the isPrivateIp check, so falling back stays within the SSRF guard.
-const pinnedGet = async (url: URL, ips: string[]): Promise<http.IncomingMessage> => {
+const pinnedGet = async (url: URL, ips: string[], signal: AbortSignal): Promise<http.IncomingMessage> => {
   let lastErr: unknown;
   for (const ip of ips) {
-    try { return await pinnedGetOne(url, ip); }
+    try { return await pinnedGetOne(url, ip, signal); }
     catch (e) { lastErr = e; }
   }
   throw lastErr ?? new Error("No reachable address for image host");
@@ -590,13 +591,29 @@ export const api = (config: Config) => {
     if (req.session.authentication == null) {
       throw new ApiError(StatusCodes.FORBIDDEN, "Forbidden", "forbidden");
     }
+    // Reject cross-site embeds. enforceSameOrigin skips GETs, so with
+    // same_site=none cookies a third-party page could embed this authenticated GET
+    // as <img> and the browser would attach the session cookie — a blind cross-site
+    // image proxy. Sec-Fetch-Site (modern browsers) is unspoofable from script;
+    // only "cross-site" is blocked (same-origin/same-site/direct loads pass, and an
+    // absent header on old browsers falls through to the session check).
+    if (req.get("sec-fetch-site") === "cross-site") {
+      throw new ApiError(StatusCodes.FORBIDDEN, "Forbidden", "forbidden");
+    }
+
+    // Abort the outbound fetch the moment the client disconnects — including while
+    // we're still awaiting response headers, before the streaming pipe is wired up.
+    // Registered here (not after the loop) so a client can't fire many slow-host
+    // fetches and disconnect to tie up sockets until the per-hop timeout.
+    const ac = new AbortController();
+    let upstream: http.IncomingMessage | null = null;
+    res.on("close", () => { ac.abort(); upstream?.destroy(); });
 
     let target = await assertPublicHttpUrl(String(req.query.url || ""));
-    let upstream: http.IncomingMessage | null = null;
 
     // Follow up to 3 redirects, re-validating AND re-pinning each hop.
     for (let i = 0; i <= MAX_IMAGE_REDIRECTS; i++) {
-      upstream = await pinnedGet(target.url, target.ips).catch(() => {
+      upstream = await pinnedGet(target.url, target.ips, ac.signal).catch(() => {
         throw new ApiError(StatusCodes.BAD_GATEWAY, "Cannot fetch image");
       });
 
@@ -648,12 +665,8 @@ export const api = (config: Config) => {
     const abortDownstream = () => { if (!res.destroyed) res.destroy(); };
     upstream.on("error", abortDownstream);
     upstream.on("aborted", abortDownstream);
-    // If the CLIENT disconnects after headers (navigates away / closes the message),
-    // stop pulling from the remote host instead of draining it to completion — else
-    // a client could start many proxy fetches to slow hosts and disconnect to waste
-    // outbound sockets/bandwidth. (close also fires on normal end; destroy is then
-    // a no-op on the already-ended stream.)
-    res.on("close", () => { upstream!.destroy(); limiter.destroy(); });
+    // (client-disconnect teardown is wired above, before the fetch, so it also
+    // covers a disconnect while awaiting headers; limiter auto-destroys with upstream.)
     upstream.pipe(limiter).pipe(res);
   }))
 

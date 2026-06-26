@@ -21,9 +21,18 @@
     return at === -1 ? "" : addr.slice(at + 1).trim().toLowerCase();
   };
 
-  // Two domains "align" (DMARC-style) when equal or one is a subdomain of the other.
-  const aligns = (a?: string | null, b?: string | null): boolean =>
-    !!a && !!b && (a === b || a.endsWith("." + b) || b.endsWith("." + a));
+  // Two domains "align" (DMARC-style) when equal or one is a subdomain of the
+  // other. WildDuck doesn't surface a DMARC verdict, so this is a heuristic — but
+  // require BOTH to look like registrable domains (>=2 labels) before treating one
+  // as a suffix of the other, otherwise a bare public suffix like "com" would
+  // "align" every .com sender and the badge would over-report a verified sender.
+  const aligns = (a?: string | null, b?: string | null): boolean => {
+    if(!a || !b) return false;
+    if(a === b) return true;
+    const labels = (d: string) => d.split(".").filter(Boolean).length;
+    if(labels(a) < 2 || labels(b) < 2) return false;
+    return a.endsWith("." + b) || b.endsWith("." + a);
+  };
 
   $: fromDomain = domainOf(message.from?.address);
   $: envDomain = domainOf(message.envelope?.from);

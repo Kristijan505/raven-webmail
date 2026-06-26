@@ -59,7 +59,7 @@
 
   const sanitize = (src: string | string[] | null) => {
     if(src instanceof Array) src = src.join("");
-    const div = DOMPurify.sanitize(src || "", { RETURN_DOM: true }) as HTMLElement;
+    const div = DOMPurify.sanitize(src || "", { RETURN_DOM: true, FORBID_ATTR: ["data-raven-src"] }) as HTMLElement;
     const toRemove = div.querySelectorAll("style, link, script, meta, object, head, title");
     for(let i = 0; i < toRemove.length; i++) {
       const el = toRemove[i];
@@ -80,7 +80,7 @@
   // so a remote <img>/srcset/CSS url() would fetch (tracking) on open. data:/cid:
   // stay. Applied to quoted HTML only — never to the user's signature.
   const stripRemote = (html: string): string => {
-    const div = DOMPurify.sanitize(html || "", { RETURN_DOM: true }) as HTMLElement;
+    const div = DOMPurify.sanitize(html || "", { RETURN_DOM: true, FORBID_ATTR: ["data-raven-src"] }) as HTMLElement;
     for(const $el of [].slice.call(div.querySelectorAll("[srcset]")) as Element[]) $el.removeAttribute("srcset");
     for(const $img of [].slice.call(div.querySelectorAll("img, source")) as Element[]) {
       const s = ($img.getAttribute("src") || "").trim();

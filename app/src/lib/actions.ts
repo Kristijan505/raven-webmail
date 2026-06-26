@@ -163,7 +163,11 @@ import type { FullMessage, Message } from "./types";
 // draft, so saved/sent mail keeps the public URL (recipients can't load our
 // /api/proxy-image path). cid:/data:/attachment: srcs are left untouched.
 export const proxyRemoteImages = (html: string): string => {
-  const div = dompurify.sanitize(html || "", { RETURN_DOM: true, ADD_DATA_URI_TAGS: ["img"] }) as HTMLElement;
+  // FORBID data-raven-src on input: an attacker could embed <img src="cid:x"
+  // data-raven-src="https://tracker"> in a sent message; without this, serialize
+  // would later promote that marker into src and re-introduce the tracker the
+  // stripping path removed. Only markers Raven adds below (post-sanitize) survive.
+  const div = dompurify.sanitize(html || "", { RETURN_DOM: true, ADD_DATA_URI_TAGS: ["img"], FORBID_ATTR: ["data-raven-src"] }) as HTMLElement;
   for(const $img of [].slice.call(div.querySelectorAll("img")) as HTMLImageElement[]) {
     const src = ($img.getAttribute("src") || "").trim();
     if(/^(https?:)?\/\//i.test(src)) {
@@ -284,6 +288,23 @@ export const messageHTML = (node: HTMLElement, opts: string | { html: string, me
         $img.removeAttribute("src");
         $img.style.display = "none";
       }
+    }
+  }
+
+  // Legacy `background` attribute (e.g. <td background="https://...">) fetches an
+  // image just like <img src> and DOMPurify keeps it — gate it the same way.
+  for(const $el of [].slice.call(fragment.querySelectorAll("[background]")) as HTMLElement[]) {
+    const bg = ($el.getAttribute("background") || "").trim();
+    const m = bg.match(/^(cid|attachment):(.+)/i);
+    if(m) {
+      $el.removeAttribute("background");
+      const att = message?.attachments?.find(att => att.id === m[2]);
+      if(att) $el.setAttribute("background", `/api/mailboxes/${message!.mailbox}/messages/${message!.id}/attachments/${att.id}`);
+    } else if(/^data:/i.test(bg)) {
+      // inline — keep
+    } else if(bg) {
+      if(loadRemote) $el.setAttribute("background", `/api/proxy-image?url=${encodeURIComponent(toFetchable(bg))}`);
+      else $el.removeAttribute("background");
     }
   }
 
