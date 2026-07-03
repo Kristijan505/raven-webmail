@@ -39,9 +39,22 @@
 
   const prev = action(async () => {
     const json: Messages = await _get(`/api/mailboxes/${mailbox.id}/messages`);
+    const fresh = json.results;
+    // The refetched first page is authoritative for its id range (messages are ordered
+    // newest-id-first). Take the fresh page as-is and append only OLDER, already-
+    // paginated messages below that range. Crucially this DROPS any lingering entry
+    // inside the fresh range that the server no longer returns — e.g. a draft that
+    // save() created then deleted (compose autosaves a brand-new message per save)
+    // whose EXPUNGE raced ahead of the refetch that re-added it, so nothing ever
+    // removes it and it shows as a duplicate until a manual refresh. Previously we
+    // kept every non-duplicate existing row, so those orphans persisted.
+    // An empty page keeps the current list (minFreshId = Infinity), so a transient
+    // empty response can never purge a scrolled-in mailbox.
+    const minFreshId = fresh.length ? Math.min(...fresh.map(m => m.id)) : Infinity;
+    const older = messages.results.filter(m => m.id < minFreshId);
     messages = {
       ...messages,
-      results: dedup([ ...json.results, ...messages.results ])
+      results: dedup([ ...fresh, ...older ])
     }
   })
 
