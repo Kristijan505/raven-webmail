@@ -16,6 +16,9 @@ const locale: Locale = {
     invalid_message_id: "Mensaje no válido",
     path_required: "Se requiere un nombre de carpeta",
     cross_origin_blocked: "Solicitud bloqueada por razones de seguridad",
+    invalid_existing_password: "La contraseña actual es incorrecta",
+    login_failed: "Usuario o contraseña no válidos",
+    backend_error: "El servidor de correo no pudo procesar la solicitud",
   },
   compose: {
     reply_divider: "Mensaje de respuesta",

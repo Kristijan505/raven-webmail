@@ -14,6 +14,9 @@ export default {
     invalid_message_id: "Invalid message",
     path_required: "A folder name is required",
     cross_origin_blocked: "Request blocked for security reasons",
+    invalid_existing_password: "The current password is incorrect",
+    login_failed: "Invalid username or password",
+    backend_error: "The mail server could not process the request",
   },
   compose: {
     reply_divider: "Reply message",

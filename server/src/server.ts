@@ -167,6 +167,21 @@ export const start = async (config: Config) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("X-Frame-Options", "DENY");
     res.setHeader("Referrer-Policy", "no-referrer");
+    // Isolate our top-level window from any opener/openee and forbid other origins
+    // from embedding our responses as a subresource (defense-in-depth alongside
+    // frame-ancestors / X-Frame-Options). The webmail has no cross-origin popups or
+    // embedders, so same-origin is safe. Permissions-Policy then denies the powerful
+    // features the app never uses, so injected or quoted email content can't reach
+    // for the camera, mic, geolocation, etc.
+    res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+    res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
+    res.setHeader("Permissions-Policy", [
+      "accelerometer=()", "autoplay=()", "browsing-topics=()", "camera=()",
+      "display-capture=()", "encrypted-media=()", "fullscreen=(self)", "geolocation=()",
+      "gyroscope=()", "magnetometer=()", "microphone=()", "midi=()", "payment=()",
+      "picture-in-picture=()", "publickey-credentials-get=()", "screen-wake-lock=()",
+      "usb=()", "xr-spatial-tracking=()",
+    ].join(", "));
     res.setHeader("Content-Security-Policy", [
       "default-src 'self'",
       SVELTEKIT_DEV ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'" : `script-src 'self' 'nonce-${nonce}'`,

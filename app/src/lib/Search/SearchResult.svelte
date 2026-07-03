@@ -66,34 +66,48 @@
 
   import regexEscape from "regex-escape";
 
+  // Highlight matches by rebuilding the node from text nodes + <span> elements via
+  // the DOM API. The row text (from / subject / intro) is attacker-controlled email
+  // content, so it must NEVER be assigned through innerHTML: the previous version
+  // did `node.innerHTML = html`, which parsed any unmatched markup in that text as
+  // real HTML/CSS. Here every character stays literal text — matches land via
+  // span.textContent, non-matches via createTextNode — so nothing is ever parsed.
   const highlight = (node: HTMLElement, query: string) => {
 
-    const src = node.textContent;
+    const src = node.textContent ?? "";
 
-    const update = (query: string) => {
-      
-      const words = query.split(/\s+/g);
-      
-      if(words.length === 0) {
-        node.textContent = src;
+    const render = (query: string) => {
+
+      const words = query.split(/\s+/g).filter(Boolean);
+
+      if (words.length === 0) {
+        node.textContent = src; // no usable search terms -> restore plain text
         return;
       }
 
       const regex = new RegExp(words.map(word => diac(regexEscape(word))).join("|"), "ig");
 
-      const html = src.replace(regex, (match => {
+      const frag = document.createDocumentFragment();
+      let last = 0;
+      for (const m of src.matchAll(regex)) {
+        const matched = m[0];
+        if (!matched) continue; // guard against a zero-length match stalling in place
+        const start = m.index ?? 0;
+        if (start > last) frag.appendChild(document.createTextNode(src.slice(last, start)));
         const span = document.createElement("span");
-        span.textContent = match;
-        span.classList.add("highlight");
-        return span.outerHTML;
-      }))
-      
-      node.innerHTML = html;
+        span.className = "highlight";
+        span.textContent = matched;
+        frag.appendChild(span);
+        last = start + matched.length;
+      }
+      if (last < src.length) frag.appendChild(document.createTextNode(src.slice(last)));
+
+      node.replaceChildren(frag);
     }
 
-    update(query);
-    
-    return { update }
+    render(query);
+
+    return { update: render }
   }
 </script>
 
@@ -140,7 +154,7 @@
   }
 
   .flag {
-    transition: var(btn-transition), color 200ms ease;
+    transition: var(--btn-transition), color 200ms ease;
   }
 
   .flagged > .flag {

@@ -16,6 +16,9 @@ const locale: Locale = {
     invalid_message_id: "Neispravna poruka",
     path_required: "Naziv mape je obavezan",
     cross_origin_blocked: "Zahtjev blokiran iz sigurnosnih razloga",
+    invalid_existing_password: "Trenutna lozinka nije točna",
+    login_failed: "Neispravno korisničko ime ili lozinka",
+    backend_error: "Poslužitelj pošte nije mogao obraditi zahtjev",
   },
   compose: {
     reply_divider: "Odgovor na poruku",

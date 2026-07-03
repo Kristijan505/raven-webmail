@@ -19,6 +19,9 @@ const locale: Locale = {
     "invalid_message_id": "Messaggio non valido",
     "path_required": "È richiesto un nome per la cartella",
     "cross_origin_blocked": "Richiesta bloccata per motivi di sicurezza",
+    "invalid_existing_password": "La password attuale non è corretta",
+    "login_failed": "Nome utente o password non validi",
+    "backend_error": "Il server di posta non ha potuto elaborare la richiesta",
   },
   "compose": {
     "reply_divider": "Messaggio di risposta",
