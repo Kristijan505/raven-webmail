@@ -52,10 +52,14 @@
     // empty response can never purge a scrolled-in mailbox.
     const minFreshId = fresh.length ? Math.min(...fresh.map(m => m.id)) : Infinity;
     const older = messages.results.filter(m => m.id < minFreshId);
-    messages = {
-      ...messages,
-      results: dedup([ ...fresh, ...older ])
-    }
+    const results = dedup([ ...fresh, ...older ]);
+    // Dropping stale in-range rows (the orphan-draft case) can otherwise strand a
+    // selected row in `selection`, leaving the toolbar in selection mode acting on a
+    // message that's no longer visible (and possibly already deleted). Reconcile the
+    // selection against what remains, mirroring removeIds().
+    const keptIds = new Set(results.map(m => m.id));
+    selection = selection.filter(m => keptIds.has(m.id));
+    messages = { ...messages, results }
   })
 
   const context: MailboxContext = { next, prev };

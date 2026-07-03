@@ -422,10 +422,16 @@ export const api = (config: Config) => {
     const { existingPassword, ...update } = body;
     const id = userId(req); // throws 403 if unauthenticated -> session.authentication is set below
     if (update.password != null) {
-      const ok = await authenticate(req.session.authentication!.username, existingPassword ?? "")
-        .then(r => r?.success === true)
-        .catch(() => false);
-      if (!ok) {
+      // Verify the current password by re-authenticating. Only a genuine credential
+      // failure counts as "wrong password": WildDuck answers 403 (or resolves with
+      // success:false). A transport/backend failure (WildDuck down -> 502/5xx, invalid
+      // JSON) must surface as-is, not masquerade as an incorrect password.
+      const auth = await authenticate(req.session.authentication!.username, existingPassword ?? "")
+        .catch((e) => {
+          if (e instanceof ApiError && e.status === StatusCodes.FORBIDDEN) return null;
+          throw e;
+        });
+      if (!auth || auth.success !== true) {
         throw new ApiError(StatusCodes.FORBIDDEN, "Current password is incorrect", "invalid_existing_password");
       }
     }
