@@ -15,6 +15,7 @@ const locale: Locale = {
     "session_expired": "La tua sessione è scaduta, accedi di nuovo",
     "bad_gateway": "Impossibile raggiungere il server di posta, riprova",
     "too_many_logins": "Troppi tentativi di accesso, riprova più tardi",
+    "too_many_attempts": "Troppi tentativi, riprova più tardi",
     "invalid_path_parameter": "Richiesta non valida",
     "invalid_message_id": "Messaggio non valido",
     "path_required": "È richiesto un nome per la cartella",

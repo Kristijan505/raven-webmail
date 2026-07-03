@@ -10,6 +10,7 @@ export default {
     session_expired: "Your session has expired, please sign in again",
     bad_gateway: "Could not reach the mail server, please try again",
     too_many_logins: "Too many login attempts, please try again later",
+    too_many_attempts: "Too many attempts, please try again later",
     invalid_path_parameter: "Invalid request",
     invalid_message_id: "Invalid message",
     path_required: "A folder name is required",

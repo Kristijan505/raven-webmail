@@ -322,6 +322,24 @@ const loginLimiter = rateLimit({
   message: (req: Request) => ({ error: { status: 429, message: errMsg(req, "too_many_logins", "Too many login attempts, please try again later") } }),
 });
 
+// The password-change path re-authenticates the current password (see PUT /me), which
+// is an online credential check just like login — so it needs the same throttle, or a
+// stolen/unattended session could brute-force the current password unlimited times and
+// escalate to a full account takeover. Keyed by the session user (so IP rotation does
+// not help), only FAILED changes count (skipSuccessfulRequests), and only requests that
+// actually change the password are throttled (skip) so a plain name change is never
+// limited.
+const passwordChangeLimiter = rateLimit({
+  windowMs: LOGIN_RATE_WINDOW_MS,
+  limit: LOGIN_RATE_MAX,
+  skipSuccessfulRequests: true,
+  skip: (req) => req.body?.password == null,
+  keyGenerator: (req) => req.session?.authentication?.id ?? "unauthenticated",
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: (req: Request) => ({ error: { status: 429, message: errMsg(req, "too_many_attempts", "Too many attempts, please try again later") } }),
+});
+
 export const api = (config: Config) => {
   const api = Router();
 
@@ -411,7 +429,7 @@ export const api = (config: Config) => {
     stream.pipe(res);
   }))
 
-  api.put("/me", handler(async (req, res) => {
+  api.put("/me", passwordChangeLimiter, handler(async (req, res) => {
     const body = validate(() => MeSchema.parse(req.body));
     // existingPassword is a raven-only field: WildDuck's PUT /users/:id does NOT
     // verify the current password (a master-scoped token can set any password), so

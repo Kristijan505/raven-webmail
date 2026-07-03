@@ -12,6 +12,7 @@ const locale: Locale = {
     session_expired: "Su sesión ha caducado, inicie sesión de nuevo",
     bad_gateway: "No se pudo conectar con el servidor de correo, inténtelo de nuevo",
     too_many_logins: "Demasiados intentos de inicio de sesión, inténtelo de nuevo más tarde",
+    too_many_attempts: "Demasiados intentos, inténtelo de nuevo más tarde",
     invalid_path_parameter: "Solicitud no válida",
     invalid_message_id: "Mensaje no válido",
     path_required: "Se requiere un nombre de carpeta",

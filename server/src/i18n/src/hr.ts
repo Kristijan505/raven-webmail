@@ -12,6 +12,7 @@ const locale: Locale = {
     session_expired: "Vaša sesija je istekla, prijavite se ponovno",
     bad_gateway: "Nije moguće dohvatiti poslužitelj pošte, pokušajte ponovno",
     too_many_logins: "Previše pokušaja prijave, pokušajte ponovno kasnije",
+    too_many_attempts: "Previše pokušaja, pokušajte ponovno kasnije",
     invalid_path_parameter: "Neispravan zahtjev",
     invalid_message_id: "Neispravna poruka",
     path_required: "Naziv mape je obavezan",
