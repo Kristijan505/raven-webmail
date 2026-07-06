@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { seg, isPrivateIp, assertPublicHttpUrl } from "./api";
+import { seg, isPrivateIp, assertPublicHttpUrl, CreateMessageSchema } from "./api";
 
 describe("seg() — path param hardening (cross-user IDOR / query injection)", () => {
   it("passes legitimate WildDuck ids through unchanged", () => {
@@ -71,5 +71,48 @@ describe("assertPublicHttpUrl() — image proxy URL validation", () => {
     expect(url).toBeInstanceOf(URL);
     expect(url.hostname).toBe("8.8.8.8");
     expect(ips).toContain("8.8.8.8");
+  });
+});
+
+describe("CreateMessageSchema — draft send round-trip (reply/forward)", () => {
+  it("accepts a reply draft whose WildDuck-returned reference omits `attachments`", () => {
+    // On send, raven re-POSTs a draft it re-GET'd from WildDuck. WildDuck returns
+    // `reference` as {mailbox,id,action} WITHOUT the creation-only `attachments`, so
+    // requiring it previously 400'd (bad_request) every reply/forward send.
+    const body = {
+      draft: true,
+      to: [{ address: "sophie@example.com", name: "Sophie" }],
+      subject: "Re: hi",
+      html: "<p>hi</p>",
+      text: "hi",
+      reference: { mailbox: "69944ab361bb634839a3b7c3", id: 88, action: "reply" },
+    };
+    expect(() => CreateMessageSchema.parse(body)).not.toThrow();
+  });
+
+  it("still accepts the full reference raven sends at draft-creation time", () => {
+    const body = { reference: { mailbox: "69944ab361bb634839a3b7c3", id: 88, action: "forward", attachments: true } };
+    expect(() => CreateMessageSchema.parse(body)).not.toThrow();
+  });
+
+  it("accepts reference.attachments as an array of ids (WildDuck's alternative form)", () => {
+    const body = { reference: { mailbox: "69944ab361bb634839a3b7c3", id: 1, action: "reply", attachments: ["ATT00001"] } };
+    expect(() => CreateMessageSchema.parse(body)).not.toThrow();
+  });
+
+  it("accepts a recipient with a null display name (WildDuck's no-name form)", () => {
+    expect(() => CreateMessageSchema.parse({ to: [{ address: "a@b.com", name: null }] })).not.toThrow();
+  });
+
+  it("strips unknown top-level keys so a client cannot mass-assign WildDuck fields", () => {
+    const parsed: any = CreateMessageSchema.parse({ subject: "hi", quota: 999, disabled: true, spamLevel: 0 });
+    expect(parsed).not.toHaveProperty("quota");
+    expect(parsed).not.toHaveProperty("disabled");
+    expect(parsed).not.toHaveProperty("spamLevel");
+  });
+
+  it("still rejects a reference with a non-numeric id", () => {
+    const body = { reference: { mailbox: "x", id: "not-a-number", action: "reply" } };
+    expect(() => CreateMessageSchema.parse(body)).toThrow();
   });
 });

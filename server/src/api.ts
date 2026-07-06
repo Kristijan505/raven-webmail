@@ -54,6 +54,12 @@ const ALLOWED_IMAGE_TYPES = new Set([
 // and the byteLimiter Transform for chunked responses).
 const IMAGE_SIZE_LIMIT = 10 * 1024 * 1024; // 10 MiB
 
+// Hard cap for attachment uploads proxied to WildDuck storage. The browser sends
+// Content-Length for a File/Blob body (checked up-front -> 413), and the byteLimiter
+// enforces the same ceiling while streaming so a hand-crafted chunked upload with no
+// Content-Length can't stream past it.
+const STORAGE_SIZE_LIMIT = 25 * 1024 * 1024; // 25 MiB
+
 // Image-proxy fetch budget: follow at most 3 redirect hops (each re-validated
 // against private ranges) with an 8s per-hop timeout.
 const MAX_IMAGE_REDIRECTS = 3;
@@ -63,6 +69,21 @@ const PROXY_FETCH_TIMEOUT_MS = 8000;
 const LOGIN_RATE_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_RATE_MAX = 10;
 const PAGE_SIZE_LIMIT = "50";
+
+// Search query params the webmail actually uses. Forwarding req.query verbatim
+// proxies the client-only `now` cache-buster and any undocumented WildDuck search
+// param straight upstream; allow-list the ones the UI sends instead (extend this
+// list here if the search UI grows filter fields). Mirrors the /messages allow-list.
+const SEARCH_ALLOWED = ["query", "next", "limit"] as const;
+const searchQueryString = (reqQuery: Request["query"]): string => {
+  const out: Record<string, string> = {};
+  for (const key of SEARCH_ALLOWED) {
+    const v = reqQuery[key];
+    if (typeof v === "string" && v) out[key] = v;
+  }
+  if (!out.limit) out.limit = PAGE_SIZE_LIMIT;
+  return qs.stringify(out);
+};
 
 const LoginSchema = z.object({
   username: z.string().min(1),
@@ -124,12 +145,18 @@ const ReferenceSchema = z.object({
   mailbox: z.string().min(1),
   id: z.number().int().positive(),
   action: z.enum(["reply", "replyAll", "forward"]),
-  attachments: z.boolean(),
+  // `attachments` is a creation-time directive (raven sends true/false; WildDuck also
+  // accepts an array of attachment ids). WildDuck does NOT round-trip it: a GET on a
+  // saved draft returns `reference` as {mailbox,id,action} WITHOUT attachments, and
+  // sending re-POSTs that reference — so requiring it here 400'd every reply/forward
+  // send. Optional + accept both forms (same class of bug as the name:null fix above).
+  attachments: z.union([z.boolean(), z.array(z.string())]).optional(),
 });
 
 // Draft creation body — mirrors createMessageBody() in app/src/lib/Compose/compose.ts.
 // Zod strips any extra keys the client might inject before we proxy to WildDuck.
-const CreateMessageSchema = z.object({
+// Exported so the round-trip (reply/forward draft) behaviour is regression-tested.
+export const CreateMessageSchema = z.object({
   draft: z.boolean().optional(),
   to: z.array(AddressSchema).optional(),
   cc: z.array(AddressSchema).optional(),
@@ -295,6 +322,24 @@ const loginLimiter = rateLimit({
   message: (req: Request) => ({ error: { status: 429, message: errMsg(req, "too_many_logins", "Too many login attempts, please try again later") } }),
 });
 
+// The password-change path re-authenticates the current password (see PUT /me), which
+// is an online credential check just like login — so it needs the same throttle, or a
+// stolen/unattended session could brute-force the current password unlimited times and
+// escalate to a full account takeover. Keyed by the session user (so IP rotation does
+// not help), only FAILED changes count (skipSuccessfulRequests), and only requests that
+// actually change the password are throttled (skip) so a plain name change is never
+// limited.
+const passwordChangeLimiter = rateLimit({
+  windowMs: LOGIN_RATE_WINDOW_MS,
+  limit: LOGIN_RATE_MAX,
+  skipSuccessfulRequests: true,
+  skip: (req) => req.body?.password == null,
+  keyGenerator: (req) => req.session?.authentication?.id ?? "unauthenticated",
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: (req: Request) => ({ error: { status: 429, message: errMsg(req, "too_many_attempts", "Too many attempts, please try again later") } }),
+});
+
 export const api = (config: Config) => {
   const api = Router();
 
@@ -384,9 +429,31 @@ export const api = (config: Config) => {
     stream.pipe(res);
   }))
 
-  api.put("/me", handler(async (req, res) => {
+  api.put("/me", passwordChangeLimiter, handler(async (req, res) => {
     const body = validate(() => MeSchema.parse(req.body));
-    const json = await put(`/users/${userId(req)}`, token(req), body);
+    // existingPassword is a raven-only field: WildDuck's PUT /users/:id does NOT
+    // verify the current password (a master-scoped token can set any password), so
+    // the "existingPassword required" rule is only real if WE enforce it. When the
+    // password is being changed, re-authenticate the current one first and reject
+    // with 403 on mismatch — otherwise a hijacked (or left-open) session could
+    // silently take over the account password. Never forward existingPassword.
+    const { existingPassword, ...update } = body;
+    const id = userId(req); // throws 403 if unauthenticated -> session.authentication is set below
+    if (update.password != null) {
+      // Verify the current password by re-authenticating. Only a genuine credential
+      // failure counts as "wrong password": WildDuck answers 403 (or resolves with
+      // success:false). A transport/backend failure (WildDuck down -> 502/5xx, invalid
+      // JSON) must surface as-is, not masquerade as an incorrect password.
+      const auth = await authenticate(req.session.authentication!.username, existingPassword ?? "")
+        .catch((e) => {
+          if (e instanceof ApiError && e.status === StatusCodes.FORBIDDEN) return null;
+          throw e;
+        });
+      if (!auth || auth.success !== true) {
+        throw new ApiError(StatusCodes.FORBIDDEN, "Current password is incorrect", "invalid_existing_password");
+      }
+    }
+    const json = await put(`/users/${id}`, token(req), update);
     res.json(json);
   }))
 
@@ -544,8 +611,7 @@ export const api = (config: Config) => {
   }));
 
   api.get("/search", pageHandler(async (req, res) => {
-    const query = { ...req.query, limit: req.query.limit || PAGE_SIZE_LIMIT }; 
-    const json = await get(`/users/${userId(req)}/search?${qs.stringify(query)}`, token(req));
+    const json = await get(`/users/${userId(req)}/search?${searchQueryString(req.query)}`, token(req));
     res.json(json)
   }))
 
@@ -560,16 +626,30 @@ export const api = (config: Config) => {
     contentType && (headers["content-type"] = contentType);
     contentLength && (headers["content-length"] = contentLength);
 
+    // Reject an oversized upload before streaming a single byte when the browser
+    // declares its size (File/Blob bodies always send Content-Length).
+    if (Number(contentLength || "0") > STORAGE_SIZE_LIMIT) {
+      throw new ApiError(StatusCodes.REQUEST_TOO_LONG, "Attachment too large", "attachment_too_large");
+    }
+
     // Allow-list the two params the upload UI sends; forwarding req.query
     // verbatim would expose undocumented WildDuck storage params.
     const storageAllowed: Record<string, string> = {};
     if (typeof req.query.filename === "string" && req.query.filename) storageAllowed.filename = req.query.filename;
     if (typeof req.query.contentType === "string" && req.query.contentType) storageAllowed.contentType = req.query.contentType;
     const storageQs = qs.stringify(storageAllowed);
+
+    // Hard-cap the stream too: a hand-crafted chunked upload omits Content-Length and
+    // would slip the check above, so the byteLimiter tears the request down the moment
+    // it exceeds the ceiling (and we destroy req so nothing keeps reading).
+    const limiter = byteLimiter(STORAGE_SIZE_LIMIT);
+    limiter.on("error", () => req.destroy());
+    req.pipe(limiter);
+
     const back = await fetch(url(`/users/${userId(req)}/storage${storageQs ? "?" + storageQs : ""}`), {
       method: "POST",
       headers: headers,
-      body: req as any,
+      body: limiter as any,
       duplex: "half" as any,
     } as any).catch(e => {
       throw new ApiError(502, DISPLAY_ERRORS ? String(e?.message) : "Bad Gateway", "bad_gateway");
@@ -707,8 +787,7 @@ export const api = (config: Config) => {
   }))
   
   pages.get("/search", pageHandler(async (req, res) => {
-    const query = { ...req.query, limit: req.query.limit || PAGE_SIZE_LIMIT }; 
-    const props = await get(`/users/${userId(req)}/search?${qs.stringify(query)}`, token(req));
+    const props = await get(`/users/${userId(req)}/search?${searchQueryString(req.query)}`, token(req));
     res.json({ props })
   }))
 

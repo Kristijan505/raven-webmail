@@ -39,10 +39,27 @@
 
   const prev = action(async () => {
     const json: Messages = await _get(`/api/mailboxes/${mailbox.id}/messages`);
-    messages = {
-      ...messages,
-      results: dedup([ ...json.results, ...messages.results ])
-    }
+    const fresh = json.results;
+    // The refetched first page is authoritative for its id range (messages are ordered
+    // newest-id-first). Take the fresh page as-is and append only OLDER, already-
+    // paginated messages below that range. Crucially this DROPS any lingering entry
+    // inside the fresh range that the server no longer returns — e.g. a draft that
+    // save() created then deleted (compose autosaves a brand-new message per save)
+    // whose EXPUNGE raced ahead of the refetch that re-added it, so nothing ever
+    // removes it and it shows as a duplicate until a manual refresh. Previously we
+    // kept every non-duplicate existing row, so those orphans persisted.
+    // An empty page keeps the current list (minFreshId = Infinity), so a transient
+    // empty response can never purge a scrolled-in mailbox.
+    const minFreshId = fresh.length ? Math.min(...fresh.map(m => m.id)) : Infinity;
+    const older = messages.results.filter(m => m.id < minFreshId);
+    const results = dedup([ ...fresh, ...older ]);
+    // Dropping stale in-range rows (the orphan-draft case) can otherwise strand a
+    // selected row in `selection`, leaving the toolbar in selection mode acting on a
+    // message that's no longer visible (and possibly already deleted). Reconcile the
+    // selection against what remains, mirroring removeIds().
+    const keptIds = new Set(results.map(m => m.id));
+    selection = selection.filter(m => keptIds.has(m.id));
+    messages = { ...messages, results }
   })
 
   const context: MailboxContext = { next, prev };

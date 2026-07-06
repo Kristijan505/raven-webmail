@@ -1,6 +1,7 @@
 import { StatusCodes } from "http-status-codes";
 import type { Request, Response, NextFunction } from "express";
 import { DISPLAY_ERRORS } from "./env";
+import { logger } from "./logger";
 
 export const validate = <T>(fn: () => T): T => {
   try {
@@ -8,6 +9,11 @@ export const validate = <T>(fn: () => T): T => {
   } catch(e: any) {
     // Zod messages are English and technical; surface a localized generic instead
     // of leaking them to the user (the raw message stays on the Error for logs).
+    // Log the real detail server-side: the client only ever sees the generic, so
+    // without this a validation 400 is undiagnosable in production — exactly what made
+    // the draft-send `reference` regression hard to track down. The zod message
+    // carries field paths + expected types, not the submitted values, so it is safe.
+    logger.warn({ detail: String(e?.message) }, "request body failed validation");
     throw new ApiError(StatusCodes.BAD_REQUEST, String(e?.message || "Bad request"), "bad_request")
   }
 }

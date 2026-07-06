@@ -1,4 +1,8 @@
-FROM node:24-alpine3.23 AS build
+# Base image pinned by digest for reproducible builds: the :24-alpine3.23 tag is
+# mutable and can silently change what "prod" is built from between rebuilds.
+# Refresh with:  docker buildx imagetools inspect node:24-alpine3.23  (copy the
+# top-level Digest) — keep both FROM lines in sync.
+FROM node:24-alpine3.23@sha256:595398b0081eacda8e1c4c5b97b76cd1020e4d58a8ebcb4843b9bca1e79e7436 AS build
 
 WORKDIR /opt/raven
 
@@ -15,7 +19,7 @@ RUN npm run build \
 RUN npm prune --omit=dev \
   && rm -rf app/node_modules
 
-FROM node:24-alpine3.23 AS runtime
+FROM node:24-alpine3.23@sha256:595398b0081eacda8e1c4c5b97b76cd1020e4d58a8ebcb4843b9bca1e79e7436 AS runtime
 
 ENV NODE_ENV=production
 WORKDIR /opt/raven

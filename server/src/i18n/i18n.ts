@@ -175,7 +175,11 @@ export const getLocaleForAcceptLang = (acceptLang: string | null | undefined, lo
   if(acceptLang == null) return { lang: "en", locale: locales.en };
   let langs: ReturnType<typeof parse>;
   try {
-    langs = parse(acceptLang);
+    // accept-language-parser is unmaintained (last release 2018) and runs on the
+    // attacker-controllable Accept-Language header / ?accept-language= query. A real
+    // value is a few dozen chars; cap the input so a pathologically long one can't
+    // drive worst-case parsing (defense-in-depth bound against ReDoS-style abuse).
+    langs = parse(acceptLang.slice(0, 512));
   } catch(_e) {
     return { lang: "en", locale: locales.en };
   }

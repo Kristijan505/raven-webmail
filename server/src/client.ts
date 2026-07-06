@@ -38,7 +38,11 @@ const Requester = <Body>(method: string) => {
     })
 
     if(json?.error) {
-      throw new ApiError(res.ok ? StatusCodes.INTERNAL_SERVER_ERROR : res.status, String(json.error))
+      const status = res.ok ? StatusCodes.INTERNAL_SERVER_ERROR : res.status;
+      // Don't leak the raw WildDuck message to the browser in production; surface a
+      // localized generic via the i18n key unless RAVEN_DISPLAY_ERRORS is set (dev).
+      if(DISPLAY_ERRORS) throw new ApiError(status, String(json.error));
+      throw new ApiError(status, "The mail server could not process the request", "backend_error");
     }
 
     return json;
@@ -82,7 +86,11 @@ export const authenticate = async (username: string, password: string): Promise<
   });
 
   if(json?.error) {
-    throw new ApiError(res.ok ? StatusCodes.INTERNAL_SERVER_ERROR : res.status, String(json.error));
+    const status = res.ok ? StatusCodes.INTERNAL_SERVER_ERROR : res.status;
+    // A failed login shouldn't echo the raw WildDuck auth error (or reveal whether
+    // the account exists); show a localized generic unless RAVEN_DISPLAY_ERRORS (dev).
+    if(DISPLAY_ERRORS) throw new ApiError(status, String(json.error));
+    throw new ApiError(status, "Invalid username or password", "login_failed");
   }
 
   return json;
@@ -110,5 +118,7 @@ export const watch = async (userId: string, accessToken: string): Promise<NodeJS
     throw new ApiError(502, "Invalid JSON body from backend", "bad_gateway");
   })
 
-  throw new ApiError(res.status, String(json?.error || "JSON error without message"));
+  // Same treatment as the Requester path: no raw backend text in production.
+  if(DISPLAY_ERRORS) throw new ApiError(res.status, String(json?.error || "JSON error without message"));
+  throw new ApiError(res.status, "The mail server could not process the request", "backend_error");
 }
