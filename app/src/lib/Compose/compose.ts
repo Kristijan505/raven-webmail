@@ -69,6 +69,7 @@ export const kSent = Symbol("draft-sent");
 
 import { crossfade, fly } from "svelte/transition";
 import { _delete, _post } from "$lib/util";
+import { Expunge } from "$lib/events";
 import type { Mailbox, User } from "$lib/types";
 
 export const [crossin, crossout] = crossfade({
@@ -104,7 +105,16 @@ export const save = async (draft: Draft) => {
     files: files?.map(file => file.id).filter(Boolean) as string[],
   }));
   
-  _delete(`/api/mailboxes/${mailbox}/messages/${id}`).catch(() => {})
+  // Messages are immutable, so "saving" a draft means create-new + delete-old.
+  // Don't rely on the server's EXPUNGE coming back over SSE to retire the old
+  // row: it races the refetch that the matching EXISTS triggers (and is missed
+  // outright if the list mounts after it fired), which leaves the saved draft
+  // listed twice until a manual reload. We issued the delete, so we can announce
+  // it ourselves — same event the SSE stream would deliver, so every open list
+  // reconciles through the one code path.
+  _delete(`/api/mailboxes/${mailbox}/messages/${id}`)
+    .then(() => Expunge.dispatch({ command: "EXPUNGE", mailbox, uid: id }))
+    .catch(() => {})
 
   return message.id;
 }

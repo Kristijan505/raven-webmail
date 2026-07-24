@@ -175,7 +175,11 @@ import { locale } from "$lib/locale";
         <div class="messages" transition:customSlide|local={{ duration: 250 }}>
           {#each results as message (`${message.mailbox}-${message.id}`)}
             <div class="message" transition:customSlide|local={{ duration: 250 }}>
-              <SearchResult bind:message mailbox={mailboxMap.get(message.mailbox)} bind:selection {query} />
+              <!-- Not bound: the each key is derived from `message` itself, so a
+                   write-back lands in a reused block and overwrites an existing
+                   row with another result (same bug as Mailbox/Mailbox.svelte).
+                   SearchResult only mutates `message.flagged` in place. -->
+              <SearchResult {message} mailbox={mailboxMap.get(message.mailbox)} bind:selection {query} />
             </div>
           {/each}
         </div>
