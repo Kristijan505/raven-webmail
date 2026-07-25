@@ -162,12 +162,30 @@ import type { FullMessage, Message } from "./types";
 // and restored by serializeEditorBody() before the body is copied back into the
 // draft, so saved/sent mail keeps the public URL (recipients can't load our
 // /api/proxy-image path). cid:/data:/attachment: srcs are left untouched.
+// Schemes mail content may carry. `cid:` and `attachment:` are how WildDuck refers to
+// inline parts; neither is fetchable by a browser. Deliberately narrower than
+// DOMPurify's default in the other direction — mail has no business carrying
+// ftp/sms/callto/xmpp/matrix. Shared by every pass that touches message or draft HTML.
+export const EDITOR_URI_REGEXP = /^(mailto|https?|cid|tel|attachment):/i;
+
 export const proxyRemoteImages = (html: string): string => {
   // FORBID data-raven-src on input: an attacker could embed <img src="cid:x"
   // data-raven-src="https://tracker"> in a sent message; without this, serialize
   // would later promote that marker into src and re-introduce the tracker the
   // stripping path removed. Only markers Raven adds below (post-sanitize) survive.
-  const div = dompurify.sanitize(html || "", { RETURN_DOM: true, ADD_DATA_URI_TAGS: ["img"], FORBID_ATTR: ["data-raven-src"] }) as HTMLElement;
+  // ALLOWED_URI_REGEXP is not optional here. DOMPurify's default scheme list has no
+  // `attachment:` — the form WildDuck uses for an inline part — and this function runs
+  // on the way INTO the editor iframe. Left at the default it silently dropped those
+  // srcs, and because the editor writes its DOM back out through serializeEditorBody(),
+  // the loss became permanent the moment the user typed anything in the body: the
+  // forward was created correctly and then re-saved without its inline images. Same
+  // list as messageHTML uses on the read side.
+  const div = dompurify.sanitize(html || "", {
+    RETURN_DOM: true,
+    ALLOWED_URI_REGEXP: EDITOR_URI_REGEXP,
+    ADD_DATA_URI_TAGS: ["img"],
+    FORBID_ATTR: ["data-raven-src"],
+  }) as HTMLElement;
   for(const $img of [].slice.call(div.querySelectorAll("img")) as HTMLImageElement[]) {
     const src = ($img.getAttribute("src") || "").trim();
     if(/^(https?:)?\/\//i.test(src)) {
@@ -201,7 +219,7 @@ export const messageHTML = (node: HTMLElement, opts: string | { html: string, me
 
   const fragment = dompurify.sanitize(html, {
     RETURN_DOM_FRAGMENT: true,
-    ALLOWED_URI_REGEXP: /^(mailto|https?|cid|tel|attachment):/i,
+    ALLOWED_URI_REGEXP: EDITOR_URI_REGEXP,
     // Allow data: URIs ONLY on <img> so embedded base64 images (common in
     // newsletters) render. Safe: an <img> never executes script, and the body
     // is in a no-allow-scripts sandboxed iframe regardless.
@@ -412,7 +430,7 @@ export const purify = (node: HTMLElement, opts?: string | { html: string, messag
 
   const fragment = dompurify.sanitize(html, {
     RETURN_DOM_FRAGMENT: true,
-    ALLOWED_URI_REGEXP: /^(mailto|https?|tel|cid|attachment):/i,
+    ALLOWED_URI_REGEXP: EDITOR_URI_REGEXP,
   });
   
   for(const $a of [].slice.call(fragment.querySelectorAll("a"))) {
