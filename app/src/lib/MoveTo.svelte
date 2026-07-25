@@ -16,67 +16,18 @@
 
   const { mailboxes } = getContext("dash") as DashContext;
 
-  $: inbox = $mailboxes.find(isInbox)!;
-  $: trash = $mailboxes.find(isTrash)!;
-  $: junk = $mailboxes.find(isJunk)!;
-  $: sent = $mailboxes.find(isSent)!;
-  $: others = $mailboxes.filter(item => {
-    return item !== inbox && item.specialUse == null;
-  })!;
 
-  let folders: Mailbox[] = [];
-  // These come from find(): a folder the account happens not to have — a Trash that was
-  // deleted, a Junk that was never provisioned — is undefined, and the `!` above only
-  // silences the type checker. Reading `.id` off it throws, and this is a reactive
-  // block, so the throw lands inside the Svelte flush and freezes the scheduler: the
-  // whole view goes inert, not just this menu. Guard each comparison and drop the
-  // missing entries from the result instead.
-  $: {
-    if(mailbox && inbox && mailbox.id === inbox.id) {
-      folders = [
-        ...others,
-        junk,
-        trash,
-      ];
-    } else if (mailbox && trash && mailbox.id === trash.id) {
-      folders = [
-        inbox,
-        ...others,
-        junk
-      ]
-    } else if(mailbox && junk && mailbox.id === junk.id) {
-      folders = [
-        inbox,
-        ...others,
-        trash
-      ]
-    } else if(mailbox && sent && mailbox.id === sent.id) {
-      folders = [
-        trash
-      ]
-    } else if (mailbox && others.some(item => item.id === mailbox.id)) {
-      folders = [
-        inbox,
-        ...others.filter(item => item.id !== mailbox.id),
-        junk,
-        trash,
-      ]
-    } else {
-      // Drafts (and any other special-use folder without a branch) matches nothing
-      // above. Without this else, `folders` would silently keep whatever the previous
-      // mailbox produced — offering destinations computed for a different source. The
-      // markup hides the control on an empty list, so this reads as "no move target"
-      // rather than as a wrong one.
-      folders = [];
-    }
-    // Every branch above can name a folder this account does not have.
-    folders = folders.filter(Boolean);
-  }
+  // Destination rules live in moveTargets.ts so they can be unit-tested on their own —
+  // this is product semantics (what may be filed where), not view code, and it is the
+  // kind of rule a later refactor silently loosens. See that file for the reasoning and
+  // for the TODO about recording a message's origin.
+  $: folders = moveDestinations(mailbox, $mailboxes);
 
 
   import MoveTo from "~icons/mdi/folder-move-outline";
   import PortalPopup from "./PortalPopup.svelte";
-  import { isJunk, isTrash, isInbox, mailboxIcon, mailboxName, isSent } from "./util";
+  import { mailboxIcon, mailboxName } from "./util";
+  import { moveDestinations } from "./moveTargets";
   import { getContext } from "svelte";
   import Ripple from "./Ripple.svelte";
   import { tooltip, clickable } from "./actions";
