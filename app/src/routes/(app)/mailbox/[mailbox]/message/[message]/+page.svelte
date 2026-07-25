@@ -72,12 +72,12 @@
     }
   })
 
+  // Same reasoning as Top.svelte: with Spam and Trash gone from the move menu, these
+  // buttons are the only route, so a missing folder has to be reported, not asserted.
   const spam = action(async () => {
-    if(isJunk(mailbox)) {
-      await move($mailboxes.find(isInbox)!)
-    } else {
-      await move($mailboxes.find(isJunk)!);
-    }
+    const to = isJunk(mailbox) ? $mailboxes.find(isInbox) : $mailboxes.find(isJunk);
+    if(!to) throw new Error($locale.Folder_not_available);
+    await move(to);
   })
 
   const del = action(async () => {
@@ -85,7 +85,9 @@
       await _delete(`/api/mailboxes/${mailbox.id}/messages/${message.id}`);
       await goto(`/mailbox/${mailbox.id}`);
     } else {
-      await move($mailboxes.find(isTrash)!);
+      const trash = $mailboxes.find(isTrash);
+      if(!trash) throw new Error($locale.Folder_not_available);
+      await move(trash);
     }
   })
 

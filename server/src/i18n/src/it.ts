@@ -216,6 +216,7 @@ const locale: Locale = {
   "Offline_message": "Hai bisogno di una connessione per usare questa webmail",
 
   "Error_message": "Assicurati di avere una connessione attiva",
+  "Folder_not_available": "Questa cartella non è disponibile in questo account",
   "Take_me_to_my_inbox": "Vai alla posta in arrivo",
 
   "Toggle_code_view": "Codice on/off",

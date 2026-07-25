@@ -63,14 +63,14 @@ import { locale } from "$lib/locale";
     selection = [...selection]; 
   })
 
+  // These lookups used to assert non-null. They are the ONLY route to spam and delete
+  // now that the move menu no longer lists Spam and Trash, so an account missing one of
+  // those folders would leave the button dead with a generic failure. Say what is wrong
+  // instead — action() surfaces a thrown message to the user.
   const spam = action(async () => {
-    if(isJunk(mailbox)) {
-      const inbox = $mailboxes.find(isInbox)!;
-      await move(inbox);
-    } else {
-      const junk = $mailboxes.find(isJunk)!;
-      await move(junk);
-    }
+    const to = isJunk(mailbox) ? $mailboxes.find(isInbox) : $mailboxes.find(isJunk);
+    if(!to) throw new Error($locale.Folder_not_available);
+    await move(to);
   })
 
   const del = action(async () => {
@@ -80,7 +80,8 @@ import { locale } from "$lib/locale";
       }))
       removeSelection();
     } else {
-      const trash = $mailboxes.find(isTrash)!;
+      const trash = $mailboxes.find(isTrash);
+      if(!trash) throw new Error($locale.Folder_not_available);
       move(trash);
     }
   })
@@ -94,7 +95,8 @@ import { locale } from "$lib/locale";
           _error(e?.message)
         })
     } else {
-      const trash = $mailboxes.find(isTrash)!;
+      const trash = $mailboxes.find(isTrash);
+      if(!trash) throw new Error($locale.Folder_not_available);
       _put(`/api/mailboxes/${mailbox.id}/messages`, {
         message: `1:${Number.MAX_SAFE_INTEGER}`,
         moveTo: trash.id,

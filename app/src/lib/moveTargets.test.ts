@@ -70,4 +70,16 @@ describe("moveDestinations", () => {
   it("returns nothing rather than throwing when the mailbox is missing", () => {
     expect(moveDestinations(undefined, all)).toEqual([]);
   });
+
+  it("keeps a folder carrying an unrecognised special-use attribute as a destination", () => {
+    // Only Drafts/Sent/Junk/Trash are reached by a dedicated button. Anything else the
+    // account has — an Archive, or whatever a future server version adds — is a place
+    // to file mail, and must not vanish just because the attribute is unfamiliar. It is
+    // visible in the sidebar; it has to be reachable here.
+    const archive = mb("8", "Archive", "\\Archive");
+    expect(names(moveDestinations(inbox, [...all, archive]))).toContain("Archive");
+    expect(names(moveDestinations(trash, [...all, archive]))).toContain("Archive");
+    // And you still cannot file INTO it from itself.
+    expect(names(moveDestinations(archive, [...all, archive]))).not.toContain("Archive");
+  });
 });

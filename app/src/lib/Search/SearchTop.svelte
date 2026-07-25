@@ -78,12 +78,17 @@ import { locale } from "$lib/locale";
 
   const del = action(async () => {
     if(selection.length === 0) return;
-    const trash = $mailboxes.find(isTrash)!;
+    const trash = $mailboxes.find(isTrash);
+    if(!trash) throw new Error($locale.Folder_not_available);
     const actions: Promise<void>[] = [];
     const toTrash = new Map<string, number[]>();
 
     for(const item of selection) {
-      const mailbox = mailboxMap.get(item.mailbox)!;
+      // A result can name a mailbox the sidebar does not know about (stale index, or a
+      // folder removed since the search ran). Skipping it beats throwing mid-loop and
+      // leaving the rest of the selection half-processed.
+      const mailbox = mailboxMap.get(item.mailbox);
+      if(!mailbox) continue;
       if(isTrash(mailbox) || isDrafts(mailbox)) {
         console.log("delete");
         actions.push(_delete(`/api/mailboxes/${item.mailbox}/messages/${item.id}`));

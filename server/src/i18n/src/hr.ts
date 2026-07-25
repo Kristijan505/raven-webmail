@@ -231,6 +231,7 @@ const locale: Locale = {
   Offline_message: "Potrebna vam je veza za korištenje webmaila",
 
   Error_message: "Provjerite imate li aktivnu vezu",
+  Folder_not_available: "Ta mapa nije dostupna na ovom računu",
   Take_me_to_my_inbox: "Vodi me u pristiglu poštu",
 
   Toggle_code_view: "Prikaz koda",

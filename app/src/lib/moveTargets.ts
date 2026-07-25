@@ -5,7 +5,22 @@ import type { Mailbox } from "./types";
 // @sveltejs/kit, none of which belong in a unit test of folder semantics.
 const DRAFTS = "\\Drafts";
 const SENT = "\\Sent";
+const JUNK = "\\Junk";
+const TRASH = "\\Trash";
 const INBOX_PATH = "INBOX";
+
+// The four folders that are reached by a dedicated button rather than by filing.
+// Everything else the account has is a legitimate place to file mail.
+//
+// Stated as a denylist on purpose. Selecting destinations by `specialUse == null`
+// instead would silently drop any folder carrying an attribute we did not anticipate —
+// an Archive, or whatever a future server version introduces — even though it is right
+// there in the sidebar and the user can see it. A folder the user can see should be a
+// destination unless there is a reason it is not, and "we did not recognise the
+// attribute" is not a reason. WildDuck documents specialUse as one of Drafts, Junk,
+// Sent or Trash, so today this makes no difference; it is about which way the code
+// fails when that stops being true.
+const ACTION_FOLDERS = new Set([DRAFTS, SENT, JUNK, TRASH]);
 
 /**
  * The folders it makes sense to move the current selection INTO.
@@ -38,13 +53,13 @@ export const moveDestinations = (
   if (!mailbox || mailbox.specialUse === DRAFTS) return [];
 
   const inbox = mailboxes.find(m => m.path === INBOX_PATH);
-  // "Custom" folders: everything the account added itself. Inbox is excluded explicitly
-  // because it carries no special-use attribute of its own.
-  const custom = mailboxes.filter(m => m.specialUse == null && m.id !== inbox?.id);
+  // Everything that is not an action folder and not the Inbox — which is listed
+  // separately below, and carries no special-use attribute of its own to exclude it by.
+  const filable = mailboxes.filter(m => !ACTION_FOLDERS.has(m.specialUse ?? "") && m.id !== inbox?.id);
 
   const backToInbox = inbox && mailbox.path !== INBOX_PATH && mailbox.specialUse !== SENT
     ? [inbox]
     : [];
 
-  return [...backToInbox, ...custom.filter(m => m.id !== mailbox.id)];
+  return [...backToInbox, ...filable.filter(m => m.id !== mailbox.id)];
 };

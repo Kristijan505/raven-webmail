@@ -229,6 +229,7 @@ export default {
   Offline_message: "You need a connection to use the webmail",
 
   Error_message: "Make sure you have an active connection",
+  Folder_not_available: "That folder is not available on this account",
   Take_me_to_my_inbox: "Take me to my inbox",
 
   Toggle_code_view: "Toggle code view",

@@ -42,12 +42,19 @@
     // See reconcile.ts for why the next cursor decides the fate of rows below the
     // refetched page — that is what finally retires an orphaned autosaved draft.
     const results = reconcileFirstPage(messages.results, json.results, !!json.nextCursor, json.total);
-    // Dropping stale in-range rows (the orphan-draft case) can otherwise strand a
-    // selected row in `selection`, leaving the toolbar in selection mode acting on a
-    // message that's no longer visible (and possibly already deleted). Reconcile the
-    // selection against what remains, mirroring removeIds().
-    const keptIds = new Set(results.map(m => m.id));
-    selection = selection.filter(m => keptIds.has(m.id));
+    // Rebuild the selection FROM `results`, not by filtering the old array.
+    //
+    // Two things depend on this. Dropping rows the refetch no longer returns (the
+    // orphan-draft case) stops the toolbar acting on a message that is gone. But the
+    // refetched page is made of BRAND NEW objects, so filtering in place would keep the
+    // survivors as the previous ones — and the toolbar mutates what is in `selection`
+    // (Top.markAsSeen does `item.seen = v`, then re-renders from `messages.results`).
+    // Those writes would land on objects nobody renders: the server goes read, the
+    // toolbar flips to "Mark as not seen", and the row stays looking unread. Selecting
+    // the same objects the list renders is what makes the optimistic update visible.
+    // The search list had the identical defect; this is the same fix.
+    const selectedIds = new Set(selection.map(m => m.id));
+    selection = results.filter(m => selectedIds.has(m.id));
     messages = { ...messages, results }
   })
 

@@ -214,6 +214,7 @@ const locale: Locale = {
   Offline_message: "Necesitas tener acceso a internet para usar el webmail",
 
   Error_message: "Asegurate de tener una conexión a internet",
+  Folder_not_available: "Esa carpeta no está disponible en esta cuenta",
   Take_me_to_my_inbox: "Ir al inicio",
 
   Toggle_code_view: "Vista de código",
