@@ -51,6 +51,7 @@
   import { action, _get, _post } from "$lib/util";
   import type { FullMessage, Mailbox, User } from "$lib/types";
   import DOMPurify from "dompurify";
+  import { FETCHABLE_ATTRS, stripSelfProxyRefs } from "$lib/actions";
   import { onMount } from "svelte";
   import { add } from "$lib/actions";
   import { locale } from "$lib/locale";
@@ -107,10 +108,28 @@
   // stay. Applied to quoted HTML only — never to the user's signature.
   const stripRemote = (html: string): string => {
     const div = DOMPurify.sanitize(html || "", PURIFY_OPTS) as HTMLElement;
+    // Our own proxy first: a same-origin /api/proxy-image URL is allowed by the CSP the
+    // compose iframe inherits (img-src 'self'), so naming it turns an authenticated
+    // endpoint into the attacker's fetcher — no opt-in, no click. Mail never points at
+    // it legitimately. The read path has always done this; compose did not.
+    stripSelfProxyRefs(div);
     for(const $el of [].slice.call(div.querySelectorAll("[srcset]")) as Element[]) $el.removeAttribute("srcset");
-    for(const $img of [].slice.call(div.querySelectorAll("img, source")) as Element[]) {
-      const s = ($img.getAttribute("src") || "").trim();
-      if(s && !isInlineRef(s)) $img.removeAttribute("src");
+    // Previously this looked at `img, source` only, which is why <svg><image href>,
+    // <video src|poster> and <audio src> all still fired on Reply/Forward.
+    for(const [selector, attr] of FETCHABLE_ATTRS) {
+      for(const $el of [].slice.call(div.querySelectorAll(selector)) as Element[]) {
+        const v = ($el.getAttribute(attr) || "").trim();
+        if(!v) continue;
+        // `data:` is vouched for on an image and nowhere else. DOMPurify cannot express
+        // that on its own: ADD_DATA_URI_TAGS is ADDITIVE to a default set that already
+        // contains audio, video, source, image and track, so "ONLY on <img>" has to be
+        // enforced here. Everything in this body is serialized into outgoing mail, and
+        // a recipient's client will not necessarily treat a data: media source the way
+        // ours does.
+        const isImg = $el.tagName.toLowerCase() === "img";
+        const ok = /^(cid:|attachment:)/i.test(v) || (isImg && /^data:/i.test(v));
+        if(!ok) $el.removeAttribute(attr);
+      }
     }
     // Legacy background="https://…" fetches a remote image on open just like
     // <img src>; the compose iframe has no opt-in/CSP, so strip it from quoted

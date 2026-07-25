@@ -168,6 +168,40 @@ import type { FullMessage, Message } from "./types";
 // ftp/sms/callto/xmpp/matrix. Shared by every pass that touches message or draft HTML.
 export const EDITOR_URI_REGEXP = /^(mailto|https?|cid|tel|attachment):/i;
 
+// True for any reference to OUR OWN image proxy. Mail never legitimately points at it,
+// and a same-origin URL sails past a CSP whose img-src is 'self' — so an inbound
+// message can name it and get the browser to call an authenticated endpoint that then
+// fetches whatever the attacker put in ?url=. Resolved against our origin so an
+// off-origin URL that merely contains "/api/proxy-image" in its path is not caught here
+// (it stays subject to the normal remote-image gating).
+export const isSelfProxyUrl = (v: string): boolean => {
+  try {
+    const u = new URL((v || "").trim(), location.origin);
+    return u.host === location.host && /^\/api\/proxy-image\b/i.test(u.pathname);
+  } catch { return false; }
+};
+
+// Attributes the browser fetches from as soon as the markup is parsed. `href` on <a>
+// is deliberately absent — it only loads when clicked — but `href` on the SVG <image>
+// and <use> elements does fetch, which is what made <svg><image href> a way around a
+// filter that only ever looked at <img src>.
+export const FETCHABLE_ATTRS: ReadonlyArray<readonly [string, string]> = [
+  ["img, source, video, audio, track, embed, iframe, input", "src"],
+  ["video", "poster"],
+  ["image, use", "href"],
+  ["image, use", "xlink:href"],
+  ["object", "data"],
+];
+
+// Drop every reference to our own proxy, whatever attribute it hides in.
+export const stripSelfProxyRefs = (root: ParentNode): void => {
+  for(const $el of [].slice.call(root.querySelectorAll("*")) as Element[]) {
+    for(const attr of [].slice.call($el.attributes) as Attr[]) {
+      if(isSelfProxyUrl(attr.value)) $el.removeAttribute(attr.name);
+    }
+  }
+};
+
 export const proxyRemoteImages = (html: string): string => {
   // FORBID data-raven-src on input: an attacker could embed <img src="cid:x"
   // data-raven-src="https://tracker"> in a sent message; without this, serialize
@@ -186,6 +220,11 @@ export const proxyRemoteImages = (html: string): string => {
     ADD_DATA_URI_TAGS: ["img"],
     FORBID_ATTR: ["data-raven-src"],
   }) as HTMLElement;
+  // A draft can reach the editor from the server, so it may carry proxy references
+  // planted before the compose-side filter existed (or by another client). Cross-origin
+  // fetches from this iframe are already refused by the inherited CSP; a same-origin
+  // one is not, so this is the case that matters.
+  stripSelfProxyRefs(div);
   for(const $img of [].slice.call(div.querySelectorAll("img")) as HTMLImageElement[]) {
     const src = ($img.getAttribute("src") || "").trim();
     if(/^(https?:)?\/\//i.test(src)) {
@@ -220,9 +259,12 @@ export const messageHTML = (node: HTMLElement, opts: string | { html: string, me
   const fragment = dompurify.sanitize(html, {
     RETURN_DOM_FRAGMENT: true,
     ALLOWED_URI_REGEXP: EDITOR_URI_REGEXP,
-    // Allow data: URIs ONLY on <img> so embedded base64 images (common in
-    // newsletters) render. Safe: an <img> never executes script, and the body
-    // is in a no-allow-scripts sandboxed iframe regardless.
+    // Lets embedded base64 images (common in newsletters) render. NB this ADDS to
+    // DOMPurify's default data-URI set — audio, video, img, source, image, track — it
+    // does not replace it, so data: ends up permitted on all of those. Harmless on the
+    // read side: a data: URI touches no network, and the body renders in a sandboxed
+    // iframe with no allow-scripts. The compose side, whose output is serialized into
+    // outgoing mail, narrows it back to <img> itself.
     ADD_DATA_URI_TAGS: ["img"],
   });
 
@@ -246,17 +288,7 @@ export const messageHTML = (node: HTMLElement, opts: string | { html: string, me
   // every attribute up front (resolved against our origin so off-origin URLs that
   // merely contain "/api/proxy-image" in their path are left for the gated rewrite).
   // Our own proxy/attachment URLs are added by the rewrites that run AFTER this.
-  const isSelfProxy = (v: string): boolean => {
-    try {
-      const u = new URL((v || "").trim(), location.origin);
-      return u.host === location.host && /^\/api\/proxy-image\b/i.test(u.pathname);
-    } catch { return false; }
-  };
-  for(const $el of [].slice.call(fragment.querySelectorAll("*")) as Element[]) {
-    for(const attr of [].slice.call($el.attributes) as Attr[]) {
-      if(isSelfProxy(attr.value)) $el.removeAttribute(attr.name);
-    }
-  }
+  stripSelfProxyRefs(fragment);
 
   // <style> is kept (email layout often depends on it, and it's inert in the
   // no-allow-scripts iframe), but its CSS can still fetch remote assets via
