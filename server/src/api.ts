@@ -410,6 +410,12 @@ const sessionLimiter = (name: string, limit: number) => rateLimit({
 const uploadLimiter = sessionLimiter("storage", 200);
 const imageProxyLimiter = sessionLimiter("proxy-image", 1000);
 const submitLimiter = sessionLimiter("submit", 100);
+// Draft creation is the one write the UI makes on a timer: compose autosaves every
+// ~1.5s while typing, and each save also deletes the previous message, so this is the
+// cheapest write-amplification lever an authenticated script has. The ceiling has to
+// clear real use — several compose windows autosaving continuously — hence the high
+// number; it bounds a runaway, it does not pace a typist.
+const draftLimiter = sessionLimiter("messages-create", 1200);
 const bulkLimiter = sessionLimiter("bulk", 300);
 
 export const api = (config: Config) => {
@@ -526,6 +532,10 @@ export const api = (config: Config) => {
     }
     const json = await put(`/users/${id}`, token(req), update);
 
+    // Only meaningful for a password change; true otherwise so the client's check
+    // (`sessionsEvicted === false`) never fires on a plain name update.
+    let sessionsEvicted = true;
+
     if (update.password != null) {
       // Evict this user's OTHER sessions now that the password has changed. Changing
       // the password is what someone does when they think a session was stolen, and
@@ -534,18 +544,24 @@ export const api = (config: Config) => {
       // kept — it just proved knowledge of the old password above, and logging the
       // user out of the tab they are working in would be gratuitous.
       //
-      // Deliberately AFTER the change, and deliberately non-fatal: the password IS
-      // already changed at this point, so failing the response here would tell the
-      // user the opposite of the truth. Log loudly instead.
-      await destroyOtherSessions(id, req.sessionID).catch((e: any) => {
-        logger.error(
-          { detail: String(e?.message) },
-          "password changed but other sessions could not be invalidated",
-        );
-      });
+      // Runs AFTER the change, and its failure is reported rather than thrown. Failing
+      // the response is not an option: the password HAS changed by this point, so a 5xx
+      // would tell the user the opposite of the truth. But swallowing it silently is
+      // worse — they would read "Password updated" and believe the other sessions were
+      // evicted when they were not, which is the entire reason they changed it. So the
+      // change succeeds and the client is told what actually happened.
+      sessionsEvicted = await destroyOtherSessions(id, req.sessionID)
+        .then(() => true)
+        .catch((e: any) => {
+          logger.error(
+            { detail: String(e?.message) },
+            "password changed but other sessions could not be invalidated",
+          );
+          return false;
+        });
     }
 
-    res.json(json);
+    res.json({ ...json, sessionsEvicted });
   }))
 
   api.put("/signature", handler(async (req, res) => {
@@ -598,7 +614,7 @@ export const api = (config: Config) => {
     res.json(json);
   }))
 
-  api.post("/mailboxes/:mailbox/messages", handler(async (req, res) => {
+  api.post("/mailboxes/:mailbox/messages", draftLimiter, handler(async (req, res) => {
     const body = validate(() => CreateMessageSchema.parse(req.body));
     // `reference` makes WildDuck read the referenced message to build the quoted body
     // and carry attachments across — a read primitive pointed at a mailbox id the

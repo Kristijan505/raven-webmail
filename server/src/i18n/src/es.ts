@@ -187,6 +187,7 @@ const locale: Locale = {
     Deleting_process: "Corriendo el proceso de eliminación en segundo plano, esto puede tomar un tiempo",
     Message_sent: "Mensaje enviado",
     Password_updated: "Contraseña actualizada",
+    Password_updated_sessions_warning: "Contraseña actualizada, pero es posible que otras sesiones sigan abiertas",
     Name_updated: "Nombre actualizado",
     All_messages_deleted: "Todos los mensajes fueron eliminados",
   },

@@ -184,6 +184,7 @@ export default {
     Deleting_process: "Deleting process running in the background, this can take a while",
     Message_sent: "Message sent",
     Password_updated: "Password updated",
+    Password_updated_sessions_warning: "Password updated, but other sessions may still be signed in",
     Name_updated: "Name updated",
     All_messages_deleted: "All messages deleted",
   },

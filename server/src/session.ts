@@ -30,6 +30,13 @@ export const destroyOtherSessions = async (userId: string, keepSessionId: string
   const store = activeStore;
   const collection = store?.collection;
   if(!collection) throw new Error("session store is not initialized");
+  // Refuse to build the query from a blank argument. Mongo serializes `undefined` to
+  // `null`, so `{_id: {$ne: undefined}}` becomes "_id is not null" — i.e. every
+  // document — and a blank userId would match sessions whose authentication field is
+  // simply absent. Either mistake turns a targeted eviction into a much wider delete,
+  // so fail loudly instead (the caller logs it and the password change still stands).
+  if(!userId) throw new Error("destroyOtherSessions requires a user id");
+  if(!keepSessionId) throw new Error("destroyOtherSessions requires the current session id");
   const idField: string = store.options?.idField ?? "_id";
   const result = await collection.deleteMany({
     "session.authentication.id": userId,

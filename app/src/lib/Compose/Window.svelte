@@ -36,14 +36,14 @@
     timer = setTimeout(() => dosave(current, t), 1500);
   }
 
-  // Saves run one at a time, chained onto this. Messages are immutable, so save() is
-  // CREATE-new + DELETE-old: two overlapping saves both read the SAME current.id, both
-  // create a message and both delete that one old id — so one of the two new messages
-  // is left behind in Drafts with nothing pointing at it. The debounce timer did not
-  // prevent this; it only cancels the NEXT scheduled save, never one already in flight,
-  // so any save slower than the 1500ms debounce (a large draft, a slow link) raced the
-  // next one. Queueing also fixes the id bookkeeping for free: only one save resolves
-  // at a time, so `current.id = newId` can no longer be clobbered out of order.
+  // Ordering of the saves themselves is guaranteed by save() in compose.ts, which
+  // serializes per draft — it has to be there rather than here, because send() calls
+  // save() directly and would otherwise race an autosave still in flight.
+  //
+  // This queue stays for a narrower reason: it keeps the kSent / teardown check next to
+  // the call it guards. The debounce timer only cancels the NEXT scheduled save, never
+  // one already running, so without it a save slower than the 1500ms debounce would let
+  // the following one skip its check entirely.
   let queue: Promise<unknown> = Promise.resolve();
 
   const dosave = (current: Draft, t: number): Promise<void> => {

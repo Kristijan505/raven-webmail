@@ -39,6 +39,11 @@ export const dedupById = (messages: Message[]): Message[] => {
  * (another client, or an SSE reconnect). `serverTotal` — the count the server reports
  * alongside the page — breaks the tie. When it is not supplied the cautious branch is
  * taken and the current list is kept.
+ *
+ * That only works because WildDuck's `total` counts the whole MAILBOX, not the page:
+ * `total = await getFilteredMessageCount(filter)` in its messages handler. If it were
+ * page-scoped it would read 0 for any empty page and this would clear the list on
+ * exactly the transient blip the branch above exists to survive.
  */
 export const reconcileFirstPage = (
   current: Message[],

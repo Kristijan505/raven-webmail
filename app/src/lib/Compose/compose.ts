@@ -96,10 +96,33 @@ export const destroyComposer = () => {
   }
 }
 
-export const save = async (draft: Draft) => {
-  
+// Saves for one draft run strictly one at a time.
+//
+// save() is CREATE-new + DELETE-old (messages are immutable), so two overlapping saves
+// both read the same draft.id, both create a message and both delete that single old
+// id — leaving one of the two new messages orphaned in Drafts.
+//
+// Serializing in Window.svelte's autosave was not enough: send() calls save() directly,
+// so clicking Send while an autosave was still in flight raced it anyway, and could
+// even submit one copy while orphaning the other. The chain lives HERE because this is
+// the one point every caller goes through. Keyed weakly by the draft object, so a
+// closed compose tab takes its chain with it.
+const saveChains = new WeakMap<Draft, Promise<unknown>>();
+
+export const save = (draft: Draft): Promise<number> => {
+  const run = (saveChains.get(draft) ?? Promise.resolve())
+    .catch(() => {})
+    .then(() => saveNow(draft));
+  // Store a handle that cannot reject, so one failed save does not poison the chain
+  // for every later one.
+  saveChains.set(draft, run.catch(() => {}));
+  return run;
+}
+
+const saveNow = async (draft: Draft) => {
+
   const { id, mailbox, key, files, ...json } = draft;
-  
+
   const { message } = await _post(`/api/mailboxes/${draft.mailbox}/messages`, createMessageBody({ 
     ...json,
     files: files?.map(file => file.id).filter(Boolean) as string[],
@@ -115,6 +138,13 @@ export const save = async (draft: Draft) => {
   _delete(`/api/mailboxes/${mailbox}/messages/${id}`)
     .then(() => Expunge.dispatch({ command: "EXPUNGE", mailbox, uid: id }))
     .catch(() => {})
+
+  // Advance the draft's id INSIDE the serialized section. Callers also assign the
+  // returned id, but that happens a microtask or two later — and the next entry in the
+  // chain (another autosave, or the save inside send()) starts as soon as this resolves
+  // and reads draft.id straight away. Writing it here means the handoff never depends
+  // on which of those two lands first.
+  draft.id = message.id;
 
   return message.id;
 }

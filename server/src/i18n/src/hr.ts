@@ -186,6 +186,7 @@ const locale: Locale = {
     Deleting_process: "Brisanje se izvršava u pozadini, ovo može potrajati",
     Message_sent: "Poruka je poslana",
     Password_updated: "Lozinka je promijenjena",
+    Password_updated_sessions_warning: "Lozinka je promijenjena, ali druge prijave možda nisu odjavljene",
     Name_updated: "Ime je promijenjeno",
     All_messages_deleted: "Sve poruke su izbrisane",
   },

@@ -59,7 +59,7 @@
 
   const sanitize = (src: string | string[] | null) => {
     if(src instanceof Array) src = src.join("");
-    const div = DOMPurify.sanitize(src || "", { RETURN_DOM: true, FORBID_ATTR: ["data-raven-src"] }) as HTMLElement;
+    const div = DOMPurify.sanitize(src || "", PURIFY_OPTS) as HTMLElement;
     const toRemove = div.querySelectorAll("style, link, script, meta, object, head, title");
     for(let i = 0; i < toRemove.length; i++) {
       const el = toRemove[i];
@@ -75,29 +75,55 @@
     return { html, text }
   }
 
+  // Refs that cannot cause a network fetch, so quoting them leaks nothing.
+  //
+  // `attachment:` belongs here and was missing, which is why FORWARDING A MESSAGE
+  // DROPPED ITS INLINE IMAGES: WildDuck hands back inline parts as `cid:` OR
+  // `attachment:<id>` (messageHTML in actions.ts treats both as inline attachments —
+  // see the `/^(cid|attachment):/` match there), we only kept `cid:`, so every
+  // attachment:-referenced image lost its src while the quote was being built and the
+  // forward went out with an empty <img>. Neither scheme is fetchable by a browser —
+  // no request is made for an unknown scheme — so keeping it costs nothing in privacy
+  // terms, which is the only thing stripRemote is defending.
+  const isInlineRef = (u: string): boolean => /^(data:|cid:|attachment:)/i.test(u);
+
+  // Shared DOMPurify options for every pass over compose content.
+  //
+  // The scheme list matters: DOMPurify's DEFAULT allow-list (http(s), ftp, mailto, tel,
+  // callto, sms, cid, xmpp, matrix) has no `attachment:`, so it drops those srcs itself
+  // — before any of our own logic gets to look at them. That is why merely teaching
+  // stripRemote to keep attachment: was not enough; the sanitise call INSIDE it was
+  // already throwing them away. Mirror the list messageHTML uses on the read side.
+  const PURIFY_OPTS = {
+    RETURN_DOM: true as const,
+    FORBID_ATTR: ["data-raven-src"],
+    ALLOWED_URI_REGEXP: /^(mailto|https?|cid|tel|attachment):/i,
+    ADD_DATA_URI_TAGS: ["img"],
+  };
+
   // Strip fetch-capable refs from untrusted quoted reply/forward content: the
   // compose iframe is same-origin + authenticated and has no "load images" opt-in,
-  // so a remote <img>/srcset/CSS url() would fetch (tracking) on open. data:/cid:
+  // so a remote <img>/srcset/CSS url() would fetch (tracking) on open. Inline refs
   // stay. Applied to quoted HTML only — never to the user's signature.
   const stripRemote = (html: string): string => {
-    const div = DOMPurify.sanitize(html || "", { RETURN_DOM: true, FORBID_ATTR: ["data-raven-src"] }) as HTMLElement;
+    const div = DOMPurify.sanitize(html || "", PURIFY_OPTS) as HTMLElement;
     for(const $el of [].slice.call(div.querySelectorAll("[srcset]")) as Element[]) $el.removeAttribute("srcset");
     for(const $img of [].slice.call(div.querySelectorAll("img, source")) as Element[]) {
       const s = ($img.getAttribute("src") || "").trim();
-      if(s && !/^(data:|cid:)/i.test(s)) $img.removeAttribute("src");
+      if(s && !isInlineRef(s)) $img.removeAttribute("src");
     }
     // Legacy background="https://…" fetches a remote image on open just like
     // <img src>; the compose iframe has no opt-in/CSP, so strip it from quoted
-    // content too (keep data:/cid:).
+    // content too (inline refs stay).
     for(const $el of [].slice.call(div.querySelectorAll("[background]")) as Element[]) {
       const b = ($el.getAttribute("background") || "").trim();
-      if(b && !/^(data:|cid:)/i.test(b)) $el.removeAttribute("background");
+      if(b && !isInlineRef(b)) $el.removeAttribute("background");
     }
     for(const $el of [].slice.call(div.querySelectorAll("[style]")) as HTMLElement[]) {
       const st = $el.getAttribute("style") || "";
       const cleaned = st.replace(/url\(\s*(['"]?)([^'")]*)\1\s*\)/gi, (whole: string, _q: string, ref: string) => {
         const u = (ref || "").trim();
-        return (!u || /^(data:|cid:)/i.test(u)) ? whole : "none";
+        return (!u || isInlineRef(u)) ? whole : "none";
       });
       if(cleaned !== st) $el.setAttribute("style", cleaned);
     }
@@ -220,6 +246,22 @@
     await open(drafts, res.message.id);
   }
 
+  // `attachments` is a creation-time directive that WildDuck does NOT round-trip: a GET
+  // on a saved draft returns `reference` as {mailbox, id, action} only. That silently
+  // broke forwarding. save() is create-new + delete-old, and send() calls save() before
+  // submitting, so the message that actually goes out is ALWAYS built from a reference
+  // read back off the server — i.e. one with the directive missing — and WildDuck never
+  // carries the original's attachments across. Every forward lost its images.
+  //
+  // The value is fully determined by the action, and `action` IS round-tripped: forward
+  // carries attachments, reply/replyAll do not. That is exactly what forward() and
+  // reply()/replyAll() set at creation time, so restoring it on read is not a guess.
+  const restoreReference = (reference: any) => {
+    if(!reference) return reference;
+    if(reference.attachments != null) return reference;
+    return { ...reference, attachments: reference.action === "forward" };
+  }
+
   export const open = async (mailbox: Mailbox, id: number) => {
     const tab = tabs.find(tab => tab.id === id);
     if(tab) {
@@ -239,7 +281,7 @@
         subject: message.subject,
         html,
         text,
-        reference: message.reference,
+        reference: restoreReference(message.reference),
         files: message.files || [],
         [kShowBcc]: false,
         [kShowCc]: false,
