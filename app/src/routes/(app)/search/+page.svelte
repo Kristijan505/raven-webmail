@@ -22,6 +22,14 @@
     results = data.results;
     nextCursor = data.nextCursor;
     total = data.total;
+    // Fresh results need not still contain everything that was selected: prev()
+    // reloads after a delete or move, and a new query replaces the set outright.
+    // Stale entries left in `selection` keep the toolbar in selection mode acting on
+    // rows that are no longer on screen — and possibly on messages that no longer
+    // exist. The mailbox list reconciles after its refetch for the same reason;
+    // search never did. Identity here is (mailbox, id), matching the keyed each.
+    const kept = new Set(results.map(m => `${m.mailbox}-${m.id}`));
+    selection = selection.filter(m => kept.has(`${m.mailbox}-${m.id}`));
   }
 
   let selection: Message[] = [];

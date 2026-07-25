@@ -25,26 +25,32 @@
   })!;
 
   let folders: Mailbox[] = [];
+  // These come from find(): a folder the account happens not to have — a Trash that was
+  // deleted, a Junk that was never provisioned — is undefined, and the `!` above only
+  // silences the type checker. Reading `.id` off it throws, and this is a reactive
+  // block, so the throw lands inside the Svelte flush and freezes the scheduler: the
+  // whole view goes inert, not just this menu. Guard each comparison and drop the
+  // missing entries from the result instead.
   $: {
-    if(mailbox.id === inbox.id) {
+    if(inbox && mailbox.id === inbox.id) {
       folders = [
         ...others,
         junk,
         trash,
       ];
-    } else if (mailbox.id === trash.id) {
+    } else if (trash && mailbox.id === trash.id) {
       folders = [
         inbox,
         ...others,
         junk
       ]
-    } else if(mailbox.id === junk.id) {
+    } else if(junk && mailbox.id === junk.id) {
       folders = [
         inbox,
         ...others,
         trash
       ]
-    } else if(mailbox.id === sent.id) {
+    } else if(sent && mailbox.id === sent.id) {
       folders = [
         trash
       ]
@@ -56,6 +62,8 @@
         trash,
       ]
     }
+    // Every branch above can name a folder this account does not have.
+    folders = folders.filter(Boolean);
   }
 
 
