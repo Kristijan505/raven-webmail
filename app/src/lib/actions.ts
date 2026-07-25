@@ -155,18 +155,19 @@ export const clickOut = (node: Node) => {
 import dompurify from "dompurify";
 import type { FullMessage, Message } from "./types";
 
-// Sanitize editor HTML and route any remote <img> (e.g. a signature's remote
-// logo) through the same-origin SSRF-guarded proxy, so it RENDERS under the
-// editor iframe's INHERITED CSP (img-src 'self' — a raw https logo would be
-// blocked). This is render-only: the original URL is stashed in data-raven-src
-// and restored by serializeEditorBody() before the body is copied back into the
-// draft, so saved/sent mail keeps the public URL (recipients can't load our
-// /api/proxy-image path). cid:/data:/attachment: srcs are left untouched.
-// Schemes mail content may carry. `cid:` and `attachment:` are how WildDuck refers to
-// inline parts; neither is fetchable by a browser. Deliberately narrower than
-// DOMPurify's default in the other direction — mail has no business carrying
-// ftp/sms/callto/xmpp/matrix. Shared by every pass that touches message or draft HTML.
-export const EDITOR_URI_REGEXP = /^(mailto|https?|cid|tel|attachment):/i;
+// Schemes mail content may carry, shared by every pass over message or draft HTML.
+//
+// `cid:` and `attachment:` are how WildDuck refers to inline parts and are the reason
+// this list exists at all — DOMPurify's default has neither, and leaving it at the
+// default silently dropped inline images out of forwards.
+//
+// The navigation schemes DOMPurify vouches for are kept: stripping ftp/sms/callto/
+// xmpp/matrix bought nothing (none of them fetch on load — they act on click) and
+// quietly broke such links in mail that legitimately carries them. What this list does
+// NOT restore is DOMPurify's fallback branch that also permits scheme-less values, so
+// an explicit scheme is still required — a relative URL in mail has no sensible base
+// and is not something we want resolving against our own origin.
+export const EDITOR_URI_REGEXP = /^(mailto|https?|ftp|sms|callto|xmpp|matrix|tel|cid|attachment):/i;
 
 // True for any reference to OUR OWN image proxy. Mail never legitimately points at it,
 // and a same-origin URL sails past a CSP whose img-src is 'self' — so an inbound
@@ -193,6 +194,17 @@ export const FETCHABLE_ATTRS: ReadonlyArray<readonly [string, string]> = [
   ["object", "data"],
 ];
 
+// Build the same-origin URL that serves an inline attachment.
+//
+// These parts come from server data rather than from the mail, so this is not a live
+// hole — but they are still interpolated into a URL, and an id containing `?`, `#` or
+// `%` would change WHICH resource is requested instead of being part of the path. The
+// server hardens its own side with seg(); this is the matching guard on ours.
+export const attachmentUrl = (mailbox: string, messageId: number | string, attachmentId: string): string =>
+  `/api/mailboxes/${encodeURIComponent(String(mailbox))}` +
+  `/messages/${encodeURIComponent(String(messageId))}` +
+  `/attachments/${encodeURIComponent(String(attachmentId))}`;
+
 // Drop every reference to our own proxy, whatever attribute it hides in.
 export const stripSelfProxyRefs = (root: ParentNode): void => {
   for(const $el of [].slice.call(root.querySelectorAll("*")) as Element[]) {
@@ -202,6 +214,13 @@ export const stripSelfProxyRefs = (root: ParentNode): void => {
   }
 };
 
+// Sanitize editor HTML and route any remote <img> (e.g. a signature's remote logo)
+// through the same-origin SSRF-guarded proxy, so it RENDERS under the editor iframe's
+// INHERITED CSP (img-src 'self' — a raw https logo would be blocked). This is
+// render-only: the original URL is stashed in data-raven-src and restored by
+// serializeEditorBody() before the body is copied back into the draft, so saved/sent
+// mail keeps the public URL (recipients can't load our /api/proxy-image path).
+// cid:/data:/attachment: srcs are left untouched.
 export const proxyRemoteImages = (html: string): string => {
   // FORBID data-raven-src on input: an attacker could embed <img src="cid:x"
   // data-raven-src="https://tracker"> in a sent message; without this, serialize
@@ -346,7 +365,7 @@ export const messageHTML = (node: HTMLElement, opts: string | { html: string, me
       $img.removeAttribute("src");
       const cid = m[2];
       const att = message?.attachments?.find(att => att.id === cid);
-      if(att) $img.setAttribute("src", `/api/mailboxes/${message!.mailbox}/messages/${message!.id}/attachments/${att.id}`);
+      if(att) $img.setAttribute("src", attachmentUrl(message!.mailbox, message!.id, att.id));
     } else if(/^data:/i.test(src)) {
       // Embedded base64 image — no network, no tracking; render as-is.
     } else if(src) {
@@ -370,7 +389,7 @@ export const messageHTML = (node: HTMLElement, opts: string | { html: string, me
     if(m) {
       $el.removeAttribute("background");
       const att = message?.attachments?.find(att => att.id === m[2]);
-      if(att) $el.setAttribute("background", `/api/mailboxes/${message!.mailbox}/messages/${message!.id}/attachments/${att.id}`);
+      if(att) $el.setAttribute("background", attachmentUrl(message!.mailbox, message!.id, att.id));
     } else if(/^data:/i.test(bg)) {
       // inline — keep
     } else if(bg) {
@@ -482,7 +501,7 @@ export const purify = (node: HTMLElement, opts?: string | { html: string, messag
       $img.removeAttribute("src");
       const cid = m[2];
       const att = message?.attachments?.find(att => att.id === cid);
-      if(att) $img.setAttribute("src", `/api/mailboxes/${message!.mailbox}/messages/${message!.id}/attachments/${att.id}`);
+      if(att) $img.setAttribute("src", attachmentUrl(message!.mailbox, message!.id, att.id));
     } else if(src) {
       // Remote image -> blocked by default (tracking-pixel / IP-leak defense).
       $img.removeAttribute("src");

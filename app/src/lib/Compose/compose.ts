@@ -68,7 +68,7 @@ export const kShowCc = Symbol("draft-show-cc");
 export const kSent = Symbol("draft-sent");
 
 import { crossfade, fly } from "svelte/transition";
-import { _delete, _post } from "$lib/util";
+import { _delete, _post, HttpError } from "$lib/util";
 import { Expunge } from "$lib/events";
 import type { Mailbox, User } from "$lib/types";
 
@@ -135,9 +135,21 @@ const saveNow = async (draft: Draft) => {
   // listed twice until a manual reload. We issued the delete, so we can announce
   // it ourselves — same event the SSE stream would deliver, so every open list
   // reconciles through the one code path.
-  _delete(`/api/mailboxes/${mailbox}/messages/${id}`)
+  // Retire the superseded draft. Deliberately not awaited — the replacement already
+  // exists and nothing should wait on a cleanup — but the failure must not be dropped
+  // on the floor either: if this delete fails, the old message stays in Drafts as an
+  // orphan, which is precisely the duplicate the save chain exists to prevent. Retry
+  // once for a transient blip, treat "already gone" as done, and report the rest to
+  // the console instead of pretending it worked.
+  const retire = () => _delete(`/api/mailboxes/${mailbox}/messages/${id}`);
+  const goneAlready = (e: any) => e instanceof HttpError && e.status === 404;
+  retire()
+    .catch(e => goneAlready(e) ? undefined : retire())
     .then(() => Expunge.dispatch({ command: "EXPUNGE", mailbox, uid: id }))
-    .catch(() => {})
+    .catch(e => {
+      if(goneAlready(e)) return Expunge.dispatch({ command: "EXPUNGE", mailbox, uid: id });
+      console.warn(`[raven] superseded draft ${id} could not be deleted; it may linger in Drafts`, e);
+    })
 
   // Advance the draft's id INSIDE the serialized section. Callers also assign the
   // returned id, but that happens a microtask or two later — and the next entry in the

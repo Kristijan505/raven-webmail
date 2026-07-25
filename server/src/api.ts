@@ -192,14 +192,35 @@ export const CreateMessageSchema = z.object({
 // refusing, so a folder created seconds ago can still be used immediately — the cache
 // can only ever save work, never cause a false rejection.
 const MAILBOX_IDS_TTL_MS = 30_000;
+// A cache miss forces a refetch (so a folder created seconds ago is usable right away),
+// which means a caller feeding a stream of DISTINCT bogus ids would turn every request
+// into an upstream call. Refresh at most this often, so that degrades to one call per
+// window instead of one per request.
+const MAILBOX_IDS_REFRESH_MIN_MS = 5_000;
+// Entries are small, but a Map that only ever grows is still a leak in a long-lived
+// process. Well above any realistic number of concurrently active users.
+const MAILBOX_IDS_MAX_ENTRIES = 1_000;
+
 const mailboxIdsCache = new Map<string, { ids: Set<string>; at: number }>();
 
 const ownedMailboxIds = async (req: Request, fresh: boolean): Promise<Set<string>> => {
   const uid = userId(req);
   const hit = mailboxIdsCache.get(uid);
-  if (!fresh && hit && Date.now() - hit.at < MAILBOX_IDS_TTL_MS) return hit.ids;
+  const age = hit ? Date.now() - hit.at : Infinity;
+  // `fresh` asks to bypass the normal TTL, but not the refresh floor.
+  if (hit && age < (fresh ? MAILBOX_IDS_REFRESH_MIN_MS : MAILBOX_IDS_TTL_MS)) return hit.ids;
+
   const boxes = await get(`/users/${uid}/mailboxes`, token(req));
   const ids = new Set<string>(((boxes?.results ?? []) as Array<{ id: unknown }>).map(b => String(b.id)));
+
+  // delete-then-set so a refreshed entry moves to the end: a Map preserves insertion
+  // order and re-setting an existing key does not update it, so without the delete the
+  // eviction below would drop whoever was seen first rather than least recently.
+  mailboxIdsCache.delete(uid);
+  if (mailboxIdsCache.size >= MAILBOX_IDS_MAX_ENTRIES) {
+    const oldest = mailboxIdsCache.keys().next().value;
+    if (oldest !== undefined) mailboxIdsCache.delete(oldest);
+  }
   mailboxIdsCache.set(uid, { ids, at: Date.now() });
   return ids;
 };
@@ -550,8 +571,15 @@ export const api = (config: Config) => {
       // worse — they would read "Password updated" and believe the other sessions were
       // evicted when they were not, which is the entire reason they changed it. So the
       // change succeeds and the client is told what actually happened.
+      // The flag answers "is it certain no other session survives?", NOT "was anything
+      // deleted" — zero deletions because there were no other sessions is success, and
+      // the UI must not warn about it. It is false only when the eviction could not be
+      // carried out at all. The count is logged so that is auditable after the fact.
       sessionsEvicted = await destroyOtherSessions(id, req.sessionID)
-        .then(() => true)
+        .then((count: number) => {
+          logger.info({ count }, "other sessions invalidated after password change");
+          return true;
+        })
         .catch((e: any) => {
           logger.error(
             { detail: String(e?.message) },

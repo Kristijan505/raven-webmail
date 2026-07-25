@@ -22,6 +22,13 @@
   let timer: any;
   let token = 1;
   let saved = true;
+  // Compose nulls `current` when the window is minimized or closed, and it does so
+  // BEFORE this component unmounts — so the teardown save at the bottom read null and
+  // bailed, silently losing everything typed since the last autosave. The guards there
+  // still have to stay (a null read throws inside the flush and freezes the scheduler),
+  // so hold on to the last real draft and save THAT on the way out.
+  let lastDraft: Draft = current;
+  $: if(current) lastDraft = current;
   $: onCurrent(current);
   const onCurrent = (current: Draft) => {
     // Same teardown race as dosave(): a null current here would make
@@ -85,7 +92,7 @@
     }
 
     return () => {
-      if(!saved) dosave(current, ++token);
+      if(!saved) dosave(lastDraft, ++token);
       clearTimeout(timer);
       runAll(off);
     }
