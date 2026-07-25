@@ -41,7 +41,7 @@
     const json: Messages = await _get(`/api/mailboxes/${mailbox.id}/messages`);
     // See reconcile.ts for why the next cursor decides the fate of rows below the
     // refetched page — that is what finally retires an orphaned autosaved draft.
-    const results = reconcileFirstPage(messages.results, json.results, !!json.nextCursor);
+    const results = reconcileFirstPage(messages.results, json.results, !!json.nextCursor, json.total);
     // Dropping stale in-range rows (the orphan-draft case) can otherwise strand a
     // selected row in `selection`, leaving the toolbar in selection mode acting on a
     // message that's no longer visible (and possibly already deleted). Reconcile the

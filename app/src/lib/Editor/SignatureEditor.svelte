@@ -41,7 +41,9 @@
     
     const iframe = document.createElement("iframe");
   
-    iframe.setAttribute("sandbox", "allow-forms allow-same-origin");
+    // No allow-forms — see Editor.svelte. contentEditable does not need it, and this
+    // document renders stored signature HTML.
+    iframe.setAttribute("sandbox", "allow-same-origin");
     iframe.srcdoc = "<!doctype html><html><head></head><body></body></html>";
 
     let obs: MutationObserver | null = null;

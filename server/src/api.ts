@@ -16,6 +16,8 @@ import * as https from "https";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import ipaddr from "ipaddr.js";
+import { destroyOtherSessions, sessionCookieClearOptions } from "./session";
+import { logger } from "./logger";
 
 const fromWeb = (Readable as any).fromWeb as ((stream: any) => NodeJS.ReadableStream);
 
@@ -103,10 +105,20 @@ const SignatureSchema = z.object({
 // Profile fields the webmail is allowed to update. zod strips every other key,
 // so a client cannot mass-assign sensitive WildDuck user fields (quota,
 // disabled, spamLevel, ...) by sending them in the PUT /me body.
-const MeSchema = z.object({
-  name: z.string().min(1).optional(),
-  existingPassword: z.string().optional(),
-  password: z.string().optional(),
+// The browser rejects passwords shorter than 6 (me/+page.svelte), but that is a UX
+// affordance, not a control: a direct API call could set a one-character password.
+// Mirror the rule here. The minimum also resolves an ambiguity in the refine below —
+// an empty string used to satisfy `!body.password` ("no password change") while
+// `update.password != null` further down would still try to apply it; now "" simply
+// fails validation. The maximum keeps an unbounded string out of the hashing path.
+const PASSWORD_MIN_LENGTH = 6;
+const PASSWORD_MAX_LENGTH = 256;
+
+// Exported so the password policy is regression-tested (see security.test.ts).
+export const MeSchema = z.object({
+  name: z.string().min(1).max(256).optional(),
+  existingPassword: z.string().max(PASSWORD_MAX_LENGTH).optional(),
+  password: z.string().min(PASSWORD_MIN_LENGTH).max(PASSWORD_MAX_LENGTH).optional(),
 }).refine(
   (body) => !body.password || !!body.existingPassword,
   { message: "existingPassword is required to change the password" }
@@ -167,6 +179,37 @@ export const CreateMessageSchema = z.object({
   files: z.array(z.string()).optional(),
   reference: ReferenceSchema.optional(),
 });
+
+// Mailbox ids that arrive in a JSON BODY are a different problem from the ones in the
+// path. Path segments are scoped by userId(req) and hardened by seg(), but `moveTo` and
+// `reference.mailbox` are forwarded to WildDuck verbatim, so tenancy for them rests
+// entirely on WildDuck re-checking ownership against the token's user. It does — but
+// that is a single layer between one user and another user's mail, in a product where
+// the backend has historically had bugs in exactly this area. Check it here too.
+//
+// The id set is cached briefly to keep this off the hot path (a reply autosaves every
+// ~1.5s and carries `reference` every time). A cache MISS always refetches before
+// refusing, so a folder created seconds ago can still be used immediately — the cache
+// can only ever save work, never cause a false rejection.
+const MAILBOX_IDS_TTL_MS = 30_000;
+const mailboxIdsCache = new Map<string, { ids: Set<string>; at: number }>();
+
+const ownedMailboxIds = async (req: Request, fresh: boolean): Promise<Set<string>> => {
+  const uid = userId(req);
+  const hit = mailboxIdsCache.get(uid);
+  if (!fresh && hit && Date.now() - hit.at < MAILBOX_IDS_TTL_MS) return hit.ids;
+  const boxes = await get(`/users/${uid}/mailboxes`, token(req));
+  const ids = new Set<string>(((boxes?.results ?? []) as Array<{ id: unknown }>).map(b => String(b.id)));
+  mailboxIdsCache.set(uid, { ids, at: Date.now() });
+  return ids;
+};
+
+const assertOwnsMailbox = async (req: Request, mailboxId: string): Promise<void> => {
+  const id = String(mailboxId);
+  if ((await ownedMailboxIds(req, false)).has(id)) return;
+  if ((await ownedMailboxIds(req, true)).has(id)) return;
+  throw new ApiError(StatusCodes.FORBIDDEN, "Invalid mailbox", "forbidden");
+};
 
 // Encode a single user-controlled URL path segment before interpolating it into
 // the upstream WildDuck URL. Express decodes %2F/%3F/%26 inside a path param and
@@ -254,6 +297,15 @@ export const assertPublicHttpUrl = async (raw: string): Promise<{ url: URL; ips:
   if (u.protocol !== "http:" && u.protocol !== "https:") {
     throw new ApiError(StatusCodes.BAD_REQUEST, "Unsupported image url scheme");
   }
+  // An image proxy has no business opening arbitrary ports. The private-IP check below
+  // only constrains WHICH host we reach, not which port: without this, a remote image
+  // URL of the form https://public-host:22 (or :25, :3306, …) still passes, and
+  // pinnedGet happily connects and writes an HTTP request at it — turning the proxy
+  // into a port prober / service fingerprinter for public hosts, from our IP. An empty
+  // port means "scheme default", which is exactly 80/443.
+  if (u.port !== "" && u.port !== "80" && u.port !== "443") {
+    throw new ApiError(StatusCodes.BAD_REQUEST, "Image url port not allowed");
+  }
   const host = u.hostname.replace(/^\[/, "").replace(/\]$/, "");
   let ips: string[];
   if (net.isIP(host)) {
@@ -340,6 +392,26 @@ const passwordChangeLimiter = rateLimit({
   message: (req: Request) => ({ error: { status: 429, message: errMsg(req, "too_many_attempts", "Too many attempts, please try again later") } }),
 });
 
+// Everything except login and the password change was unthrottled, so one authenticated
+// session could loop 25MB attachment uploads, image-proxy fetches, sends, or bulk
+// mailbox operations as fast as the link allowed — cheap for the caller, expensive for
+// us and for WildDuck behind us. Keyed by the session user, not the IP, so rotating
+// addresses does not reset the budget. These ceilings sit far above real interactive
+// use: they are here to stop a runaway script, not to pace a person.
+const sessionLimiter = (name: string, limit: number) => rateLimit({
+  windowMs: LOGIN_RATE_WINDOW_MS,
+  limit,
+  keyGenerator: (req: Request) => `${name}:${req.session?.authentication?.id ?? "unauthenticated"}`,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: (req: Request) => ({ error: { status: 429, message: errMsg(req, "too_many_attempts", "Too many attempts, please try again later") } }),
+});
+
+const uploadLimiter = sessionLimiter("storage", 200);
+const imageProxyLimiter = sessionLimiter("proxy-image", 1000);
+const submitLimiter = sessionLimiter("submit", 100);
+const bulkLimiter = sessionLimiter("bulk", 300);
+
 export const api = (config: Config) => {
   const api = Router();
 
@@ -380,10 +452,9 @@ export const api = (config: Config) => {
         resolve();
       });
     });
-    res.clearCookie(config.session_name || "raven.sid", {
-      path: "/",
-      domain: config.session_cookie_domain || undefined,
-    });
+    // Mirror the attributes the cookie was issued with, not just path/domain — a
+    // Set-Cookie that does not match them may not overwrite what the browser stored.
+    res.clearCookie(config.session_name || "raven.sid", sessionCookieClearOptions(config, req.secure));
     res.json({});
   }))
 
@@ -454,6 +525,26 @@ export const api = (config: Config) => {
       }
     }
     const json = await put(`/users/${id}`, token(req), update);
+
+    if (update.password != null) {
+      // Evict this user's OTHER sessions now that the password has changed. Changing
+      // the password is what someone does when they think a session was stolen, and
+      // without this it does not evict anything: every session holds its own WildDuck
+      // token from login, so a copied raven.sid keeps working. The current session is
+      // kept — it just proved knowledge of the old password above, and logging the
+      // user out of the tab they are working in would be gratuitous.
+      //
+      // Deliberately AFTER the change, and deliberately non-fatal: the password IS
+      // already changed at this point, so failing the response here would tell the
+      // user the opposite of the truth. Log loudly instead.
+      await destroyOtherSessions(id, req.sessionID).catch((e: any) => {
+        logger.error(
+          { detail: String(e?.message) },
+          "password changed but other sessions could not be invalidated",
+        );
+      });
+    }
+
     res.json(json);
   }))
 
@@ -499,19 +590,25 @@ export const api = (config: Config) => {
     res.json(body);
   }))
 
-  api.put("/mailboxes/:mailbox/messages", handler(async (req, res) => {
+  api.put("/mailboxes/:mailbox/messages", bulkLimiter, handler(async (req, res) => {
     const body = validate(() => BulkMessageUpdateSchema.parse(req.body));
+    // moveTo relocates real mail, so confirm the destination is the caller's own.
+    if (body.moveTo != null) await assertOwnsMailbox(req, body.moveTo);
     const json = await put(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages`, token(req), body);
     res.json(json);
   }))
 
   api.post("/mailboxes/:mailbox/messages", handler(async (req, res) => {
     const body = validate(() => CreateMessageSchema.parse(req.body));
+    // `reference` makes WildDuck read the referenced message to build the quoted body
+    // and carry attachments across — a read primitive pointed at a mailbox id the
+    // client chose, so it gets the same ownership check as moveTo.
+    if (body.reference?.mailbox != null) await assertOwnsMailbox(req, body.reference.mailbox);
     const json = await post(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages`, token(req), body);
     res.json(json);
   }))
 
-  api.delete("/mailboxes/:mailbox/messages", handler(async (req, res) => {
+  api.delete("/mailboxes/:mailbox/messages", bulkLimiter, handler(async (req, res) => {
     await del(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages`, token(req));
     res.json({});
   }))
@@ -544,7 +641,7 @@ export const api = (config: Config) => {
     res.json(body);
   }))
 
-  api.post("/mailboxes/:mailbox/messages/:message/submit", handler(async (req, res) => {
+  api.post("/mailboxes/:mailbox/messages/:message/submit", submitLimiter, handler(async (req, res) => {
     // The submit endpoint takes no meaningful client-supplied fields — the draft
     // to send is identified by the URL params alone. Accept an empty body only.
     const body = await post(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages/${seg(req.params.message)}/submit`, token(req), {});
@@ -615,7 +712,7 @@ export const api = (config: Config) => {
     res.json(json)
   }))
 
-  api.post("/storage", handler(async (req, res) => {
+  api.post("/storage", uploadLimiter, handler(async (req, res) => {
     const contentType = String(req.headers["content-type"] || "");
     const contentLength = String(req.headers["content-length"] || "");
     
@@ -660,13 +757,19 @@ export const api = (config: Config) => {
     })
 
     if(json?.error) {
-      throw new ApiError(back.ok ? 500 : back.status, String(json.error));
+      // Same treatment as client.ts's Requester. This route builds its own fetch()
+      // (it streams the upload body), so it never passed through that hardening and
+      // was still echoing the raw upstream message — internal paths, storage ids —
+      // straight to the browser.
+      const status = back.ok ? StatusCodes.INTERNAL_SERVER_ERROR : back.status;
+      if(DISPLAY_ERRORS) throw new ApiError(status, String(json.error));
+      throw new ApiError(status, "The mail server could not process the request", "backend_error");
     }
 
     res.status(back.status).json(json);
   }))
 
-  api.get("/proxy-image", handler(async (req, res) => {
+  api.get("/proxy-image", imageProxyLimiter, handler(async (req, res) => {
     // Require an authenticated session so this can never be used as an open proxy.
     if (req.session.authentication == null) {
       throw new ApiError(StatusCodes.FORBIDDEN, "Forbidden", "forbidden");

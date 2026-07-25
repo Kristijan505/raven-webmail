@@ -44,15 +44,21 @@ describe("reconcileFirstPage", () => {
       .toEqual([12, 11, 10]);
   });
 
-  it("never wipes the list on an empty response", () => {
+  it("keeps the list on an empty response when the total is unknown", () => {
     expect(ids(reconcileFirstPage([msg(9), msg(8)], [], false))).toEqual([9, 8]);
     expect(ids(reconcileFirstPage([msg(9), msg(8)], [], true))).toEqual([9, 8]);
   });
 
-  it("reports an empty mailbox as empty once the fresh page confirms it", () => {
-    // Distinct from the case above: the server DID return a page, it just has
-    // nothing left in it after the last draft was discarded.
-    expect(ids(reconcileFirstPage([msg(9)], [msg(9)], false))).toEqual([9]);
+  it("keeps the list on an empty page the server still counts as non-empty", () => {
+    // A blank page that contradicts the server's own total is a blip, not an empty
+    // mailbox — wiping here would clear a mailbox the user had scrolled through.
+    expect(ids(reconcileFirstPage([msg(9), msg(8)], [], false, 2))).toEqual([9, 8]);
+  });
+
+  it("clears the list when the server confirms the mailbox is empty", () => {
+    // The ghost-row case: the mailbox really did empty (discarded drafts, another
+    // client) and the EXPUNGE events never arrived, so only the refetch can say so.
+    expect(ids(reconcileFirstPage([msg(9), msg(8)], [], false, 0))).toEqual([]);
   });
 
   it("cannot emit a duplicate key even if fresh and current overlap", () => {

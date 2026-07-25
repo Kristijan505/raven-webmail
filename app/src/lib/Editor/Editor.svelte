@@ -39,7 +39,13 @@
   
   const contents = (node: HTMLElement) => {
     iframe = document.createElement("iframe");
-    iframe.setAttribute("sandbox", "allow-forms allow-same-origin");
+    // No allow-forms: contentEditable does not need it, and this document holds
+    // attacker-controlled HTML (the quoted body of a reply/forward). DOMPurify does
+    // not strip <form>/<input>/<button>, so without this a crafted inbound mail could
+    // render a working form inside the compose window — same-origin and authenticated.
+    // The inherited parent CSP pins form-action to 'self', so the blast radius was
+    // limited to our own origin, but there is no reason to allow submission at all.
+    iframe.setAttribute("sandbox", "allow-same-origin");
     iframe.srcdoc = "<!doctype html><html><head></head><body></body></html>";
 
     let obs: MutationObserver | null = null;

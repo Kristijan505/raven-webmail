@@ -32,16 +32,24 @@ export const dedupById = (messages: Message[]): Message[] => {
  * and a reconciliation that only trusted that window could never drop it — the
  * phantom just sat in the list until a manual reload.
  *
- * An empty fresh page always keeps the current list, so a transient empty
- * response can never wipe out a mailbox the user has scrolled through.
+ * An empty fresh page is ambiguous on its own — it is what a genuinely emptied mailbox
+ * looks like AND what a transient blank response looks like. Trusting it blindly lets
+ * one blip wipe a mailbox the user has scrolled through; never trusting it strands
+ * ghost rows when the mailbox really did empty and the EXPUNGE events were missed
+ * (another client, or an SSE reconnect). `serverTotal` — the count the server reports
+ * alongside the page — breaks the tie. When it is not supplied the cautious branch is
+ * taken and the current list is kept.
  */
 export const reconcileFirstPage = (
   current: Message[],
   fresh: Message[],
   hasOlderPages: boolean,
+  serverTotal?: number,
 ): Message[] => {
-  const minFreshId = fresh.length ? Math.min(...fresh.map(m => m.id)) : Infinity;
-  const keepOlder = !fresh.length || hasOlderPages;
-  const older = keepOlder ? current.filter(m => m.id < minFreshId) : [];
+  if (!fresh.length) {
+    return serverTotal === 0 ? [] : dedupById(current);
+  }
+  const minFreshId = Math.min(...fresh.map(m => m.id));
+  const older = hasOlderPages ? current.filter(m => m.id < minFreshId) : [];
   return dedupById([...fresh, ...older]);
 };

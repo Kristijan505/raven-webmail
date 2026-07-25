@@ -36,16 +36,31 @@
     timer = setTimeout(() => dosave(current, t), 1500);
   }
 
-  const dosave = async (current: Draft, t: number) => {
-    // current can be null if the compose tab/window was torn down before this
-    // debounced save fired (navigating away mid-edit) — guard the kSent read.
-    if(!current || current[kSent]) return;
-    const newId = await save(current);
-    // here we dont trigger an invalidate
-    current.id = newId;
-    if(t === token) {
-      saved = true;
-    }
+  // Saves run one at a time, chained onto this. Messages are immutable, so save() is
+  // CREATE-new + DELETE-old: two overlapping saves both read the SAME current.id, both
+  // create a message and both delete that one old id — so one of the two new messages
+  // is left behind in Drafts with nothing pointing at it. The debounce timer did not
+  // prevent this; it only cancels the NEXT scheduled save, never one already in flight,
+  // so any save slower than the 1500ms debounce (a large draft, a slow link) raced the
+  // next one. Queueing also fixes the id bookkeeping for free: only one save resolves
+  // at a time, so `current.id = newId` can no longer be clobbered out of order.
+  let queue: Promise<unknown> = Promise.resolve();
+
+  const dosave = (current: Draft, t: number): Promise<void> => {
+    queue = queue.catch(() => {}).then(async () => {
+      // Checked HERE, at execution time rather than enqueue time: current can be null
+      // if the compose window was torn down while we waited (navigating away mid-edit),
+      // and send() may have claimed the draft via kSent in the meantime — saving after
+      // that would resurrect a draft for a message already on its way out.
+      if(!current || current[kSent]) return;
+      const newId = await save(current);
+      // here we dont trigger an invalidate
+      current.id = newId;
+      if(t === token) {
+        saved = true;
+      }
+    });
+    return queue as Promise<void>;
   }
 
   const isDraftEquals = (src: Draft, target: Draft): boolean => {
