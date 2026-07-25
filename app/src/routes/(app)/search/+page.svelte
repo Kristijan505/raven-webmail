@@ -28,8 +28,15 @@
     // rows that are no longer on screen — and possibly on messages that no longer
     // exist. The mailbox list reconciles after its refetch for the same reason;
     // search never did. Identity here is (mailbox, id), matching the keyed each.
-    const kept = new Set(results.map(m => `${m.mailbox}-${m.id}`));
-    selection = selection.filter(m => kept.has(`${m.mailbox}-${m.id}`));
+    // Rebuilt FROM `results`, not filtered in place. Filtering would drop the entries
+    // that are gone but keep the surviving ones as the OLD Message objects, while the
+    // rows now render the new ones — and the toolbar mutates what is in `selection`
+    // (markAsSeen does `item.seen = v` and then re-renders from `results`). Selecting
+    // the same objects the list renders is what makes that optimistic update visible;
+    // otherwise a message marked read after a reload stays looking unread while the
+    // toolbar flips, and further clicks only toggle the toolbar.
+    const selected = new Set(selection.map(m => `${m.mailbox}-${m.id}`));
+    selection = results.filter(m => selected.has(`${m.mailbox}-${m.id}`));
   }
 
   let selection: Message[] = [];

@@ -32,35 +32,42 @@
   // whole view goes inert, not just this menu. Guard each comparison and drop the
   // missing entries from the result instead.
   $: {
-    if(inbox && mailbox.id === inbox.id) {
+    if(mailbox && inbox && mailbox.id === inbox.id) {
       folders = [
         ...others,
         junk,
         trash,
       ];
-    } else if (trash && mailbox.id === trash.id) {
+    } else if (mailbox && trash && mailbox.id === trash.id) {
       folders = [
         inbox,
         ...others,
         junk
       ]
-    } else if(junk && mailbox.id === junk.id) {
+    } else if(mailbox && junk && mailbox.id === junk.id) {
       folders = [
         inbox,
         ...others,
         trash
       ]
-    } else if(sent && mailbox.id === sent.id) {
+    } else if(mailbox && sent && mailbox.id === sent.id) {
       folders = [
         trash
       ]
-    } else if (others.some(item => item.id === mailbox.id)) {
+    } else if (mailbox && others.some(item => item.id === mailbox.id)) {
       folders = [
         inbox,
         ...others.filter(item => item.id !== mailbox.id),
         junk,
         trash,
       ]
+    } else {
+      // Drafts (and any other special-use folder without a branch) matches nothing
+      // above. Without this else, `folders` would silently keep whatever the previous
+      // mailbox produced — offering destinations computed for a different source. The
+      // markup hides the control on an empty list, so this reads as "no move target"
+      // rather than as a wrong one.
+      folders = [];
     }
     // Every branch above can name a folder this account does not have.
     folders = folders.filter(Boolean);
