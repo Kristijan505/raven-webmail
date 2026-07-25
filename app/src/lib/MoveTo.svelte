@@ -10,18 +10,23 @@
   export let mailbox: Mailbox;
   export let onMove: (mailbox: Mailbox) => void = () => {}
   export let open = false;
+  // The mail this menu is about. Destinations depend on which way each message
+  // travelled, and that is decided HERE, when the menu is built — which is what makes
+  // it work for a message already filed into a custom folder or sitting in Trash,
+  // where the folder itself gives nothing away.
+  export let messages: Directional[] = [];
 
   import type { Mailbox } from "./types";
+  import type { Directional } from "./moveTargets";
   import type { DashContext } from "./Dashboard/Dashboard.svelte";
 
-  const { mailboxes } = getContext("dash") as DashContext;
+  const { mailboxes, user } = getContext("dash") as DashContext;
 
 
   // Destination rules live in moveTargets.ts so they can be unit-tested on their own —
   // this is product semantics (what may be filed where), not view code, and it is the
-  // kind of rule a later refactor silently loosens. See that file for the reasoning and
-  // for the TODO about recording a message's origin.
-  $: folders = moveDestinations(mailbox, $mailboxes);
+  // kind of rule a later refactor silently loosens.
+  $: folders = moveDestinations(mailbox, $mailboxes, messages, $user?.address);
 
 
   import MoveTo from "~icons/mdi/folder-move-outline";

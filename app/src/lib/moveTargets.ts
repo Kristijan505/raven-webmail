@@ -22,6 +22,44 @@ const INBOX_PATH = "INBOX";
 // fails when that stops being true.
 const ACTION_FOLDERS = new Set([DRAFTS, SENT, JUNK, TRASH]);
 
+/** Just enough of a message to tell which way it travelled. */
+export type Directional = { from?: { address?: string } | null };
+
+/**
+ * Was this message sent by the account, or received by it?
+ *
+ * Decided when the menu opens, not recorded when the message moves — which is what
+ * makes it work for a message that is already sitting in a custom folder or in Trash,
+ * the case where nothing about the folder gives it away.
+ *
+ * The folder is consulted first wherever it is authoritative: anything in Sent was
+ * sent, anything in Inbox or Spam was received, and no comparison can override that.
+ * Only in the folders that carry no such meaning — custom ones and Trash — does the
+ * sender address decide.
+ *
+ * Two things it cannot get right, both bounded:
+ *  - An alias. Only the account's primary address is known here (WildDuck can hold
+ *    several, but nothing exposes them to the client), so mail sent FROM an alias and
+ *    since filed away reads as received. It then behaves exactly as it does today —
+ *    Inbox offered, Sent not — so nothing regresses; it simply is not improved.
+ *  - Mail you addressed to yourself, once moved out of the Inbox. It reads as sent,
+ *    so Inbox stops being offered for it.
+ * In both cases the answer is conservative: the message can still be filed into a
+ * custom folder, and Sent is never opened up to something that was not sent.
+ */
+export const wasSent = (
+  message: Directional,
+  mailbox: Mailbox,
+  accountAddress: string | null | undefined,
+): boolean => {
+  if (mailbox.specialUse === SENT) return true;
+  if (mailbox.specialUse === JUNK || mailbox.path === INBOX_PATH) return false;
+
+  const from = message?.from?.address?.trim().toLowerCase();
+  const mine = accountAddress?.trim().toLowerCase();
+  return !!from && !!mine && from === mine;
+};
+
 /**
  * The folders it makes sense to move the current selection INTO.
  *
@@ -49,17 +87,31 @@ const ACTION_FOLDERS = new Set([DRAFTS, SENT, JUNK, TRASH]);
 export const moveDestinations = (
   mailbox: Mailbox | undefined,
   mailboxes: Mailbox[],
+  messages: Directional[] = [],
+  accountAddress: string | null | undefined = null,
 ): Mailbox[] => {
   if (!mailbox || mailbox.specialUse === DRAFTS) return [];
 
   const inbox = mailboxes.find(m => m.path === INBOX_PATH);
+  const sent = mailboxes.find(m => m.specialUse === SENT);
   // Everything that is not an action folder and not the Inbox — which is listed
   // separately below, and carries no special-use attribute of its own to exclude it by.
   const filable = mailboxes.filter(m => !ACTION_FOLDERS.has(m.specialUse ?? "") && m.id !== inbox?.id);
 
-  const backToInbox = inbox && mailbox.path !== INBOX_PATH && mailbox.specialUse !== SENT
-    ? [inbox]
-    : [];
+  // Which way the selected mail travelled. A mixed selection satisfies neither test, so
+  // it gets custom folders only — the intersection of what is allowed for each half,
+  // rather than a menu that is wrong for some of what is selected.
+  const directions = messages.map(m => wasSent(m, mailbox, accountAddress));
+  const allSent = directions.length > 0 && directions.every(Boolean);
+  const allReceived = directions.length > 0 && !directions.some(Boolean);
 
-  return [...backToInbox, ...filable.filter(m => m.id !== mailbox.id)];
+  // Inbox is for mail that arrived. Offering it for something you sent is how a sent
+  // message could be made to look received — the whole reason this takes direction into
+  // account instead of just the current folder.
+  const backToInbox = inbox && mailbox.path !== INBOX_PATH && allReceived ? [inbox] : [];
+  // And Sent stays truthful: it opens up only for mail this account actually sent,
+  // which is what makes a sent message recoverable from Trash or from a custom folder.
+  const backToSent = sent && mailbox.specialUse !== SENT && allSent ? [sent] : [];
+
+  return [...backToInbox, ...backToSent, ...filable.filter(m => m.id !== mailbox.id)];
 };

@@ -299,7 +299,7 @@ import { locale } from "$lib/locale";
       </div>
 
       <div class="action-group">
-        <MoveTo {mailbox} onMove={move} />
+        <MoveTo {mailbox} messages={selection} onMove={move} />
       </div>
 
       <div class="selection-info">

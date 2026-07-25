@@ -268,7 +268,7 @@
         </div>
       </div>
 
-      <MoveTo {mailbox} onMove={move} />
+      <MoveTo {mailbox} messages={[message]} onMove={move} />
         
       <Attachments {mailbox} {message} />
 
