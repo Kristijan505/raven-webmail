@@ -203,11 +203,25 @@ const MAILBOX_IDS_MAX_ENTRIES = 1_000;
 
 const mailboxIdsCache = new Map<string, { ids: Set<string>; at: number }>();
 
+// Drop a user's cached ids. Called whenever THIS server changes their mailbox list, so
+// a folder can be used the instant it is created.
+//
+// Without it the refresh floor below turns into a false rejection: create a folder and
+// move mail into it within five seconds, and both the normal and the forced lookup
+// return the pre-creation set, so the BFF answers 403 for a folder the sidebar is
+// already showing. The floor exists to stop a stream of invalid ids each costing an
+// upstream call; invalidating here keeps that protection while removing the case where
+// the cache can be wrong about the user's own action.
+const forgetMailboxIds = (req: Request): void => {
+  mailboxIdsCache.delete(userId(req));
+};
+
 const ownedMailboxIds = async (req: Request, fresh: boolean): Promise<Set<string>> => {
   const uid = userId(req);
   const hit = mailboxIdsCache.get(uid);
   const age = hit ? Date.now() - hit.at : Infinity;
-  // `fresh` asks to bypass the normal TTL, but not the refresh floor.
+  // `fresh` asks to bypass the normal TTL, but not the refresh floor — see
+  // forgetMailboxIds above for why that is safe.
   if (hit && age < (fresh ? MAILBOX_IDS_REFRESH_MIN_MS : MAILBOX_IDS_TTL_MS)) return hit.ids;
 
   const boxes = await get(`/users/${uid}/mailboxes`, token(req));
@@ -608,17 +622,20 @@ export const api = (config: Config) => {
     const path = String(req.body?.path?.trim() || "");
     if(!path) throw new ApiError(StatusCodes.BAD_REQUEST, "'path' is required", "path_required");
     const json = await post(`/users/${userId(req)}/mailboxes`, token(req), { path });
+    forgetMailboxIds(req);
     res.json(json);
   }))
 
   api.delete("/mailboxes/:mailbox", handler(async (req, res) => {
     await del(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}`, token(req));
+    forgetMailboxIds(req);
     res.json({});
   }))
 
   api.put("/mailboxes/:mailbox", handler(async (req, res) => {
     const body = validate(() => MailboxUpdateSchema.parse(req.body));
     const json = await put(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}`, token(req), body);
+    forgetMailboxIds(req);
     res.json(json);
   }))
 

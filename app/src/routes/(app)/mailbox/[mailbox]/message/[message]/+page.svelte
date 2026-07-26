@@ -100,13 +100,18 @@
     await goto(`/mailbox/${mailbox.id}`);
   })
 
+  // Same guard as spam/delete above: an account without a Drafts folder would
+  // otherwise pass undefined down and surface a property-access error instead of
+  // saying what is actually missing.
   const reply = action(async () => {
-    const drafts = $mailboxes.find(isDrafts)!;
+    const drafts = $mailboxes.find(isDrafts);
+    if(!drafts) throw new Error($locale.Folder_not_available);
     await _replyAll($user, drafts, mailbox, message.id);
   })
 
   const forward = action(async () => {
-    const drafts = $mailboxes.find(isDrafts)!;
+    const drafts = $mailboxes.find(isDrafts);
+    if(!drafts) throw new Error($locale.Folder_not_available);
     await _forward(drafts, mailbox, message.id);
   })
 </script>

@@ -77,7 +77,10 @@
       // images are preserved.
       _document.body.innerHTML = proxyRemoteImages(draft.html);
       
-      const obs = new MutationObserver(() => {
+      // Assigned to the OUTER `obs`, not redeclared: a `const obs` here shadows it, so
+      // the disconnect in destroy() below would forever see null and the observer would
+      // outlive the editor. Every compose open leaks one otherwise.
+      obs = new MutationObserver(() => {
         draft.html = serializeEditorBody(_document.body);
         draft.text = _document.body.textContent;
       });
