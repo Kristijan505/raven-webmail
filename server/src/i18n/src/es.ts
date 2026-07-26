@@ -194,6 +194,7 @@ const locale: Locale = {
 
   Back_to: "Voler a",
   Reply: "Responder",
+  Reply_all: "Responder a todos",
   Forward: "Reenviar",
   Create: "Crear",
   Current_password: "Contraseña actual",

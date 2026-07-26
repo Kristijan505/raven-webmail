@@ -209,6 +209,7 @@ export default {
 
   Back_to: "Back to",
   Reply: "Reply",
+  Reply_all: "Reply all",
   Forward: "Forward",
   Create: "Create",
   Current_password: "Current password",

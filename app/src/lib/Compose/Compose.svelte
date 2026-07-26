@@ -51,7 +51,7 @@
   import { action, _get, _post } from "$lib/util";
   import type { FullMessage, Mailbox, User } from "$lib/types";
   import DOMPurify from "dompurify";
-  import { FETCHABLE_ATTRS, stripSelfProxyRefs } from "$lib/actions";
+  import { EDITOR_URI_REGEXP, FETCHABLE_ATTRS, stripSelfProxyRefs } from "$lib/actions";
   import { onMount } from "svelte";
   import { add } from "$lib/actions";
   import { locale } from "$lib/locale";
@@ -98,7 +98,7 @@
   const PURIFY_OPTS = {
     RETURN_DOM: true as const,
     FORBID_ATTR: ["data-raven-src"],
-    ALLOWED_URI_REGEXP: /^(mailto|https?|cid|tel|attachment):/i,
+    ALLOWED_URI_REGEXP: EDITOR_URI_REGEXP,
     ADD_DATA_URI_TAGS: ["img"],
   };
 

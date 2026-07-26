@@ -55,7 +55,10 @@
     // The search list had the identical defect; this is the same fix.
     const selectedIds = new Set(selection.map(m => m.id));
     selection = results.filter(m => selectedIds.has(m.id));
-    messages = { ...messages, results }
+    // nextCursor comes from the SAME refetched page as `results`; carrying the old
+    // one over left "load more" showing when there was nothing left to load, or
+    // hidden when there was — and next() would then page from a stale cursor.
+    messages = { ...messages, results, nextCursor: json.nextCursor }
   })
 
   const context: MailboxContext = { next, prev };

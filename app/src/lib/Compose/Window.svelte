@@ -6,8 +6,11 @@
   let cc: HTMLInputElement;
   let bcc: HTMLInputElement;
 
-  $: showCc = current?.[kShowCc] || current?.bcc?.length;
-  $: showBcc = current?.[kShowBcc] || current?.cc?.length;
+  // Each flag watches its OWN field. They were crossed, so a draft opened with
+  // recipients in Cc showed an empty Bcc box instead and hid the populated Cc one —
+  // the addresses were still there and still sent, just not on screen.
+  $: showCc = current?.[kShowCc] || current?.cc?.length;
+  $: showBcc = current?.[kShowBcc] || current?.bcc?.length;
 
   import { kSent, save } from "./compose";
   import { crossin, crossout } from "./compose";
@@ -40,7 +43,7 @@
     saved = false;
     const t = ++token;
     clearTimeout(timer);
-    timer = setTimeout(() => dosave(current, t), 1500);
+    timer = setTimeout(() => { void dosave(current, t).catch(reportSaveFailure); }, 1500);
   }
 
   // Ordering of the saves themselves is guaranteed by save() in compose.ts, which
@@ -52,6 +55,14 @@
   // one already running, so without it a save slower than the 1500ms debounce would let
   // the following one skip its check entirely.
   let queue: Promise<unknown> = Promise.resolve();
+
+  // `saved` stays false when a save fails, so the unsaved-changes dot remains on
+  // screen and the next edit retries — that is the user-facing signal. This only
+  // stops the rejection escaping as an unhandled promise, which it did at both call
+  // sites because neither awaited the returned chain.
+  const reportSaveFailure = (e: unknown) => {
+    console.warn("[raven] draft save failed; changes are still unsaved", e);
+  };
 
   const dosave = (current: Draft, t: number): Promise<void> => {
     queue = queue.catch(() => {}).then(async () => {
@@ -92,7 +103,7 @@
     }
 
     return () => {
-      if(!saved) dosave(lastDraft, ++token);
+      if(!saved) void dosave(lastDraft, ++token).catch(reportSaveFailure);
       clearTimeout(timer);
       runAll(off);
     }

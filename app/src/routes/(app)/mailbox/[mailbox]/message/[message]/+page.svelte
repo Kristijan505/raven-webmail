@@ -18,6 +18,7 @@
   import UnMarkSpam from "~icons/mdi/email-check-outline";
   import Resend from "~icons/mdi/email-send-outline";
   import Reply from "~icons/mdi/email-receive-outline";
+  import ReplyAllIcon from "~icons/mdi/reply-all-outline";
   import GoBack from "~icons/mdi/arrow-left";
   import Ripple from "$lib/Ripple.svelte";
   import { goto } from "$app/navigation";
@@ -55,7 +56,7 @@
   import type { DashContext } from "$lib/Dashboard/Dashboard.svelte";
   import Attachments from "$lib/Attachments.svelte";
   import { fly } from "svelte/transition";
-  import { _forward, _replyAll } from "$lib/Compose/compose";
+  import { _forward, _reply, _replyAll } from "$lib/Compose/compose";
   import { locale } from "$lib/locale";
   const { user, mailboxes } = getContext("dash") as DashContext;
 
@@ -103,7 +104,16 @@
   // Same guard as spam/delete above: an account without a Drafts folder would
   // otherwise pass undefined down and surface a property-access error instead of
   // saying what is actually missing.
+  // Reply answers the SENDER. It used to call _replyAll, so a button labelled "Reply"
+  // quietly addressed everyone on the original — easy to do by accident, and the
+  // dedicated _reply had been sitting unused. Reply-all is now its own button.
   const reply = action(async () => {
+    const drafts = $mailboxes.find(isDrafts);
+    if(!drafts) throw new Error($locale.Folder_not_available);
+    await _reply(drafts, mailbox, message.id);
+  })
+
+  const replyAll = action(async () => {
     const drafts = $mailboxes.find(isDrafts);
     if(!drafts) throw new Error($locale.Folder_not_available);
     await _replyAll($user, drafts, mailbox, message.id);
@@ -267,6 +277,11 @@
           {#if !isDrafts(mailbox) && !isSent(mailbox)}
             <div class="action btn-dark" use:clickable use:tooltip={$locale.Reply} on:click={reply}>
               <Reply />
+              <Ripple />
+            </div>
+
+            <div class="action btn-dark" use:clickable use:tooltip={$locale.Reply_all} on:click={replyAll}>
+              <ReplyAllIcon />
               <Ripple />
             </div>
           {/if}

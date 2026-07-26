@@ -211,6 +211,7 @@ const locale: Locale = {
 
   Back_to: "Natrag na",
   Reply: "Odgovori",
+  Reply_all: "Odgovori svima",
   Forward: "Proslijedi",
   Create: "Stvori",
   Current_password: "Trenutna lozinka",

@@ -196,6 +196,7 @@ const locale: Locale = {
 
   "Back_to": "Ritorna",
   "Reply": "Rispondi",
+  "Reply_all": "Rispondi a tutti",
   "Forward": "Inoltra",
   "Create": "Crea",
   "Current_password": "Password corrente",
