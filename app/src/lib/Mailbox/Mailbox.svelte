@@ -41,7 +41,7 @@
     const json: Messages = await _get(`/api/mailboxes/${mailbox.id}/messages`);
     // See reconcile.ts for why the next cursor decides the fate of rows below the
     // refetched page — that is what finally retires an orphaned autosaved draft.
-    const results = reconcileFirstPage(messages.results, json.results, !!json.nextCursor, json.total);
+    const { results, nextCursor } = reconcileFirstPage(messages, json);
     // Rebuild the selection FROM `results`, not by filtering the old array.
     //
     // Two things depend on this. Dropping rows the refetch no longer returns (the
@@ -55,10 +55,7 @@
     // The search list had the identical defect; this is the same fix.
     const selectedIds = new Set(selection.map(m => m.id));
     selection = results.filter(m => selectedIds.has(m.id));
-    // nextCursor comes from the SAME refetched page as `results`; carrying the old
-    // one over left "load more" showing when there was nothing left to load, or
-    // hidden when there was — and next() would then page from a stale cursor.
-    messages = { ...messages, results, nextCursor: json.nextCursor }
+    messages = { ...messages, results, nextCursor }
   })
 
   const context: MailboxContext = { next, prev };

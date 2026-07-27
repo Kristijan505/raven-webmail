@@ -45,16 +45,31 @@ export const dedupById = (messages: Message[]): Message[] => {
  * page-scoped it would read 0 for any empty page and this would clear the list on
  * exactly the transient blip the branch above exists to survive.
  */
+export type Page = { results: Message[]; nextCursor: string | false; total?: number };
+
 export const reconcileFirstPage = (
-  current: Message[],
-  fresh: Message[],
-  hasOlderPages: boolean,
-  serverTotal?: number,
-): Message[] => {
-  if (!fresh.length) {
-    return serverTotal === 0 ? [] : dedupById(current);
+  current: Page,
+  fresh: Page,
+): { results: Message[]; nextCursor: string | false } => {
+  if (!fresh.results.length) {
+    return fresh.total === 0
+      ? { results: [], nextCursor: false }
+      : { results: dedupById(current.results), nextCursor: current.nextCursor };
   }
-  const minFreshId = Math.min(...fresh.map(m => m.id));
-  const older = hasOlderPages ? current.filter(m => m.id < minFreshId) : [];
-  return dedupById([...fresh, ...older]);
+
+  const minFreshId = Math.min(...fresh.results.map(m => m.id));
+  const older = fresh.nextCursor ? current.results.filter(m => m.id < minFreshId) : [];
+  const results = dedupById([...fresh.results, ...older]);
+
+  // The cursor has to continue after the LAST row we hold, and the results and the
+  // cursor therefore have to be decided together — which is why they are returned
+  // together rather than left to the caller to pair up.
+  //
+  // When already-paginated rows are kept, the fresh page's cursor points only past page
+  // one, so adopting it makes "load more" refetch pages that are already on screen: the
+  // user clicks, dedup drops everything that comes back, and nothing appears to happen.
+  // The cursor we already had still points past the last page loaded, so it stays.
+  // Only when nothing older was retained does the fresh page describe the whole list,
+  // and its cursor becomes the right one.
+  return { results, nextCursor: older.length ? current.nextCursor : fresh.nextCursor };
 };

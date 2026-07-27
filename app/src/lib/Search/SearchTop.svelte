@@ -82,6 +82,7 @@ import { locale } from "$lib/locale";
     if(!trash) throw new Error($locale.Folder_not_available);
     const actions: Promise<void>[] = [];
     const toTrash = new Map<string, number[]>();
+    const processed: Message[] = [];
 
     for(const item of selection) {
       // A result can name a mailbox the sidebar does not know about (stale index, or a
@@ -89,6 +90,7 @@ import { locale } from "$lib/locale";
       // leaving the rest of the selection half-processed.
       const mailbox = mailboxMap.get(item.mailbox);
       if(!mailbox) continue;
+      processed.push(item);
       if(isTrash(mailbox) || isDrafts(mailbox)) {
         console.log("delete");
         actions.push(_delete(`/api/mailboxes/${item.mailbox}/messages/${item.id}`));
@@ -112,7 +114,7 @@ import { locale } from "$lib/locale";
 
     await Promise.all(actions);
 
-    removeSelection();
+    removeSelection(processed);
   })
 
   const toggleAll = () => {
@@ -123,9 +125,13 @@ import { locale } from "$lib/locale";
     }
   }
 
-  const removeSelection = () => {
-    const keys = selection.map(item => `${item.mailbox}-${item.id}`);
-    
+  // `processed` defaults to the whole selection, but the delete path passes only what
+  // it actually sent to the server: a hit whose mailbox the sidebar cannot resolve is
+  // skipped there, and removing it here anyway would show it as deleted and then have
+  // it reappear on the next refresh.
+  const removeSelection = (processed: Message[] = selection) => {
+    const keys = processed.map(item => `${item.mailbox}-${item.id}`);
+
     results = results.filter(item => !keys.includes(`${item.mailbox}-${item.id}`))
 
     if(results.length < 25) {

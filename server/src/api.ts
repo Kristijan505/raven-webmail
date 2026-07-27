@@ -212,8 +212,34 @@ const mailboxIdsCache = new Map<string, { ids: Set<string>; at: number }>();
 // already showing. The floor exists to stop a stream of invalid ids each costing an
 // upstream call; invalidating here keeps that protection while removing the case where
 // the cache can be wrong about the user's own action.
+// delete-then-set so a refreshed entry moves to the end: a Map preserves insertion
+// order and re-setting an existing key does not update it, so without the delete the
+// eviction would drop whoever was seen first rather than least recently.
+const cacheMailboxIds = (uid: string, ids: Set<string>): void => {
+  mailboxIdsCache.delete(uid);
+  if (mailboxIdsCache.size >= MAILBOX_IDS_MAX_ENTRIES) {
+    const oldest = mailboxIdsCache.keys().next().value;
+    if (oldest !== undefined) mailboxIdsCache.delete(oldest);
+  }
+  mailboxIdsCache.set(uid, { ids, at: Date.now() });
+};
+
 const forgetMailboxIds = (req: Request): void => {
   mailboxIdsCache.delete(userId(req));
+};
+
+// Seed the cache from a mailbox list we are already returning to the client.
+//
+// Invalidation alone only covers folders created THROUGH this server. A folder made by
+// an IMAP client or another webmail shows up in the sidebar as soon as the app fetches
+// the list — and until now the cache could still be missing it, so the very next move
+// or reply naming that folder got a 403 it did not deserve. Filling the cache from the
+// same response the sidebar is built from keeps the two in step by construction, and
+// costs nothing: the request has already happened.
+const rememberMailboxIds = (req: Request, boxes: unknown): void => {
+  const results = (boxes as { results?: Array<{ id: unknown }> })?.results;
+  if (!Array.isArray(results)) return;
+  cacheMailboxIds(userId(req), new Set(results.map(b => String(b.id))));
 };
 
 const ownedMailboxIds = async (req: Request, fresh: boolean): Promise<Set<string>> => {
@@ -227,15 +253,7 @@ const ownedMailboxIds = async (req: Request, fresh: boolean): Promise<Set<string
   const boxes = await get(`/users/${uid}/mailboxes`, token(req));
   const ids = new Set<string>(((boxes?.results ?? []) as Array<{ id: unknown }>).map(b => String(b.id)));
 
-  // delete-then-set so a refreshed entry moves to the end: a Map preserves insertion
-  // order and re-setting an existing key does not update it, so without the delete the
-  // eviction below would drop whoever was seen first rather than least recently.
-  mailboxIdsCache.delete(uid);
-  if (mailboxIdsCache.size >= MAILBOX_IDS_MAX_ENTRIES) {
-    const oldest = mailboxIdsCache.keys().next().value;
-    if (oldest !== undefined) mailboxIdsCache.delete(oldest);
-  }
-  mailboxIdsCache.set(uid, { ids, at: Date.now() });
+  cacheMailboxIds(uid, ids);
   return ids;
 };
 
@@ -615,6 +633,7 @@ export const api = (config: Config) => {
 
   api.get("/mailboxes", handler(async (req, res) => {
     const json = await get(`/users/${userId(req)}/mailboxes?counters=true`, token(req));
+    rememberMailboxIds(req, json);
     res.json(json);
   }))
 
@@ -926,6 +945,7 @@ export const api = (config: Config) => {
       get(`/users/${userId(req)}`, token(req)),
       get(`/users/${userId(req)}/mailboxes?counters=true`, token(req))
     ])
+    rememberMailboxIds(req, boxes);
 
     return res.json({
       props: {
