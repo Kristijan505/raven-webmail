@@ -163,11 +163,18 @@ import type { FullMessage, Message } from "./types";
 //
 // The navigation schemes DOMPurify vouches for are kept: stripping ftp/sms/callto/
 // xmpp/matrix bought nothing (none of them fetch on load — they act on click) and
-// quietly broke such links in mail that legitimately carries them. What this list does
-// NOT restore is DOMPurify's fallback branch that also permits scheme-less values, so
-// an explicit scheme is still required — a relative URL in mail has no sensible base
-// and is not something we want resolving against our own origin.
-export const EDITOR_URI_REGEXP = /^(mailto|https?|ftp|sms|callto|xmpp|matrix|tel|cid|attachment):/i;
+// quietly broke such links in mail that legitimately carries them.
+//
+// Protocol-relative refs (`//cdn/logo.png`) are allowed too. They are not scheme-less
+// in the problematic sense — they inherit one — and this file normalises them to https
+// in five places before proxying, which the regexp was silently defeating: a signature
+// or newsletter image written that way lost its src during sanitising, before any of
+// that deliberate handling could run. They stay gated exactly like any other remote
+// ref: stripped from quoted content, proxied only behind the images opt-in.
+//
+// What is still NOT restored is DOMPurify's fallback branch permitting truly
+// scheme-less values, so a path-relative URL cannot resolve against our own origin.
+export const EDITOR_URI_REGEXP = /^(?:(?:mailto|https?|ftp|sms|callto|xmpp|matrix|tel|cid|attachment):|\/\/)/i;
 
 // True for any reference to OUR OWN image proxy. Mail never legitimately points at it,
 // and a same-origin URL sails past a CSP whose img-src is 'self' — so an inbound

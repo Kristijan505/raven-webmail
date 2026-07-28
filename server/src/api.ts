@@ -224,8 +224,35 @@ const cacheMailboxIds = (uid: string, ids: Set<string>): void => {
   mailboxIdsCache.set(uid, { ids, at: Date.now() });
 };
 
+// Open /updates responses, so they can be closed when their session is evicted.
+// Bounded by the number of connected clients and cleaned up when each disconnects.
+type LiveStream = { user: string; session: string; close: () => void };
+const liveStreams = new Set<LiveStream>();
+
+// Cut off every live update stream for this user except the session doing the change.
+// Returns how many were closed.
+const closeOtherLiveStreams = (user: string, keepSession: string): number => {
+  let closed = 0;
+  for (const entry of [...liveStreams]) {
+    if (entry.user !== user || entry.session === keepSession) continue;
+    liveStreams.delete(entry);
+    try { entry.close(); closed++; } catch { /* already gone */ }
+  }
+  return closed;
+};
+
+// Bumped by every invalidation. A refresh captures it before its upstream call and
+// only writes the result if it has not moved: otherwise a lookup that started BEFORE a
+// folder was created could land after the invalidation and put the pre-creation list
+// back, timestamped now — and the refresh floor would then serve that stale set for
+// five seconds, which is exactly the false 403 the invalidation exists to prevent.
+// Discarding the write is safe: the caller still gets the ids it fetched, and the next
+// lookup finds no entry and refetches.
+let mailboxIdsGeneration = 0;
+
 const forgetMailboxIds = (req: Request): void => {
   mailboxIdsCache.delete(userId(req));
+  mailboxIdsGeneration++;
 };
 
 // Seed the cache from a mailbox list we are already returning to the client.
@@ -236,9 +263,10 @@ const forgetMailboxIds = (req: Request): void => {
 // or reply naming that folder got a 403 it did not deserve. Filling the cache from the
 // same response the sidebar is built from keeps the two in step by construction, and
 // costs nothing: the request has already happened.
-const rememberMailboxIds = (req: Request, boxes: unknown): void => {
+const rememberMailboxIds = (req: Request, boxes: unknown, generation: number): void => {
   const results = (boxes as { results?: Array<{ id: unknown }> })?.results;
   if (!Array.isArray(results)) return;
+  if (generation !== mailboxIdsGeneration) return;
   cacheMailboxIds(userId(req), new Set(results.map(b => String(b.id))));
 };
 
@@ -250,10 +278,11 @@ const ownedMailboxIds = async (req: Request, fresh: boolean): Promise<Set<string
   // forgetMailboxIds above for why that is safe.
   if (hit && age < (fresh ? MAILBOX_IDS_REFRESH_MIN_MS : MAILBOX_IDS_TTL_MS)) return hit.ids;
 
+  const generation = mailboxIdsGeneration;
   const boxes = await get(`/users/${uid}/mailboxes`, token(req));
   const ids = new Set<string>(((boxes?.results ?? []) as Array<{ id: unknown }>).map(b => String(b.id)));
 
-  cacheMailboxIds(uid, ids);
+  if (generation === mailboxIdsGeneration) cacheMailboxIds(uid, ids);
   return ids;
 };
 
@@ -557,6 +586,25 @@ export const api = (config: Config) => {
     const stream = await watch(userId(req), token(req));
     res.type("text/event-stream");
     stream.pipe(res);
+    // Registered so a password change can actually cut it off. This response captured
+    // its WildDuck token when it opened and keeps piping regardless of what happens to
+    // the session record afterwards — so without this, deleting a stolen session left
+    // that client still receiving counters and arrival/expunge events while PUT /me
+    // reported the eviction complete. The flag has to be true only when it is true.
+    const entry: LiveStream = {
+      user: userId(req),
+      session: req.sessionID,
+      // Tear down the upstream too, not just our response — otherwise the connection
+      // to WildDuck stays open behind a client that can no longer receive it.
+      close: () => {
+        (stream as NodeJS.ReadableStream & { destroy?: () => void }).destroy?.();
+        res.end();
+      },
+    };
+    liveStreams.add(entry);
+    const drop = () => liveStreams.delete(entry);
+    res.on("close", drop);
+    res.on("finish", drop);
   }))
 
   api.put("/me", passwordChangeLimiter, handler(async (req, res) => {
@@ -609,7 +657,11 @@ export const api = (config: Config) => {
       // carried out at all. The count is logged so that is auditable after the fact.
       sessionsEvicted = await destroyOtherSessions(id, req.sessionID)
         .then((count: number) => {
-          logger.info({ count }, "other sessions invalidated after password change");
+          // Session records alone are not enough: an /updates response already open
+          // holds its own token and would keep streaming. Close those too, or the flag
+          // below would claim more than was actually done.
+          const streams = closeOtherLiveStreams(id, req.sessionID);
+          logger.info({ count, streams }, "other sessions invalidated after password change");
           return true;
         })
         .catch((e: any) => {
@@ -632,8 +684,9 @@ export const api = (config: Config) => {
   }))
 
   api.get("/mailboxes", handler(async (req, res) => {
+    const generation = mailboxIdsGeneration;
     const json = await get(`/users/${userId(req)}/mailboxes?counters=true`, token(req));
-    rememberMailboxIds(req, json);
+    rememberMailboxIds(req, json, generation);
     res.json(json);
   }))
 
@@ -941,11 +994,12 @@ export const api = (config: Config) => {
   api.use("/pages", pages);
 
   pages.get("/layout", pageHandler(async (req, res) => {
+    const generation = mailboxIdsGeneration;
     const [user, boxes] = await Promise.all([
       get(`/users/${userId(req)}`, token(req)),
       get(`/users/${userId(req)}/mailboxes?counters=true`, token(req))
     ])
-    rememberMailboxIds(req, boxes);
+    rememberMailboxIds(req, boxes, generation);
 
     return res.json({
       props: {
