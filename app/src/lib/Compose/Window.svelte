@@ -6,8 +6,11 @@
   let cc: HTMLInputElement;
   let bcc: HTMLInputElement;
 
-  $: showCc = current?.[kShowCc] || current?.bcc?.length;
-  $: showBcc = current?.[kShowBcc] || current?.cc?.length;
+  // Each flag watches its OWN field. They were crossed, so a draft opened with
+  // recipients in Cc showed an empty Bcc box instead and hid the populated Cc one —
+  // the addresses were still there and still sent, just not on screen.
+  $: showCc = current?.[kShowCc] || current?.cc?.length;
+  $: showBcc = current?.[kShowBcc] || current?.bcc?.length;
 
   import { kSent, save } from "./compose";
   import { crossin, crossout } from "./compose";
@@ -22,6 +25,13 @@
   let timer: any;
   let token = 1;
   let saved = true;
+  // Compose nulls `current` when the window is minimized or closed, and it does so
+  // BEFORE this component unmounts — so the teardown save at the bottom read null and
+  // bailed, silently losing everything typed since the last autosave. The guards there
+  // still have to stay (a null read throws inside the flush and freezes the scheduler),
+  // so hold on to the last real draft and save THAT on the way out.
+  let lastDraft: Draft = current;
+  $: if(current) lastDraft = current;
   $: onCurrent(current);
   const onCurrent = (current: Draft) => {
     // Same teardown race as dosave(): a null current here would make
@@ -33,19 +43,42 @@
     saved = false;
     const t = ++token;
     clearTimeout(timer);
-    timer = setTimeout(() => dosave(current, t), 1500);
+    timer = setTimeout(() => { void dosave(current, t).catch(reportSaveFailure); }, 1500);
   }
 
-  const dosave = async (current: Draft, t: number) => {
-    // current can be null if the compose tab/window was torn down before this
-    // debounced save fired (navigating away mid-edit) — guard the kSent read.
-    if(!current || current[kSent]) return;
-    const newId = await save(current);
-    // here we dont trigger an invalidate
-    current.id = newId;
-    if(t === token) {
-      saved = true;
-    }
+  // Ordering of the saves themselves is guaranteed by save() in compose.ts, which
+  // serializes per draft — it has to be there rather than here, because send() calls
+  // save() directly and would otherwise race an autosave still in flight.
+  //
+  // This queue stays for a narrower reason: it keeps the kSent / teardown check next to
+  // the call it guards. The debounce timer only cancels the NEXT scheduled save, never
+  // one already running, so without it a save slower than the 1500ms debounce would let
+  // the following one skip its check entirely.
+  let queue: Promise<unknown> = Promise.resolve();
+
+  // `saved` stays false when a save fails, so the unsaved-changes dot remains on
+  // screen and the next edit retries — that is the user-facing signal. This only
+  // stops the rejection escaping as an unhandled promise, which it did at both call
+  // sites because neither awaited the returned chain.
+  const reportSaveFailure = (e: unknown) => {
+    console.warn("[raven] draft save failed; changes are still unsaved", e);
+  };
+
+  const dosave = (current: Draft, t: number): Promise<void> => {
+    queue = queue.catch(() => {}).then(async () => {
+      // Checked HERE, at execution time rather than enqueue time: current can be null
+      // if the compose window was torn down while we waited (navigating away mid-edit),
+      // and send() may have claimed the draft via kSent in the meantime — saving after
+      // that would resurrect a draft for a message already on its way out.
+      if(!current || current[kSent]) return;
+      const newId = await save(current);
+      // here we dont trigger an invalidate
+      current.id = newId;
+      if(t === token) {
+        saved = true;
+      }
+    });
+    return queue as Promise<void>;
   }
 
   const isDraftEquals = (src: Draft, target: Draft): boolean => {
@@ -70,7 +103,7 @@
     }
 
     return () => {
-      if(!saved) dosave(current, ++token);
+      if(!saved) void dosave(lastDraft, ++token).catch(reportSaveFailure);
       clearTimeout(timer);
       runAll(off);
     }

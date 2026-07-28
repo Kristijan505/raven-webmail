@@ -1,11 +1,14 @@
 <script lang="ts" context="module">
+  // `to` is optional on the wire — a draft saved before any recipient was typed comes
+  // back without it — and this runs for every row in Drafts/Sent. Indexing it directly
+  // threw there, and a throw in a row render freezes the whole list.
   const from = (mailbox: Mailbox, message: Message, l: any): string => {
     if(mailbox.specialUse === "\\Drafts" || mailbox.specialUse === "\\Sent") {
-      return `${l["To:"]} ${message.to[0]?.name || message.to[0]?.address || ""}`;
+      return `${l["To:"]} ${message.to?.[0]?.name || message.to?.[0]?.address || ""}`;
     }
 
     return message.from?.name || message.from?.address || "";
-  }  
+  }
 </script>
 
 <script lang="ts">
@@ -24,10 +27,16 @@
 
   $: selected = row ? selection.some(m => m.id === row.id) : false
 
+  // Handlers read `row`, not `message`, for the same reason the template does: during
+  // a keyed-each outro `message` can be undefined while the row is still on screen and
+  // still clickable. Dereferencing it there throws inside the Svelte flush, which does
+  // not just lose the click — it freezes the scheduler, leaving the whole list inert
+  // (dead toolbar, broken select-all) until a reload.
   const toggleSelection = () => {
-    const v = selection.filter(m => m.id !== message.id);
+    if(!row) return;
+    const v = selection.filter(m => m.id !== row.id);
     if(selected) selection = v;
-    else selection = [...v, message];
+    else selection = [...v, row];
   }
 
   import Ripple from "$lib/Ripple.svelte";
@@ -44,20 +53,23 @@
   import { locale } from "$lib/locale";
   import { _open } from "$lib/Compose/compose";
   const flag = action(async () => {
-    message.flagged = !message.flagged;
-    await _put(`/api/mailboxes/${mailbox.id}/messages/${message.id}/flag`, {
-      value: message.flagged
+    if(!row) return;
+    const value = !row.flagged;
+    row.flagged = value;
+    await _put(`/api/mailboxes/${mailbox.id}/messages/${row.id}/flag`, {
+      value
     }).catch(e => {
-      message.flagged = !message.flagged;
+      row.flagged = !value;
       throw e;
     })
   })
 
   const click = action(async (event: MouseEvent) => {
+    if(!row) return;
     if(isDrafts(mailbox)) {
       event.preventDefault();
       event.stopPropagation();
-      await _open(mailbox, message.id);
+      await _open(mailbox, row.id);
     }
   })
 </script>

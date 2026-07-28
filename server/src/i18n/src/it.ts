@@ -189,12 +189,14 @@ const locale: Locale = {
     "Deleting_process": "Il processo di eliminazione sta girando in background: ci vorrà un po'...",
     "Message_sent": "Messaggio inviato",
     "Password_updated": "Password aggiornata",
+    "Password_updated_sessions_warning": "Password aggiornata, ma altre sessioni potrebbero essere ancora attive",
     "Name_updated": "Nome aggiornato",
     "All_messages_deleted": "Tutti i messaggi sono stati eliminati"
   },
 
   "Back_to": "Ritorna",
   "Reply": "Rispondi",
+  "Reply_all": "Rispondi a tutti",
   "Forward": "Inoltra",
   "Create": "Crea",
   "Current_password": "Password corrente",
@@ -215,6 +217,7 @@ const locale: Locale = {
   "Offline_message": "Hai bisogno di una connessione per usare questa webmail",
 
   "Error_message": "Assicurati di avere una connessione attiva",
+  "Folder_not_available": "Questa cartella non è disponibile in questo account",
   "Take_me_to_my_inbox": "Vai alla posta in arrivo",
 
   "Toggle_code_view": "Codice on/off",

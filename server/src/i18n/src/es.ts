@@ -187,12 +187,14 @@ const locale: Locale = {
     Deleting_process: "Corriendo el proceso de eliminación en segundo plano, esto puede tomar un tiempo",
     Message_sent: "Mensaje enviado",
     Password_updated: "Contraseña actualizada",
+    Password_updated_sessions_warning: "Contraseña actualizada, pero es posible que otras sesiones sigan abiertas",
     Name_updated: "Nombre actualizado",
     All_messages_deleted: "Todos los mensajes fueron eliminados",
   },
 
   Back_to: "Voler a",
   Reply: "Responder",
+  Reply_all: "Responder a todos",
   Forward: "Reenviar",
   Create: "Crear",
   Current_password: "Contraseña actual",
@@ -213,6 +215,7 @@ const locale: Locale = {
   Offline_message: "Necesitas tener acceso a internet para usar el webmail",
 
   Error_message: "Asegurate de tener una conexión a internet",
+  Folder_not_available: "Esa carpeta no está disponible en esta cuenta",
   Take_me_to_my_inbox: "Ir al inicio",
 
   Toggle_code_view: "Vista de código",

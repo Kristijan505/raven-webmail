@@ -18,6 +18,7 @@
   import UnMarkSpam from "~icons/mdi/email-check-outline";
   import Resend from "~icons/mdi/email-send-outline";
   import Reply from "~icons/mdi/email-receive-outline";
+  import ReplyAllIcon from "~icons/mdi/reply-all-outline";
   import GoBack from "~icons/mdi/arrow-left";
   import Ripple from "$lib/Ripple.svelte";
   import { goto } from "$app/navigation";
@@ -55,7 +56,7 @@
   import type { DashContext } from "$lib/Dashboard/Dashboard.svelte";
   import Attachments from "$lib/Attachments.svelte";
   import { fly } from "svelte/transition";
-  import { _forward, _replyAll } from "$lib/Compose/compose";
+  import { _forward, _reply, _replyAll } from "$lib/Compose/compose";
   import { locale } from "$lib/locale";
   const { user, mailboxes } = getContext("dash") as DashContext;
 
@@ -72,20 +73,28 @@
     }
   })
 
+  // Same reasoning as Top.svelte: with Spam and Trash gone from the move menu, these
+  // buttons are the only route, so a missing folder has to be reported, not asserted.
   const spam = action(async () => {
-    if(isJunk(mailbox)) {
-      await move($mailboxes.find(isInbox)!)
-    } else {
-      await move($mailboxes.find(isJunk)!);
-    }
+    const to = isJunk(mailbox) ? $mailboxes.find(isInbox) : $mailboxes.find(isJunk);
+    if(!to) throw new Error($locale.Folder_not_available);
+    await move(to);
   })
 
   const del = action(async () => {
-    if(isTrash(mailbox) || isJunk(mailbox)) {
+    // Junk deliberately NOT permanent here. The tooltip in Junk reads "Delete", not
+    // "Delete permanently" (that wording is reserved for Trash), and Clear-folder in
+    // Junk moves everything to Trash rather than erasing it — so a single Delete that
+    // erased outright contradicted both its own label and the button beside it. It is
+    // also the only non-destructive way out of Junk now that the move menu leaves
+    // Trash to the dedicated button. Permanent deletion stays where the label says so.
+    if(isTrash(mailbox)) {
       await _delete(`/api/mailboxes/${mailbox.id}/messages/${message.id}`);
       await goto(`/mailbox/${mailbox.id}`);
     } else {
-      await move($mailboxes.find(isTrash)!);
+      const trash = $mailboxes.find(isTrash);
+      if(!trash) throw new Error($locale.Folder_not_available);
+      await move(trash);
     }
   })
 
@@ -98,13 +107,27 @@
     await goto(`/mailbox/${mailbox.id}`);
   })
 
+  // Same guard as spam/delete above: an account without a Drafts folder would
+  // otherwise pass undefined down and surface a property-access error instead of
+  // saying what is actually missing.
+  // Reply answers the SENDER. It used to call _replyAll, so a button labelled "Reply"
+  // quietly addressed everyone on the original — easy to do by accident, and the
+  // dedicated _reply had been sitting unused. Reply-all is now its own button.
   const reply = action(async () => {
-    const drafts = $mailboxes.find(isDrafts)!;
+    const drafts = $mailboxes.find(isDrafts);
+    if(!drafts) throw new Error($locale.Folder_not_available);
+    await _reply(drafts, mailbox, message.id);
+  })
+
+  const replyAll = action(async () => {
+    const drafts = $mailboxes.find(isDrafts);
+    if(!drafts) throw new Error($locale.Folder_not_available);
     await _replyAll($user, drafts, mailbox, message.id);
   })
 
   const forward = action(async () => {
-    const drafts = $mailboxes.find(isDrafts)!;
+    const drafts = $mailboxes.find(isDrafts);
+    if(!drafts) throw new Error($locale.Folder_not_available);
     await _forward(drafts, mailbox, message.id);
   })
 </script>
@@ -262,11 +285,16 @@
               <Reply />
               <Ripple />
             </div>
+
+            <div class="action btn-dark" use:clickable use:tooltip={$locale.Reply_all} on:click={replyAll}>
+              <ReplyAllIcon />
+              <Ripple />
+            </div>
           {/if}
         </div>
       </div>
 
-      <MoveTo {mailbox} onMove={move} />
+      <MoveTo {mailbox} messages={[message]} onMove={move} />
         
       <Attachments {mailbox} {message} />
 

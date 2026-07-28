@@ -39,7 +39,13 @@
   
   const contents = (node: HTMLElement) => {
     iframe = document.createElement("iframe");
-    iframe.setAttribute("sandbox", "allow-forms allow-same-origin");
+    // No allow-forms: contentEditable does not need it, and this document holds
+    // attacker-controlled HTML (the quoted body of a reply/forward). DOMPurify does
+    // not strip <form>/<input>/<button>, so without this a crafted inbound mail could
+    // render a working form inside the compose window — same-origin and authenticated.
+    // The inherited parent CSP pins form-action to 'self', so the blast radius was
+    // limited to our own origin, but there is no reason to allow submission at all.
+    iframe.setAttribute("sandbox", "allow-same-origin");
     iframe.srcdoc = "<!doctype html><html><head></head><body></body></html>";
 
     let obs: MutationObserver | null = null;
@@ -71,7 +77,10 @@
       // images are preserved.
       _document.body.innerHTML = proxyRemoteImages(draft.html);
       
-      const obs = new MutationObserver(() => {
+      // Assigned to the OUTER `obs`, not redeclared: a `const obs` here shadows it, so
+      // the disconnect in destroy() below would forever see null and the observer would
+      // outlive the editor. Every compose open leaks one otherwise.
+      obs = new MutationObserver(() => {
         draft.html = serializeEditorBody(_document.body);
         draft.text = _document.body.textContent;
       });

@@ -63,24 +63,31 @@ import { locale } from "$lib/locale";
     selection = [...selection]; 
   })
 
+  // These lookups used to assert non-null. They are the ONLY route to spam and delete
+  // now that the move menu no longer lists Spam and Trash, so an account missing one of
+  // those folders would leave the button dead with a generic failure. Say what is wrong
+  // instead — action() surfaces a thrown message to the user.
   const spam = action(async () => {
-    if(isJunk(mailbox)) {
-      const inbox = $mailboxes.find(isInbox)!;
-      await move(inbox);
-    } else {
-      const junk = $mailboxes.find(isJunk)!;
-      await move(junk);
-    }
+    const to = isJunk(mailbox) ? $mailboxes.find(isInbox) : $mailboxes.find(isJunk);
+    if(!to) throw new Error($locale.Folder_not_available);
+    await move(to);
   })
 
   const del = action(async () => {
-    if(isTrash(mailbox) || isJunk(mailbox)) {
+    // Junk deliberately NOT permanent here. The tooltip in Junk reads "Delete", not
+    // "Delete permanently" (that wording is reserved for Trash), and Clear-folder in
+    // Junk moves everything to Trash rather than erasing it — so a single Delete that
+    // erased outright contradicted both its own label and the button beside it. It is
+    // also the only non-destructive way out of Junk now that the move menu leaves
+    // Trash to the dedicated button. Permanent deletion stays where the label says so.
+    if(isTrash(mailbox)) {
       await Promise.all(selection.map(async item => {
         await _delete(`/api/mailboxes/${mailbox.id}/messages/${item.id}`);
       }))
       removeSelection();
     } else {
-      const trash = $mailboxes.find(isTrash)!;
+      const trash = $mailboxes.find(isTrash);
+      if(!trash) throw new Error($locale.Folder_not_available);
       move(trash);
     }
   })
@@ -94,7 +101,8 @@ import { locale } from "$lib/locale";
           _error(e?.message)
         })
     } else {
-      const trash = $mailboxes.find(isTrash)!;
+      const trash = $mailboxes.find(isTrash);
+      if(!trash) throw new Error($locale.Folder_not_available);
       _put(`/api/mailboxes/${mailbox.id}/messages`, {
         message: `1:${Number.MAX_SAFE_INTEGER}`,
         moveTo: trash.id,
@@ -297,7 +305,7 @@ import { locale } from "$lib/locale";
       </div>
 
       <div class="action-group">
-        <MoveTo {mailbox} onMove={move} />
+        <MoveTo {mailbox} messages={selection} onMove={move} />
       </div>
 
       <div class="selection-info">

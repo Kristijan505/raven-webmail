@@ -16,6 +16,8 @@ import * as https from "https";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import ipaddr from "ipaddr.js";
+import { destroyOtherSessions, rotateSession, sessionCookieClearOptions } from "./session";
+import { logger } from "./logger";
 
 const fromWeb = (Readable as any).fromWeb as ((stream: any) => NodeJS.ReadableStream);
 
@@ -103,10 +105,20 @@ const SignatureSchema = z.object({
 // Profile fields the webmail is allowed to update. zod strips every other key,
 // so a client cannot mass-assign sensitive WildDuck user fields (quota,
 // disabled, spamLevel, ...) by sending them in the PUT /me body.
-const MeSchema = z.object({
-  name: z.string().min(1).optional(),
-  existingPassword: z.string().optional(),
-  password: z.string().optional(),
+// The browser rejects passwords shorter than 6 (me/+page.svelte), but that is a UX
+// affordance, not a control: a direct API call could set a one-character password.
+// Mirror the rule here. The minimum also resolves an ambiguity in the refine below —
+// an empty string used to satisfy `!body.password` ("no password change") while
+// `update.password != null` further down would still try to apply it; now "" simply
+// fails validation. The maximum keeps an unbounded string out of the hashing path.
+const PASSWORD_MIN_LENGTH = 6;
+const PASSWORD_MAX_LENGTH = 256;
+
+// Exported so the password policy is regression-tested (see security.test.ts).
+export const MeSchema = z.object({
+  name: z.string().min(1).max(256).optional(),
+  existingPassword: z.string().max(PASSWORD_MAX_LENGTH).optional(),
+  password: z.string().min(PASSWORD_MIN_LENGTH).max(PASSWORD_MAX_LENGTH).optional(),
 }).refine(
   (body) => !body.password || !!body.existingPassword,
   { message: "existingPassword is required to change the password" }
@@ -167,6 +179,158 @@ export const CreateMessageSchema = z.object({
   files: z.array(z.string()).optional(),
   reference: ReferenceSchema.optional(),
 });
+
+// Mailbox ids that arrive in a JSON BODY are a different problem from the ones in the
+// path. Path segments are scoped by userId(req) and hardened by seg(), but `moveTo` and
+// `reference.mailbox` are forwarded to WildDuck verbatim, so tenancy for them rests
+// entirely on WildDuck re-checking ownership against the token's user. It does — but
+// that is a single layer between one user and another user's mail, in a product where
+// the backend has historically had bugs in exactly this area. Check it here too.
+//
+// The id set is cached briefly to keep this off the hot path (a reply autosaves every
+// ~1.5s and carries `reference` every time). A cache MISS always refetches before
+// refusing, so a folder created seconds ago can still be used immediately — the cache
+// can only ever save work, never cause a false rejection.
+const MAILBOX_IDS_TTL_MS = 30_000;
+// A cache miss forces a refetch (so a folder created seconds ago is usable right away),
+// which means a caller feeding a stream of DISTINCT bogus ids would turn every request
+// into an upstream call. Refresh at most this often, so that degrades to one call per
+// window instead of one per request.
+const MAILBOX_IDS_REFRESH_MIN_MS = 5_000;
+// Entries are small, but a Map that only ever grows is still a leak in a long-lived
+// process. Well above any realistic number of concurrently active users.
+const MAILBOX_IDS_MAX_ENTRIES = 1_000;
+
+const mailboxIdsCache = new Map<string, { ids: Set<string>; at: number }>();
+
+// Drop a user's cached ids. Called whenever THIS server changes their mailbox list, so
+// a folder can be used the instant it is created.
+//
+// Without it the refresh floor below turns into a false rejection: create a folder and
+// move mail into it within five seconds, and both the normal and the forced lookup
+// return the pre-creation set, so the BFF answers 403 for a folder the sidebar is
+// already showing. The floor exists to stop a stream of invalid ids each costing an
+// upstream call; invalidating here keeps that protection while removing the case where
+// the cache can be wrong about the user's own action.
+// delete-then-set so a refreshed entry moves to the end: a Map preserves insertion
+// order and re-setting an existing key does not update it, so without the delete the
+// eviction would drop whoever was seen first rather than least recently.
+const cacheMailboxIds = (uid: string, ids: Set<string>): void => {
+  mailboxIdsCache.delete(uid);
+  if (mailboxIdsCache.size >= MAILBOX_IDS_MAX_ENTRIES) {
+    const oldest = mailboxIdsCache.keys().next().value;
+    if (oldest !== undefined) mailboxIdsCache.delete(oldest);
+  }
+  mailboxIdsCache.set(uid, { ids, at: Date.now() });
+};
+
+// Open /updates responses, so they can be closed when their session is evicted.
+// Bounded by the number of connected clients and cleaned up when each disconnects.
+//
+// PROCESS-LOCAL, and that is a real limit on what sessionsEvicted can promise. Session
+// records live in Mongo and are therefore shared, so after an eviction any NEW request
+// fails auth on every instance. An already-open stream is different: it holds the
+// WildDuck token it captured at open time in memory, and only the instance it is
+// connected to can reach it. Run more than one instance and a password change closes
+// the streams on the instance handling it while identical streams elsewhere keep
+// delivering, with the flag still reporting a complete eviction.
+//
+// Deploying a single instance per environment is what makes the flag true today, so
+// this holds as long as that does. Scaling out needs the eviction broadcast between
+// instances (shared pub/sub) — or the flag downgraded to say what it can actually
+// vouch for.
+type LiveStream = { user: string; session: string; close: () => void };
+const liveStreams = new Set<LiveStream>();
+
+// The last eviction seen for a user: which session survived it, and a counter that
+// only moves forward. A stream opening while an eviction runs would otherwise slip
+// through — watch() is awaited before the stream can be registered, so an eviction
+// that lands in that window finds nothing to close, reports success, and then the
+// pending open registers a stream still holding the old token. Comparing the counter
+// captured before the await against this tells that stream it was already evicted.
+//
+// Only ever needed to catch an open that was ALREADY in flight, which resolves in
+// milliseconds — so entries are swept on write rather than kept for the life of the
+// process. Without that the map would hold one row, with a user and session id in it,
+// for every account that has ever changed a password since boot.
+const EVICTION_MEMORY_MS = 10 * 60_000;
+
+let evictionCounter = 0;
+const lastEviction = new Map<string, { keep: string; at: number; ts: number }>();
+
+const wasEvictedSince = (user: string, session: string, since: number): boolean => {
+  const e = lastEviction.get(user);
+  return !!e && e.at > since && e.keep !== session;
+};
+
+// Cut off every live update stream for this user except the session doing the change.
+// Returns how many were closed.
+const closeOtherLiveStreams = (user: string, keepSession: string): number => {
+  const now = Date.now();
+  for (const [key, entry] of lastEviction) {
+    if (now - entry.ts > EVICTION_MEMORY_MS) lastEviction.delete(key);
+  }
+  lastEviction.set(user, { keep: keepSession, at: ++evictionCounter, ts: now });
+  let closed = 0;
+  for (const entry of [...liveStreams]) {
+    if (entry.user !== user || entry.session === keepSession) continue;
+    liveStreams.delete(entry);
+    try { entry.close(); closed++; } catch { /* already gone */ }
+  }
+  return closed;
+};
+
+// Bumped by every invalidation. A refresh captures it before its upstream call and
+// only writes the result if it has not moved: otherwise a lookup that started BEFORE a
+// folder was created could land after the invalidation and put the pre-creation list
+// back, timestamped now — and the refresh floor would then serve that stale set for
+// five seconds, which is exactly the false 403 the invalidation exists to prevent.
+// Discarding the write is safe: the caller still gets the ids it fetched, and the next
+// lookup finds no entry and refetches.
+let mailboxIdsGeneration = 0;
+
+const forgetMailboxIds = (req: Request): void => {
+  mailboxIdsCache.delete(userId(req));
+  mailboxIdsGeneration++;
+};
+
+// Seed the cache from a mailbox list we are already returning to the client.
+//
+// Invalidation alone only covers folders created THROUGH this server. A folder made by
+// an IMAP client or another webmail shows up in the sidebar as soon as the app fetches
+// the list — and until now the cache could still be missing it, so the very next move
+// or reply naming that folder got a 403 it did not deserve. Filling the cache from the
+// same response the sidebar is built from keeps the two in step by construction, and
+// costs nothing: the request has already happened.
+const rememberMailboxIds = (req: Request, boxes: unknown, generation: number): void => {
+  const results = (boxes as { results?: Array<{ id: unknown }> })?.results;
+  if (!Array.isArray(results)) return;
+  if (generation !== mailboxIdsGeneration) return;
+  cacheMailboxIds(userId(req), new Set(results.map(b => String(b.id))));
+};
+
+const ownedMailboxIds = async (req: Request, fresh: boolean): Promise<Set<string>> => {
+  const uid = userId(req);
+  const hit = mailboxIdsCache.get(uid);
+  const age = hit ? Date.now() - hit.at : Infinity;
+  // `fresh` asks to bypass the normal TTL, but not the refresh floor — see
+  // forgetMailboxIds above for why that is safe.
+  if (hit && age < (fresh ? MAILBOX_IDS_REFRESH_MIN_MS : MAILBOX_IDS_TTL_MS)) return hit.ids;
+
+  const generation = mailboxIdsGeneration;
+  const boxes = await get(`/users/${uid}/mailboxes`, token(req));
+  const ids = new Set<string>(((boxes?.results ?? []) as Array<{ id: unknown }>).map(b => String(b.id)));
+
+  if (generation === mailboxIdsGeneration) cacheMailboxIds(uid, ids);
+  return ids;
+};
+
+const assertOwnsMailbox = async (req: Request, mailboxId: string): Promise<void> => {
+  const id = String(mailboxId);
+  if ((await ownedMailboxIds(req, false)).has(id)) return;
+  if ((await ownedMailboxIds(req, true)).has(id)) return;
+  throw new ApiError(StatusCodes.FORBIDDEN, "Invalid mailbox", "forbidden");
+};
 
 // Encode a single user-controlled URL path segment before interpolating it into
 // the upstream WildDuck URL. Express decodes %2F/%3F/%26 inside a path param and
@@ -254,6 +418,15 @@ export const assertPublicHttpUrl = async (raw: string): Promise<{ url: URL; ips:
   if (u.protocol !== "http:" && u.protocol !== "https:") {
     throw new ApiError(StatusCodes.BAD_REQUEST, "Unsupported image url scheme");
   }
+  // An image proxy has no business opening arbitrary ports. The private-IP check below
+  // only constrains WHICH host we reach, not which port: without this, a remote image
+  // URL of the form https://public-host:22 (or :25, :3306, …) still passes, and
+  // pinnedGet happily connects and writes an HTTP request at it — turning the proxy
+  // into a port prober / service fingerprinter for public hosts, from our IP. An empty
+  // port means "scheme default", which is exactly 80/443.
+  if (u.port !== "" && u.port !== "80" && u.port !== "443") {
+    throw new ApiError(StatusCodes.BAD_REQUEST, "Image url port not allowed");
+  }
   const host = u.hostname.replace(/^\[/, "").replace(/\]$/, "");
   let ips: string[];
   if (net.isIP(host)) {
@@ -340,6 +513,32 @@ const passwordChangeLimiter = rateLimit({
   message: (req: Request) => ({ error: { status: 429, message: errMsg(req, "too_many_attempts", "Too many attempts, please try again later") } }),
 });
 
+// Everything except login and the password change was unthrottled, so one authenticated
+// session could loop 25MB attachment uploads, image-proxy fetches, sends, or bulk
+// mailbox operations as fast as the link allowed — cheap for the caller, expensive for
+// us and for WildDuck behind us. Keyed by the session user, not the IP, so rotating
+// addresses does not reset the budget. These ceilings sit far above real interactive
+// use: they are here to stop a runaway script, not to pace a person.
+const sessionLimiter = (name: string, limit: number) => rateLimit({
+  windowMs: LOGIN_RATE_WINDOW_MS,
+  limit,
+  keyGenerator: (req: Request) => `${name}:${req.session?.authentication?.id ?? "unauthenticated"}`,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: (req: Request) => ({ error: { status: 429, message: errMsg(req, "too_many_attempts", "Too many attempts, please try again later") } }),
+});
+
+const uploadLimiter = sessionLimiter("storage", 200);
+const imageProxyLimiter = sessionLimiter("proxy-image", 1000);
+const submitLimiter = sessionLimiter("submit", 100);
+// Draft creation is the one write the UI makes on a timer: compose autosaves every
+// ~1.5s while typing, and each save also deletes the previous message, so this is the
+// cheapest write-amplification lever an authenticated script has. The ceiling has to
+// clear real use — several compose windows autosaving continuously — hence the high
+// number; it bounds a runaway, it does not pace a typist.
+const draftLimiter = sessionLimiter("messages-create", 1200);
+const bulkLimiter = sessionLimiter("bulk", 300);
+
 export const api = (config: Config) => {
   const api = Router();
 
@@ -380,10 +579,9 @@ export const api = (config: Config) => {
         resolve();
       });
     });
-    res.clearCookie(config.session_name || "raven.sid", {
-      path: "/",
-      domain: config.session_cookie_domain || undefined,
-    });
+    // Mirror the attributes the cookie was issued with, not just path/domain — a
+    // Set-Cookie that does not match them may not overwrite what the browser stored.
+    res.clearCookie(config.session_name || "raven.sid", sessionCookieClearOptions(config, req.secure));
     res.json({});
   }))
 
@@ -424,9 +622,35 @@ export const api = (config: Config) => {
   */
 
   api.get("/updates", handler(async (req, res) => {
+    // Captured BEFORE the await: an eviction can land while watch() is in flight, and
+    // this connection must not come up afterwards still carrying the old token.
+    const openedAt = evictionCounter;
     const stream = await watch(userId(req), token(req));
+    if (wasEvictedSince(userId(req), req.sessionID, openedAt)) {
+      (stream as NodeJS.ReadableStream & { destroy?: () => void }).destroy?.();
+      throw new ApiError(StatusCodes.FORBIDDEN, "Forbidden", "forbidden");
+    }
     res.type("text/event-stream");
     stream.pipe(res);
+    // Registered so a password change can actually cut it off. This response captured
+    // its WildDuck token when it opened and keeps piping regardless of what happens to
+    // the session record afterwards — so without this, deleting a stolen session left
+    // that client still receiving counters and arrival/expunge events while PUT /me
+    // reported the eviction complete. The flag has to be true only when it is true.
+    const entry: LiveStream = {
+      user: userId(req),
+      session: req.sessionID,
+      // Tear down the upstream too, not just our response — otherwise the connection
+      // to WildDuck stays open behind a client that can no longer receive it.
+      close: () => {
+        (stream as NodeJS.ReadableStream & { destroy?: () => void }).destroy?.();
+        res.end();
+      },
+    };
+    liveStreams.add(entry);
+    const drop = () => liveStreams.delete(entry);
+    res.on("close", drop);
+    res.on("finish", drop);
   }))
 
   api.put("/me", passwordChangeLimiter, handler(async (req, res) => {
@@ -454,7 +678,59 @@ export const api = (config: Config) => {
       }
     }
     const json = await put(`/users/${id}`, token(req), update);
-    res.json(json);
+
+    // Only meaningful for a password change; true otherwise so the client's check
+    // (`sessionsEvicted === false`) never fires on a plain name update.
+    let sessionsEvicted = true;
+
+    if (update.password != null) {
+      // Evict this user's OTHER sessions now that the password has changed. Changing
+      // the password is what someone does when they think a session was stolen, and
+      // without this it does not evict anything: every session holds its own WildDuck
+      // token from login, so a copied raven.sid keeps working. The current session is
+      // kept — it just proved knowledge of the old password above, and logging the
+      // user out of the tab they are working in would be gratuitous.
+      //
+      // Runs AFTER the change, and its failure is reported rather than thrown. Failing
+      // the response is not an option: the password HAS changed by this point, so a 5xx
+      // would tell the user the opposite of the truth. But swallowing it silently is
+      // worse — they would read "Password updated" and believe the other sessions were
+      // evicted when they were not, which is the entire reason they changed it. So the
+      // change succeeds and the client is told what actually happened.
+      // The flag answers "is it certain no other session survives?", NOT "was anything
+      // deleted" — zero deletions because there were no other sessions is success, and
+      // the UI must not warn about it. It is false only when the eviction could not be
+      // carried out at all. The count is logged so that is auditable after the fact.
+      // Rotate before evicting. The exception below is "keep the session making the
+      // change" — but a copied raven.sid arrives on that exact id, so the exception
+      // would spare the copy too. rotateSession moves this browser to an id no one
+      // else can be holding first; only then does "everything except mine" mean it.
+      sessionsEvicted = await rotateSession(req)
+        .then(() => destroyOtherSessions(id, req.sessionID))
+        .then((count: number) => {
+          // Session records alone are not enough: an /updates response already open
+          // holds its own token and would keep streaming. Close those too, or the flag
+          // below would claim more than was actually done.
+          //
+          // Since rotation, this also closes the caller's OWN stream — it was opened
+          // under the id we just retired, and that id is exactly what cannot be trusted
+          // any more. The client reconnects on its own: it is a native EventSource, and
+          // by the time the browser retries it holds the new cookie set by the response
+          // below, which passes the wasEvictedSince check as the session that was kept.
+          const streams = closeOtherLiveStreams(id, req.sessionID);
+          logger.info({ count, streams }, "other sessions invalidated after password change");
+          return true;
+        })
+        .catch((e: any) => {
+          logger.error(
+            { detail: String(e?.message) },
+            "password changed but other sessions could not be invalidated",
+          );
+          return false;
+        });
+    }
+
+    res.json({ ...json, sessionsEvicted });
   }))
 
   api.put("/signature", handler(async (req, res) => {
@@ -465,7 +741,9 @@ export const api = (config: Config) => {
   }))
 
   api.get("/mailboxes", handler(async (req, res) => {
+    const generation = mailboxIdsGeneration;
     const json = await get(`/users/${userId(req)}/mailboxes?counters=true`, token(req));
+    rememberMailboxIds(req, json, generation);
     res.json(json);
   }))
 
@@ -473,17 +751,20 @@ export const api = (config: Config) => {
     const path = String(req.body?.path?.trim() || "");
     if(!path) throw new ApiError(StatusCodes.BAD_REQUEST, "'path' is required", "path_required");
     const json = await post(`/users/${userId(req)}/mailboxes`, token(req), { path });
+    forgetMailboxIds(req);
     res.json(json);
   }))
 
   api.delete("/mailboxes/:mailbox", handler(async (req, res) => {
     await del(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}`, token(req));
+    forgetMailboxIds(req);
     res.json({});
   }))
 
   api.put("/mailboxes/:mailbox", handler(async (req, res) => {
     const body = validate(() => MailboxUpdateSchema.parse(req.body));
     const json = await put(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}`, token(req), body);
+    forgetMailboxIds(req);
     res.json(json);
   }))
 
@@ -499,19 +780,25 @@ export const api = (config: Config) => {
     res.json(body);
   }))
 
-  api.put("/mailboxes/:mailbox/messages", handler(async (req, res) => {
+  api.put("/mailboxes/:mailbox/messages", bulkLimiter, handler(async (req, res) => {
     const body = validate(() => BulkMessageUpdateSchema.parse(req.body));
+    // moveTo relocates real mail, so confirm the destination is the caller's own.
+    if (body.moveTo != null) await assertOwnsMailbox(req, body.moveTo);
     const json = await put(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages`, token(req), body);
     res.json(json);
   }))
 
-  api.post("/mailboxes/:mailbox/messages", handler(async (req, res) => {
+  api.post("/mailboxes/:mailbox/messages", draftLimiter, handler(async (req, res) => {
     const body = validate(() => CreateMessageSchema.parse(req.body));
+    // `reference` makes WildDuck read the referenced message to build the quoted body
+    // and carry attachments across — a read primitive pointed at a mailbox id the
+    // client chose, so it gets the same ownership check as moveTo.
+    if (body.reference?.mailbox != null) await assertOwnsMailbox(req, body.reference.mailbox);
     const json = await post(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages`, token(req), body);
     res.json(json);
   }))
 
-  api.delete("/mailboxes/:mailbox/messages", handler(async (req, res) => {
+  api.delete("/mailboxes/:mailbox/messages", bulkLimiter, handler(async (req, res) => {
     await del(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages`, token(req));
     res.json({});
   }))
@@ -544,7 +831,7 @@ export const api = (config: Config) => {
     res.json(body);
   }))
 
-  api.post("/mailboxes/:mailbox/messages/:message/submit", handler(async (req, res) => {
+  api.post("/mailboxes/:mailbox/messages/:message/submit", submitLimiter, handler(async (req, res) => {
     // The submit endpoint takes no meaningful client-supplied fields — the draft
     // to send is identified by the URL params alone. Accept an empty body only.
     const body = await post(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages/${seg(req.params.message)}/submit`, token(req), {});
@@ -615,7 +902,7 @@ export const api = (config: Config) => {
     res.json(json)
   }))
 
-  api.post("/storage", handler(async (req, res) => {
+  api.post("/storage", uploadLimiter, handler(async (req, res) => {
     const contentType = String(req.headers["content-type"] || "");
     const contentLength = String(req.headers["content-length"] || "");
     
@@ -660,13 +947,19 @@ export const api = (config: Config) => {
     })
 
     if(json?.error) {
-      throw new ApiError(back.ok ? 500 : back.status, String(json.error));
+      // Same treatment as client.ts's Requester. This route builds its own fetch()
+      // (it streams the upload body), so it never passed through that hardening and
+      // was still echoing the raw upstream message — internal paths, storage ids —
+      // straight to the browser.
+      const status = back.ok ? StatusCodes.INTERNAL_SERVER_ERROR : back.status;
+      if(DISPLAY_ERRORS) throw new ApiError(status, String(json.error));
+      throw new ApiError(status, "The mail server could not process the request", "backend_error");
     }
 
     res.status(back.status).json(json);
   }))
 
-  api.get("/proxy-image", handler(async (req, res) => {
+  api.get("/proxy-image", imageProxyLimiter, handler(async (req, res) => {
     // Require an authenticated session so this can never be used as an open proxy.
     if (req.session.authentication == null) {
       throw new ApiError(StatusCodes.FORBIDDEN, "Forbidden", "forbidden");
@@ -758,10 +1051,12 @@ export const api = (config: Config) => {
   api.use("/pages", pages);
 
   pages.get("/layout", pageHandler(async (req, res) => {
+    const generation = mailboxIdsGeneration;
     const [user, boxes] = await Promise.all([
       get(`/users/${userId(req)}`, token(req)),
       get(`/users/${userId(req)}/mailboxes?counters=true`, token(req))
     ])
+    rememberMailboxIds(req, boxes, generation);
 
     return res.json({
       props: {

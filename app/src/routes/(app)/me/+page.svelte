@@ -40,18 +40,23 @@
 		if (newPassword.length < 6) throw new Error($locale.validation.Password_too_short);
 		if (newPassword !== confirmPassword) throw new Error($locale.validation.Passwords_dont_match);
 			
-    await _put(`/api/me`, {
+    const res = await _put(`/api/me`, {
       existingPassword: currentPassword,
       password: newPassword,
     });
-    
+
     currentPassword = '';
 		newPassword = '';
 		confirmPassword = '';
 
     passwordDialogOpen = false;
 
-    _message($locale.notifier.Password_updated);
+    // Changing the password is what someone does when they think a session was stolen,
+    // so if the server could not evict the other sessions they need to hear about it
+    // rather than read "Password updated" and assume they are safe.
+    _message(res?.sessionsEvicted === false
+      ? $locale.notifier.Password_updated_sessions_warning
+      : $locale.notifier.Password_updated);
   })
 
   let nameOpen = false;

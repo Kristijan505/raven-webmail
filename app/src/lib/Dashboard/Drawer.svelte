@@ -27,7 +27,11 @@
   import Ripple from "$lib/Ripple.svelte";
 
   const compose = action(async () => {
-    await _blank($mailboxes.find(isDrafts)!);
+    // A new message has to be written into Drafts, so an account without that folder
+    // needs to hear which folder is missing rather than a property-access error.
+    const drafts = $mailboxes.find(isDrafts);
+    if(!drafts) throw new Error($locale.Folder_not_available);
+    await _blank(drafts);
   })
 
   import { circInOut } from "svelte/easing";

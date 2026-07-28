@@ -39,27 +39,23 @@
 
   const prev = action(async () => {
     const json: Messages = await _get(`/api/mailboxes/${mailbox.id}/messages`);
-    const fresh = json.results;
-    // The refetched first page is authoritative for its id range (messages are ordered
-    // newest-id-first). Take the fresh page as-is and append only OLDER, already-
-    // paginated messages below that range. Crucially this DROPS any lingering entry
-    // inside the fresh range that the server no longer returns — e.g. a draft that
-    // save() created then deleted (compose autosaves a brand-new message per save)
-    // whose EXPUNGE raced ahead of the refetch that re-added it, so nothing ever
-    // removes it and it shows as a duplicate until a manual refresh. Previously we
-    // kept every non-duplicate existing row, so those orphans persisted.
-    // An empty page keeps the current list (minFreshId = Infinity), so a transient
-    // empty response can never purge a scrolled-in mailbox.
-    const minFreshId = fresh.length ? Math.min(...fresh.map(m => m.id)) : Infinity;
-    const older = messages.results.filter(m => m.id < minFreshId);
-    const results = dedup([ ...fresh, ...older ]);
-    // Dropping stale in-range rows (the orphan-draft case) can otherwise strand a
-    // selected row in `selection`, leaving the toolbar in selection mode acting on a
-    // message that's no longer visible (and possibly already deleted). Reconcile the
-    // selection against what remains, mirroring removeIds().
-    const keptIds = new Set(results.map(m => m.id));
-    selection = selection.filter(m => keptIds.has(m.id));
-    messages = { ...messages, results }
+    // See reconcile.ts for why the next cursor decides the fate of rows below the
+    // refetched page — that is what finally retires an orphaned autosaved draft.
+    const { results, nextCursor } = reconcileFirstPage(messages, json);
+    // Rebuild the selection FROM `results`, not by filtering the old array.
+    //
+    // Two things depend on this. Dropping rows the refetch no longer returns (the
+    // orphan-draft case) stops the toolbar acting on a message that is gone. But the
+    // refetched page is made of BRAND NEW objects, so filtering in place would keep the
+    // survivors as the previous ones — and the toolbar mutates what is in `selection`
+    // (Top.markAsSeen does `item.seen = v`, then re-renders from `messages.results`).
+    // Those writes would land on objects nobody renders: the server goes read, the
+    // toolbar flips to "Mark as not seen", and the row stays looking unread. Selecting
+    // the same objects the list renders is what makes the optimistic update visible.
+    // The search list had the identical defect; this is the same fix.
+    const selectedIds = new Set(selection.map(m => m.id));
+    selection = results.filter(m => selectedIds.has(m.id));
+    messages = { ...messages, results, nextCursor }
   })
 
   const context: MailboxContext = { next, prev };
@@ -84,17 +80,9 @@
   import Ripple from "$lib/Ripple.svelte";
   import { action, _get } from "$lib/util";
   import CircularProgress from "$lib/CircularProgress.svelte";
+  import { dedupById, reconcileFirstPage } from "./reconcile";
 
-  const dedup = (messages: TMessage[]) => {
-    const helper: TMessage[] = [];
-    for(const item of messages) {
-      if(helper.every(it => it.id !== item.id)) {
-        helper.push(item);
-      }
-    }
-
-    return helper;
-  }
+  const dedup = dedupById;
 
   onMount(() => {
     
@@ -230,7 +218,18 @@ import { locale } from "$lib/locale";
       <div class="messages" transition:customSlide|local={{ duration: 250 }}>
         {#each messages.results as message (message.id)}
           <div class="message" transition:customSlide|local={{ duration: 250 }}>
-            <Message bind:message {mailbox} bind:selection />
+            <!-- `message` is deliberately NOT bound. The each is keyed by
+                 `message.id`, i.e. the key is derived from the very value a
+                 `bind:` would write back. When a new message arrives and the
+                 list is rebuilt, that write-back lands in a reused block and
+                 overwrites the row that was already there with the incoming
+                 message — two rows then render the SAME message (and the same
+                 id, so ticking one checkbox ticks both). The initial render is
+                 fine; only live updates corrupt, which is why it only showed up
+                 after a message arrived and vanished on refresh. Message only
+                 ever mutates `message.flagged` in place on the shared object,
+                 so one-way is enough. -->
+            <Message {message} {mailbox} bind:selection />
           </div>
         {/each}
       </div>

@@ -34,8 +34,16 @@
   import { locale } from "$lib/locale";
   
   const _send = action(async () => {
+    // Re-entrancy guard. `sending` already drove the spinner, but nothing stopped a
+    // second click: send() runs save() (create-new + delete-old) and then submit, so
+    // two overlapping chains submit the message TWICE — and an email cannot be
+    // unsent. The assignment below is synchronous, so a second click within the same
+    // tick still sees it. `disabled` on the button covers the pointer path; this
+    // covers programmatic/keyboard activation and any future caller.
+    if(sending) return;
+
     if(draft.to.length === 0 && draft.cc.length === 0 && draft.bcc.length === 0) {
-      throw new Error($locale.validation.No_recipients) 
+      throw new Error($locale.validation.No_recipients)
     }
 
     sending = true;
@@ -273,7 +281,7 @@
 
   <x-send-up>
     <Upload bind:draft />
-    <button class="send elev2 btn-light" class:sending on:click={_send}>
+    <button class="send elev2 btn-light" class:sending disabled={sending} on:click={_send}>
       <div class="send-label">
         {$locale.Send}
       </div>

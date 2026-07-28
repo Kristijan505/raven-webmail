@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { seg, isPrivateIp, assertPublicHttpUrl, CreateMessageSchema } from "./api";
+import { seg, isPrivateIp, assertPublicHttpUrl, CreateMessageSchema, MeSchema } from "./api";
 
 describe("seg() — path param hardening (cross-user IDOR / query injection)", () => {
   it("passes legitimate WildDuck ids through unchanged", () => {
@@ -71,6 +71,52 @@ describe("assertPublicHttpUrl() — image proxy URL validation", () => {
     expect(url).toBeInstanceOf(URL);
     expect(url.hostname).toBe("8.8.8.8");
     expect(ips).toContain("8.8.8.8");
+  });
+
+  it("rejects non-web ports so the proxy cannot probe public services", async () => {
+    // The private-range check constrains WHICH host we reach, not which port. Without
+    // a port check these all pass it and we then open a TCP connection and write an
+    // HTTP request at whatever is listening — a port scanner wearing our IP.
+    await expect(assertPublicHttpUrl("https://8.8.8.8:22/x")).rejects.toThrow();
+    await expect(assertPublicHttpUrl("http://8.8.8.8:25/x")).rejects.toThrow();
+    await expect(assertPublicHttpUrl("http://8.8.8.8:3306/x")).rejects.toThrow();
+  });
+
+  it("still accepts the default and explicit web ports", async () => {
+    await expect(assertPublicHttpUrl("https://8.8.8.8/x")).resolves.toBeTruthy();
+    await expect(assertPublicHttpUrl("https://8.8.8.8:443/x")).resolves.toBeTruthy();
+    await expect(assertPublicHttpUrl("http://8.8.8.8:80/x")).resolves.toBeTruthy();
+  });
+});
+
+describe("MeSchema — profile update / password policy", () => {
+  it("accepts a name-only update", () => {
+    expect(MeSchema.safeParse({ name: "Test User" }).success).toBe(true);
+  });
+
+  it("requires the current password to set a new one", () => {
+    expect(MeSchema.safeParse({ password: "hunter2secret" }).success).toBe(false);
+    expect(MeSchema.safeParse({ password: "hunter2secret", existingPassword: "old" }).success).toBe(true);
+  });
+
+  it("enforces the same minimum length the browser does", () => {
+    // The client checks length >= 6, but that is a UX affordance: a direct API call
+    // used to be able to set a one-character password.
+    expect(MeSchema.safeParse({ password: "a", existingPassword: "old" }).success).toBe(false);
+    expect(MeSchema.safeParse({ password: "abcdef", existingPassword: "old" }).success).toBe(true);
+  });
+
+  it("rejects an empty password instead of silently treating it as no-change", () => {
+    // "" satisfied `!body.password` in the refine, so it passed without an
+    // existingPassword — and the handler's `password != null` check then still tried
+    // to apply it. Failing validation removes the ambiguity entirely.
+    expect(MeSchema.safeParse({ password: "" }).success).toBe(false);
+  });
+
+  it("strips fields the webmail is not allowed to set", () => {
+    const parsed = MeSchema.safeParse({ name: "Test", quota: 999, disabled: true });
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data).toEqual({ name: "Test" });
   });
 });
 

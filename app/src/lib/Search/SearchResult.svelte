@@ -1,11 +1,16 @@
 <script lang="ts" context="module">
-  const from = (mailbox: Mailbox, message: Message, l: any): string => {
-    if(mailbox.specialUse === "\\Drafts" || mailbox.specialUse === "\\Sent") {
-      return `${l["To:"]} ${message.to[0]?.name || message.to[0]?.address || ""}`;
+  // `mailbox` is optional here: search returns hits from every folder, and the lookup
+  // that resolves the id to a Mailbox can miss — a stale index pointing at a deleted
+  // folder, or results arriving before the mailbox list has loaded. It used to throw
+  // on `mailbox.specialUse` in that window and take the whole search view down with it.
+  // `to` is optional too: WildDuck omits it on a draft with no recipients yet.
+  const from = (mailbox: Mailbox | undefined, message: Message, l: any): string => {
+    if(mailbox?.specialUse === "\\Drafts" || mailbox?.specialUse === "\\Sent") {
+      return `${l["To:"]} ${message.to?.[0]?.name || message.to?.[0]?.address || ""}`;
     }
 
     return message.from?.name || message.from?.address || "";
-  }  
+  }
 
   import { toString } from "diacritic-regex";
   const diac = toString();
@@ -13,7 +18,7 @@
 
 <script lang="ts">
   export let query: string;
-  export let mailbox: Mailbox;
+  export let mailbox: Mailbox | undefined;
   export let message: Message;
   export let selection: Message[] = [];
 
@@ -28,10 +33,16 @@
 
   $: selected = row ? selection.some(m => m.mailbox === row.mailbox && m.id === row.id) : false
 
+  // Handlers read `row`, not `message`: during a keyed-each outro `message` can be
+  // undefined while the row is still on screen and clickable, and a throw there freezes
+  // the Svelte scheduler — the whole search list goes inert until a reload. Identity
+  // comes off `row` too (`row.mailbox` is the folder id), so nothing here needs the
+  // possibly-missing `mailbox` object.
   const toggleSelection = () => {
-    const v = selection.filter(m => !(m.mailbox === message.mailbox && m.id === message.id));
+    if(!row) return;
+    const v = selection.filter(m => !(m.mailbox === row.mailbox && m.id === row.id));
     if(selected) selection = v;
-    else selection = [...v, message];
+    else selection = [...v, row];
   }
 
   import Ripple from "$lib/Ripple.svelte";
@@ -47,20 +58,25 @@
   import { locale } from "$lib/locale";
   import { _open } from "$lib/Compose/compose";
   const flag = action(async () => {
-    message.flagged = !message.flagged;
-    await _put(`/api/mailboxes/${mailbox.id}/messages/${message.id}/flag`, {
-      value: message.flagged
+    if(!row) return;
+    const value = !row.flagged;
+    row.flagged = value;
+    await _put(`/api/mailboxes/${row.mailbox}/messages/${row.id}/flag`, {
+      value
     }).catch(e => {
-      message.flagged = !message.flagged;
+      row.flagged = !value;
       throw e;
     })
   })
 
   const click = action(async (event: MouseEvent) => {
-    if(isDrafts(mailbox)) {
+    if(!row) return;
+    // Opening a draft in the composer needs the real Mailbox object, so this path is
+    // simply skipped when the folder could not be resolved — the row still navigates.
+    if(mailbox && isDrafts(mailbox)) {
       event.preventDefault();
       event.stopPropagation();
-      await _open(mailbox, message.id);
+      await _open(mailbox, row.id);
     }
   })
 
@@ -280,7 +296,10 @@
   }
 </style>
 
-<a href="/mailbox/{mailbox.id}/message/{row.id}"
+<!-- `row.mailbox` rather than `mailbox.id`: identical value, but it does not depend on
+     the folder lookup having succeeded, so the link still works for a hit whose
+     Mailbox object is missing. -->
+<a href="/mailbox/{row.mailbox}/message/{row.id}"
   class="na message"
   class:seen={row.seen}
   class:selected
@@ -313,7 +332,7 @@
     <div class="end">
       <div class="mailbox-subject-intro">
         <div class="mailbox">
-          {mailboxName(mailbox, $locale)}
+          {mailbox ? mailboxName(mailbox, $locale) : ""}
         </div>
         <div class="subject-intro">
           <span class="subject" use:highlight={query}>

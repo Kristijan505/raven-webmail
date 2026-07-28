@@ -41,7 +41,9 @@
     
     const iframe = document.createElement("iframe");
   
-    iframe.setAttribute("sandbox", "allow-forms allow-same-origin");
+    // No allow-forms — see Editor.svelte. contentEditable does not need it, and this
+    // document renders stored signature HTML.
+    iframe.setAttribute("sandbox", "allow-same-origin");
     iframe.srcdoc = "<!doctype html><html><head></head><body></body></html>";
 
     let obs: MutationObserver | null = null;
@@ -70,7 +72,10 @@
       // formatting, inline styles and (base64) images.
       _document.body.innerHTML = proxyRemoteImages(html);
       
-      const obs = new MutationObserver(() => {
+      // Assigned to the OUTER `obs`, not redeclared: a `const obs` here shadows it, so
+      // the disconnect in destroy() below would forever see null and the observer would
+      // outlive the editor. Every compose open leaks one otherwise.
+      obs = new MutationObserver(() => {
         html = serializeEditorBody(_document.body);
         onChange?.(html);
       });

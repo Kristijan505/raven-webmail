@@ -22,6 +22,21 @@
     results = data.results;
     nextCursor = data.nextCursor;
     total = data.total;
+    // Fresh results need not still contain everything that was selected: prev()
+    // reloads after a delete or move, and a new query replaces the set outright.
+    // Stale entries left in `selection` keep the toolbar in selection mode acting on
+    // rows that are no longer on screen — and possibly on messages that no longer
+    // exist. The mailbox list reconciles after its refetch for the same reason;
+    // search never did. Identity here is (mailbox, id), matching the keyed each.
+    // Rebuilt FROM `results`, not filtered in place. Filtering would drop the entries
+    // that are gone but keep the surviving ones as the OLD Message objects, while the
+    // rows now render the new ones — and the toolbar mutates what is in `selection`
+    // (markAsSeen does `item.seen = v` and then re-renders from `results`). Selecting
+    // the same objects the list renders is what makes that optimistic update visible;
+    // otherwise a message marked read after a reload stays looking unread while the
+    // toolbar flips, and further clicks only toggle the toolbar.
+    const selected = new Set(selection.map(m => `${m.mailbox}-${m.id}`));
+    selection = results.filter(m => selected.has(`${m.mailbox}-${m.id}`));
   }
 
   let selection: Message[] = [];
@@ -175,7 +190,11 @@ import { locale } from "$lib/locale";
         <div class="messages" transition:customSlide|local={{ duration: 250 }}>
           {#each results as message (`${message.mailbox}-${message.id}`)}
             <div class="message" transition:customSlide|local={{ duration: 250 }}>
-              <SearchResult bind:message mailbox={mailboxMap.get(message.mailbox)} bind:selection {query} />
+              <!-- Not bound: the each key is derived from `message` itself, so a
+                   write-back lands in a reused block and overwrites an existing
+                   row with another result (same bug as Mailbox/Mailbox.svelte).
+                   SearchResult only mutates `message.flagged` in place. -->
+              <SearchResult {message} mailbox={mailboxMap.get(message.mailbox)} bind:selection {query} />
             </div>
           {/each}
         </div>

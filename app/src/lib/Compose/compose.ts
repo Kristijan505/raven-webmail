@@ -68,7 +68,8 @@ export const kShowCc = Symbol("draft-show-cc");
 export const kSent = Symbol("draft-sent");
 
 import { crossfade, fly } from "svelte/transition";
-import { _delete, _post } from "$lib/util";
+import { _delete, _post, HttpError } from "$lib/util";
+import { Expunge } from "$lib/events";
 import type { Mailbox, User } from "$lib/types";
 
 export const [crossin, crossout] = crossfade({
@@ -95,16 +96,67 @@ export const destroyComposer = () => {
   }
 }
 
-export const save = async (draft: Draft) => {
-  
+// Saves for one draft run strictly one at a time.
+//
+// save() is CREATE-new + DELETE-old (messages are immutable), so two overlapping saves
+// both read the same draft.id, both create a message and both delete that single old
+// id — leaving one of the two new messages orphaned in Drafts.
+//
+// Serializing in Window.svelte's autosave was not enough: send() calls save() directly,
+// so clicking Send while an autosave was still in flight raced it anyway, and could
+// even submit one copy while orphaning the other. The chain lives HERE because this is
+// the one point every caller goes through. Keyed weakly by the draft object, so a
+// closed compose tab takes its chain with it.
+const saveChains = new WeakMap<Draft, Promise<unknown>>();
+
+export const save = (draft: Draft): Promise<number> => {
+  const run = (saveChains.get(draft) ?? Promise.resolve())
+    .catch(() => {})
+    .then(() => saveNow(draft));
+  // Store a handle that cannot reject, so one failed save does not poison the chain
+  // for every later one.
+  saveChains.set(draft, run.catch(() => {}));
+  return run;
+}
+
+const saveNow = async (draft: Draft) => {
+
   const { id, mailbox, key, files, ...json } = draft;
-  
+
   const { message } = await _post(`/api/mailboxes/${draft.mailbox}/messages`, createMessageBody({ 
     ...json,
     files: files?.map(file => file.id).filter(Boolean) as string[],
   }));
   
-  _delete(`/api/mailboxes/${mailbox}/messages/${id}`).catch(() => {})
+  // Messages are immutable, so "saving" a draft means create-new + delete-old.
+  // Don't rely on the server's EXPUNGE coming back over SSE to retire the old
+  // row: it races the refetch that the matching EXISTS triggers (and is missed
+  // outright if the list mounts after it fired), which leaves the saved draft
+  // listed twice until a manual reload. We issued the delete, so we can announce
+  // it ourselves — same event the SSE stream would deliver, so every open list
+  // reconciles through the one code path.
+  // Retire the superseded draft. Deliberately not awaited — the replacement already
+  // exists and nothing should wait on a cleanup — but the failure must not be dropped
+  // on the floor either: if this delete fails, the old message stays in Drafts as an
+  // orphan, which is precisely the duplicate the save chain exists to prevent. Retry
+  // once for a transient blip, treat "already gone" as done, and report the rest to
+  // the console instead of pretending it worked.
+  const retire = () => _delete(`/api/mailboxes/${mailbox}/messages/${id}`);
+  const goneAlready = (e: any) => e instanceof HttpError && e.status === 404;
+  retire()
+    .catch(e => goneAlready(e) ? undefined : retire())
+    .then(() => Expunge.dispatch({ command: "EXPUNGE", mailbox, uid: id }))
+    .catch(e => {
+      if(goneAlready(e)) return Expunge.dispatch({ command: "EXPUNGE", mailbox, uid: id });
+      console.warn(`[raven] superseded draft ${id} could not be deleted; it may linger in Drafts`, e);
+    })
+
+  // Advance the draft's id INSIDE the serialized section. Callers also assign the
+  // returned id, but that happens a microtask or two later — and the next entry in the
+  // chain (another autosave, or the save inside send()) starts as soon as this resolves
+  // and reads draft.id straight away. Writing it here means the handoff never depends
+  // on which of those two lands first.
+  draft.id = message.id;
 
   return message.id;
 }

@@ -184,6 +184,7 @@ export default {
     Deleting_process: "Deleting process running in the background, this can take a while",
     Message_sent: "Message sent",
     Password_updated: "Password updated",
+    Password_updated_sessions_warning: "Password updated, but other sessions may still be signed in",
     Name_updated: "Name updated",
     All_messages_deleted: "All messages deleted",
   },
@@ -208,6 +209,7 @@ export default {
 
   Back_to: "Back to",
   Reply: "Reply",
+  Reply_all: "Reply all",
   Forward: "Forward",
   Create: "Create",
   Current_password: "Current password",
@@ -228,6 +230,7 @@ export default {
   Offline_message: "You need a connection to use the webmail",
 
   Error_message: "Make sure you have an active connection",
+  Folder_not_available: "That folder is not available on this account",
   Take_me_to_my_inbox: "Take me to my inbox",
 
   Toggle_code_view: "Toggle code view",

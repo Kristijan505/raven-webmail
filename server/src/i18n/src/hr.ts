@@ -186,6 +186,7 @@ const locale: Locale = {
     Deleting_process: "Brisanje se izvršava u pozadini, ovo može potrajati",
     Message_sent: "Poruka je poslana",
     Password_updated: "Lozinka je promijenjena",
+    Password_updated_sessions_warning: "Lozinka je promijenjena, ali druge prijave možda nisu odjavljene",
     Name_updated: "Ime je promijenjeno",
     All_messages_deleted: "Sve poruke su izbrisane",
   },
@@ -210,6 +211,7 @@ const locale: Locale = {
 
   Back_to: "Natrag na",
   Reply: "Odgovori",
+  Reply_all: "Odgovori svima",
   Forward: "Proslijedi",
   Create: "Stvori",
   Current_password: "Trenutna lozinka",
@@ -230,6 +232,7 @@ const locale: Locale = {
   Offline_message: "Potrebna vam je veza za korištenje webmaila",
 
   Error_message: "Provjerite imate li aktivnu vezu",
+  Folder_not_available: "Ta mapa nije dostupna na ovom računu",
   Take_me_to_my_inbox: "Vodi me u pristiglu poštu",
 
   Toggle_code_view: "Prikaz koda",
