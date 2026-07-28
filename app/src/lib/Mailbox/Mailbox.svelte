@@ -178,6 +178,14 @@
         };
 
         selection = selection.filter(item => !rids.includes(item.id))
+      } else if(active) {
+        // The expunged message was not among the loaded rows, so nothing local can
+        // account for it — and while a filter is on, the folder counter the SSE event
+        // carries is not the number being displayed. The event says nothing about
+        // direction either, so whether it belonged to this filter can only be answered
+        // by asking: refetch page one, which brings a fresh filtered total with it.
+        clearTimeout(timer);
+        timer = setTimeout(prev, 500);
       }
       if(messages.results.length < 15) {
         clearTimeout(timer3);

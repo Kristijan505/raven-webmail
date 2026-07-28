@@ -276,12 +276,17 @@ import { locale } from "$lib/locale";
     {#if mixesDirections(mailbox)}
       <!-- Only where a folder actually holds both. The filter runs on the server, so a
            page stays a full page and the count describes what is shown. -->
-      <div class="chip btn-dark" class:on={$direction === "in"} use:clickable
+      <!-- Icon-only and stateful, so both have to be spoken as well as drawn: the tooltip
+           only appears on hover, and `class:on` is colour. clickable() sets the name,
+           aria-pressed carries the state. -->
+      <div class="chip btn-dark" class:on={$direction === "in"} use:clickable={$locale.Received_only}
+        aria-pressed={$direction === "in"}
         use:tooltip={$locale.Received_only} on:click={() => toggleDirection("in")}>
         <Down />
         <Ripple />
       </div>
-      <div class="chip btn-dark" class:on={$direction === "out"} use:clickable
+      <div class="chip btn-dark" class:on={$direction === "out"} use:clickable={$locale.Sent_only}
+        aria-pressed={$direction === "out"}
         use:tooltip={$locale.Sent_only} on:click={() => toggleDirection("out")}>
         <Up />
         <Ripple />
