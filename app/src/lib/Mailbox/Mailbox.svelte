@@ -46,6 +46,7 @@
         ...messages,
         results: dedup([ ...messages.results, ...json.results ]),
         nextCursor: json.nextCursor,
+        total: json.total ?? messages.total,
       }
     } finally {
       loadingMore = false;
@@ -70,12 +71,19 @@
   //
   // reloadNow rather than reload, because action() reports a failure and swallows it —
   // useful for a button, useless for deciding whether the filter took.
+  let applyToken = 0;
   const applyDirection = async (value: ReturnType<typeof activeDirection>) => {
+    const token = ++applyToken;
     const previous = appliedDirection;
     appliedDirection = value;
     try {
       await reloadNow();
     } catch(e: any) {
+      // Only if this is still the newest attempt. A slow failure from a filter the user
+      // has already moved on from would otherwise roll the state back over a newer
+      // request that succeeded — leaving its rows on screen with the wrong chip lit and,
+      // since active would then match appliedDirection, no way for the list to recover.
+      if(token !== applyToken) return;
       appliedDirection = previous;
       direction.set(previous);
       _error(e?.message);
@@ -112,7 +120,9 @@
     // The search list had the identical defect; this is the same fix.
     const selectedIds = new Set(selection.map(m => m.id));
     selection = results.filter(m => selectedIds.has(m.id));
-    messages = { ...messages, results, nextCursor }
+    // Adopt the refetched count too: while a filter is on this is the number the toolbar
+    // shows, and it describes the filtered set, which nothing else keeps up to date.
+    messages = { ...messages, results, nextCursor, total: json.total ?? messages.total }
   })
 
   const context: MailboxContext = { next, prev };
@@ -152,9 +162,11 @@
     
     const removeIds = () => {
       if(messages.results.some(item => rids.includes(item.id))) {
+        const results = messages.results.filter(item => !rids.includes(item.id));
         messages = {
           ...messages,
-          results: messages.results.filter(item => !rids.includes(item.id)),
+          results,
+          total: Math.max(0, messages.total - (messages.results.length - results.length)),
         };
 
         selection = selection.filter(item => !rids.includes(item.id))

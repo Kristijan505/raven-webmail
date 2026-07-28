@@ -130,9 +130,13 @@ import { locale } from "$lib/locale";
   const removeSelection = () => {
     const ids = selection.map(item => item.id);
     
+    // The count follows the rows. Under a direction filter it is the count on display,
+    // and the SSE counters only ever refresh the folder's own total.
+    const results = messages.results.filter(item => !ids.includes(item.id));
     messages = {
       ...messages,
-      results: messages.results.filter(item => !ids.includes(item.id))
+      results,
+      total: Math.max(0, messages.total - (messages.results.length - results.length)),
     }
 
     if(messages.results.length < 15 && messages.nextCursor) {
