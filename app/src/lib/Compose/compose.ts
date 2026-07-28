@@ -71,6 +71,40 @@ export type Reference = {
  * what the directive meant before it could be narrowed — losing the lookup must not
  * also lose the attachments.
  */
+
+/**
+ * Which of the ORIGINAL message's attachments a forward draft still carries.
+ *
+ * The original supplies the ids — the only ones WildDuck matches a narrowed directive
+ * against — and the draft's own copies supply the choice, since WildDuck rebuilt those
+ * from the last directive it was given. The directive itself is not round-tripped, so
+ * this intersection is the only surviving record of what the user removed.
+ *
+ * Copies carry ids from the new message's mime tree, so they are joined on content.
+ * Two known hashes that differ settle it: they are different files, whatever their
+ * names say. Filename and size stand in only where a hash is missing.
+ *
+ * Each surviving copy accounts for exactly ONE original. A message may carry the same
+ * file twice, and asking merely whether SOME copy matches would let one survivor vouch
+ * for both — restoring the row that was just removed.
+ */
+export const sameFile = (copy: Attachment, source: Attachment): boolean =>
+  (copy.hash && source.hash)
+    ? copy.hash === source.hash
+    : copy.filename === source.filename && copy.sizeKb === source.sizeKb;
+
+export const claimCarried = (original: Attachment[], onDraft: Attachment[]): Attachment[] => {
+  const unclaimed = [...onDraft];
+  return original
+    .filter(item => !item.related)
+    .filter(item => {
+      const index = unclaimed.findIndex(copy => sameFile(copy, item));
+      if(index === -1) return false;
+      unclaimed.splice(index, 1);
+      return true;
+    });
+}
+
 export const referenceFor = (
   reference: Reference | void,
   carried: Attachment[] | null | undefined,

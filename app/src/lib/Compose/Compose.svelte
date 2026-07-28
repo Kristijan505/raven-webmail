@@ -1,7 +1,7 @@
 <svelte:options accessors />
 
 <script lang="ts">
-  import { createMessageBody, crossin, crossout, kSent, kShowBcc, kShowCc } from "./compose";
+  import { claimCarried, createMessageBody, crossin, crossout, kSent, kShowBcc, kShowCc } from "./compose";
   import type { Draft } from "./compose";
   import s from "html-escape";
 
@@ -287,19 +287,12 @@
   // explicitly taken off. What DOES survive is the draft's own copies, since WildDuck
   // rebuilt them from the last directive it was given — so the two are intersected, the
   // original supplying the ids and the draft supplying the choice.
-  const sameFile = (copy: Attachment, source: Attachment): boolean =>
-    (!!copy.hash && copy.hash === source.hash) ||
-    (copy.filename === source.filename && copy.sizeKb === source.sizeKb);
-
   const carriedAttachments = async (draft: FullMessage): Promise<Attachment[] | null> => {
     const reference = draft.reference as any;
     if(reference?.action !== "forward") return null;
     try {
       const original: FullMessage = await _get(`/api/mailboxes/${reference.mailbox}/messages/${reference.id}`);
-      const onDraft = draft.attachments ?? [];
-      return (original.attachments ?? [])
-        .filter(item => !item.related)
-        .filter(item => onDraft.some(copy => sameFile(copy, item)));
+      return claimCarried(original.attachments ?? [], draft.attachments ?? []);
     } catch {
       return null;
     }

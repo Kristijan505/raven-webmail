@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { referenceFor, type Reference } from "./compose";
+import { claimCarried, referenceFor, type Reference } from "./compose";
 import type { Attachment } from "../types";
 
 const att = (id: string, related = false): Attachment =>
@@ -43,5 +43,52 @@ describe("referenceFor", () => {
 
   it("passes a missing reference straight through", () => {
     expect(referenceFor(undefined, [att("ATT00001")])).toBeUndefined();
+  });
+});
+
+describe("claimCarried", () => {
+  const att = (id: string, over: Partial<Attachment> = {}): Attachment =>
+    ({ id, filename: `${id}.pdf`, sizeKb: 10, related: false, ...over } as Attachment);
+  const ids = (list: Attachment[]) => list.map(a => a.id);
+
+  it("keeps the originals the draft still has a copy of", () => {
+    // The copies carry ids from the new message's mime tree, never the original's, so
+    // the join has to be on content.
+    const original = [att("ATT00003", { hash: "h1" }), att("ATT00004", { hash: "h2" })];
+    const onDraft = [att("ATT00001", { hash: "h1" })];
+    expect(ids(claimCarried(original, onDraft))).toEqual(["ATT00003"]);
+  });
+
+  it("leaves embedded images out whatever the draft holds", () => {
+    const original = [att("ATT00001", { hash: "h1", related: true }), att("ATT00003", { hash: "h2" })];
+    expect(ids(claimCarried(original, [att("x", { hash: "h1" }), att("y", { hash: "h2" })])))
+      .toEqual(["ATT00003"]);
+  });
+
+  it("spends each copy once when the same file is attached twice", () => {
+    // One survivor cannot vouch for both originals — that would restore the row the
+    // user just removed.
+    const twice = [att("ATT00003", { hash: "same" }), att("ATT00004", { hash: "same" })];
+    expect(ids(claimCarried(twice, [att("ATT00001", { hash: "same" })]))).toEqual(["ATT00003"]);
+    expect(ids(claimCarried(twice, [att("A", { hash: "same" }), att("B", { hash: "same" })])))
+      .toEqual(["ATT00003", "ATT00004"]);
+  });
+
+  it("lets two known hashes settle it, name and size notwithstanding", () => {
+    // Same name, same size, different contents: the hashes are authoritative, and the
+    // metadata comparison must not overrule them.
+    const original = [att("ATT00003", { hash: "gone", filename: "ponuda.pdf" })];
+    const onDraft = [att("ATT00001", { hash: "other", filename: "ponuda.pdf" })];
+    expect(claimCarried(original, onDraft)).toEqual([]);
+  });
+
+  it("falls back to name and size only when a hash is missing", () => {
+    const named = (id: string, over = {}) => att(id, { filename: "ponuda.pdf", ...over });
+    expect(ids(claimCarried([named("ATT00003")], [named("ATT00001")]))).toEqual(["ATT00003"]);
+    expect(claimCarried([named("ATT00003", { sizeKb: 10 })], [named("ATT00001", { sizeKb: 99 })])).toEqual([]);
+  });
+
+  it("keeps nothing when the draft carries nothing", () => {
+    expect(claimCarried([att("ATT00003", { hash: "h1" })], [])).toEqual([]);
   });
 });
