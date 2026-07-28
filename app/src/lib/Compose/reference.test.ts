@@ -138,3 +138,27 @@ describe("claimCarried and the rest of the draft's parts", () => {
     expect(ids(claimCarried(original, onDraft))).toEqual(["ATT00004"]);
   });
 });
+
+describe("claimCarried with identical bytes under different names", () => {
+  const att = (id: string, over: Partial<Attachment> = {}): Attachment =>
+    ({ id, filename: `${id}.pdf`, sizeKb: 10, related: false, ...over } as Attachment);
+  const ids = (list: Attachment[]) => list.map(a => a.id);
+
+  it("keeps the one whose name the draft still carries", () => {
+    // The same file attached twice under two names. Claiming on hash alone let the
+    // removed one take the surviving copy, so the forward went out under the wrong
+    // filename — the bytes were right and the name was the user's other choice.
+    const original = [
+      att("ATT00003", { hash: "same", filename: "ponuda.pdf" }),
+      att("ATT00004", { hash: "same", filename: "kopija.pdf" }),
+    ];
+    const onDraft = [att("ATT00001", { hash: "same", filename: "kopija.pdf" })];
+    expect(ids(claimCarried(original, onDraft))).toEqual(["ATT00004"]);
+  });
+
+  it("still matches on hash when the name was changed on neither side", () => {
+    const original = [att("ATT00003", { hash: "same", filename: "ponuda.pdf" })];
+    const onDraft = [att("ATT00001", { hash: "same", filename: "renamed.pdf" })];
+    expect(ids(claimCarried(original, onDraft))).toEqual(["ATT00003"]);
+  });
+});

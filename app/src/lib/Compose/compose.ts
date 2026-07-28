@@ -122,28 +122,31 @@ export const claimCarried = (
   }
 
   const claimed = new Set<Attachment>();
-
-  // Exact hashes first. Greedy matching in one pass lets an original with NO hash take,
-  // through the name-and-size fallback, the copy that belongs by hash to a different
-  // original of the same name and size — which silently swaps which id is selected, so
-  // the next save restores the removed file and drops the kept one. Certain pairs are
-  // settled before any guessing starts.
-  for (const item of carried) {
-    if (!item.hash) continue;
-    const index = pool.findIndex(copy => copy.hash === item.hash);
-    if (index === -1) continue;
+  const claim = (item: Attachment, match: (copy: Attachment) => boolean): void => {
+    const index = pool.findIndex(match);
+    if (index === -1) return;
     pool.splice(index, 1);
     claimed.add(item);
+  };
+
+  // Hash AND name first: the only pairing that is not a guess. Claiming on hash alone
+  // up front lets an original whose copy is gone take one that belongs to another
+  // original with the same bytes under a DIFFERENT name — the id and the filename that
+  // then go out are the ones the user removed, not the one they kept.
+  for (const item of carried) {
+    if (item.hash) claim(item, copy => copy.hash === item.hash && copy.filename === item.filename);
   }
 
-  // Then name and size, but never across two known hashes: those already had their say.
+  // Then hash alone, which still beats guessing: same bytes, filed under another name.
+  for (const item of carried) {
+    if (!claimed.has(item) && item.hash) claim(item, copy => copy.hash === item.hash);
+  }
+
+  // Name and size last, and never across two known hashes: those already had their say.
   for (const item of carried) {
     if (claimed.has(item)) continue;
-    const index = pool.findIndex(copy =>
+    claim(item, copy =>
       !(copy.hash && item.hash) && copy.filename === item.filename && copy.sizeKb === item.sizeKb);
-    if (index === -1) continue;
-    pool.splice(index, 1);
-    claimed.add(item);
   }
 
   return carried.filter(item => claimed.has(item));
