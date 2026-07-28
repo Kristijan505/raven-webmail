@@ -118,6 +118,8 @@ const locale: Locale = {
   Delete_folder: "Eliminar carpeta",
   Delete_all_messages: "Eliminar todos los mensajes",
   Reload: "Recargar",
+  Received_only: "Solo recibidos",
+  Sent_only: "Solo enviados",
   Mark_as_seen: "Marcar como leído",
   Mark_as_not_seen: "Marcar como no leído",
   Mark_as_spam: "Marcar como spam",

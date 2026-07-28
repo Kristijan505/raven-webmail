@@ -325,6 +325,54 @@ const ownedMailboxIds = async (req: Request, fresh: boolean): Promise<Set<string
   return ids;
 };
 
+// The account's own From address, for telling outgoing mail from incoming. Read from
+// WildDuck rather than from the session: `authentication.username` is whatever the user
+// typed at the login prompt, which WildDuck resolves against usernames AND addresses —
+// so it is not reliably the address messages are actually sent from.
+//
+// Cached because it is needed on every page of a filtered listing and effectively never
+// changes. Same shape as the mailbox-id cache above, including the bound on entries.
+const ADDRESS_TTL_MS = 10 * 60_000;
+const addressCache = new Map<string, { address: string; at: number }>();
+
+const ownAddress = async (req: Request): Promise<string> => {
+  const uid = userId(req);
+  const hit = addressCache.get(uid);
+  if (hit && Date.now() - hit.at < ADDRESS_TTL_MS) return hit.address;
+
+  const user = await get(`/users/${uid}`, token(req));
+  const address = String((user as { address?: unknown })?.address ?? "").trim();
+  if (!address) throw new ApiError(StatusCodes.BAD_GATEWAY, "Upstream error", "upstream_error");
+
+  if (addressCache.size >= MAILBOX_IDS_MAX_ENTRIES) {
+    const oldest = addressCache.keys().next().value;
+    if (oldest !== undefined) addressCache.delete(oldest);
+  }
+  addressCache.set(uid, { address, at: Date.now() });
+  return address;
+};
+
+/**
+ * The WildDuck search query for one direction of mail within one mailbox.
+ *
+ * Built HERE, never accepted from the client. WildDuck's `q` is a full query language —
+ * mailbox selectors, negation, boolean groups — and handing the client a passthrough
+ * for it would undo the allow-listing the rest of this file does, for the sake of one
+ * boolean. The client sends `direction`; the query is assembled from that plus the
+ * session's own user.
+ *
+ * Note `mailbox:` goes INSIDE the query. WildDuck ignores the separate `mailbox`
+ * parameter whenever `q` is present — the two take different code paths in its search
+ * handler — so passing it alongside would silently search the entire account.
+ *
+ * The address is quoted: it is data, and the parser treats bare `-` and spaces as
+ * syntax. Quoting is also what makes a `-` inside a local part harmless.
+ */
+export const directionQuery = (mailbox: string, address: string, direction: "in" | "out"): string => {
+  const from = `from:${JSON.stringify(address)}`;
+  return `mailbox:${mailbox} ${direction === "out" ? from : `-${from}`}`;
+};
+
 const assertOwnsMailbox = async (req: Request, mailboxId: string): Promise<void> => {
   const id = String(mailboxId);
   if ((await ownedMailboxIds(req, false)).has(id)) return;
@@ -775,6 +823,26 @@ export const api = (config: Config) => {
     const allowed: Record<string, string> = {};
     if (typeof req.query.next === "string" && req.query.next) allowed.next = req.query.next;
     if (typeof req.query.limit === "string" && req.query.limit) allowed.limit = req.query.limit;
+
+    // Filtering by direction goes through WildDuck's search, not the mailbox listing —
+    // that is the only endpoint that can express "from me" and, with negation, "not
+    // from me". Deliberately the SAME route and the same response shape as the
+    // unfiltered listing: total, nextCursor and the page all describe the filtered set,
+    // so a page stays a full page and the counter counts what is on screen. Doing it in
+    // the client would have meant paging until enough rows survived a local filter, and
+    // a count that could not be trusted.
+    const direction = req.query.direction;
+    if (direction === "in" || direction === "out") {
+      const mailbox = seg(req.params.mailbox);
+      const q = directionQuery(mailbox, await ownAddress(req), direction);
+      const body = await get(`/users/${userId(req)}/search?${qs.stringify({ ...allowed, q })}`, token(req));
+      // Search omits specialUse; the list UI reads it off the mailbox it already holds,
+      // but keep the shape identical so nothing downstream has to know which endpoint
+      // answered.
+      res.json({ specialUse: null, ...(body as object) });
+      return;
+    }
+
     const qsStr = qs.stringify(allowed);
     const body = await get(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages${qsStr ? "?" + qsStr : ""}`, token(req));
     res.json(body);

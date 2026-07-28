@@ -115,6 +115,8 @@ export default {
   Delete_folder: "Delete folder",
   Delete_all_messages: "Delete all messages",
   Reload: "Reload",
+  Received_only: "Received only",
+  Sent_only: "Sent only",
   Mark_as_seen: "Mark as seen",
   Mark_as_not_seen: "Mark as not seen",
   Mark_as_spam: "Mark as spam",

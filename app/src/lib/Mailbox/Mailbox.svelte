@@ -20,11 +20,19 @@
   import Top from "./Top.svelte";
       
   let loadingMore = false;
+
+  // Every listing request carries the active direction filter, so paging and the count
+  // come back describing the filtered set rather than being trimmed afterwards.
+  const listUrl = (params: string[] = []) => {
+    const all = [...params, directionParam(active)].filter(Boolean);
+    return `/api/mailboxes/${mailbox.id}/messages${all.length ? "?" + all.join("&") : ""}`;
+  }
+
   const next = action(async () => {
     if(!messages.nextCursor) return;
     loadingMore = true;
     try {
-      const json: Messages = await _get(`/api/mailboxes/${mailbox.id}/messages?next=${messages.nextCursor}&limit=50`)
+      const json: Messages = await _get(listUrl([`next=${messages.nextCursor}`, "limit=50"]))
       messages = {
         ...messages,
         results: dedup([ ...messages.results, ...json.results ]),
@@ -37,8 +45,28 @@
     }
   })
 
+  // Switching the filter is not a refresh of the same list — it is a different list, so
+  // it replaces rather than reconciles. reconcileFirstPage exists to decide what to keep
+  // from what is already on screen; here the answer is nothing, and running it would
+  // hold on to rows the new filter excludes.
+  $: active = activeDirection(mailbox, $direction);
+  // Starts as null, not as the stored value: the page was loaded unfiltered, so a
+  // filter carried over from an earlier session has to be applied once on arrival too,
+  // not only when the user touches a chip.
+  let appliedDirection: ReturnType<typeof activeDirection> = null;
+  $: if(active !== appliedDirection) {
+    appliedDirection = active;
+    reload();
+  }
+
+  const reload = action(async () => {
+    const json: Messages = await _get(listUrl(["limit=50"]));
+    selection = [];
+    messages = json;
+  })
+
   const prev = action(async () => {
-    const json: Messages = await _get(`/api/mailboxes/${mailbox.id}/messages`);
+    const json: Messages = await _get(listUrl());
     // See reconcile.ts for why the next cursor decides the fate of rows below the
     // refetched page — that is what finally retires an orphaned autosaved draft.
     const { results, nextCursor } = reconcileFirstPage(messages, json);
@@ -81,6 +109,7 @@
   import { action, _get } from "$lib/util";
   import CircularProgress from "$lib/CircularProgress.svelte";
   import { dedupById, reconcileFirstPage } from "./reconcile";
+  import { activeDirection, direction, directionParam } from "$lib/direction";
 
   const dedup = dedupById;
 

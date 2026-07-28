@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { seg, isPrivateIp, assertPublicHttpUrl, CreateMessageSchema, MeSchema } from "./api";
+import { seg, isPrivateIp, assertPublicHttpUrl, CreateMessageSchema, MeSchema, directionQuery } from "./api";
 
 describe("seg() — path param hardening (cross-user IDOR / query injection)", () => {
   it("passes legitimate WildDuck ids through unchanged", () => {
@@ -160,5 +160,32 @@ describe("CreateMessageSchema — draft send round-trip (reply/forward)", () => 
   it("still rejects a reference with a non-numeric id", () => {
     const body = { reference: { mailbox: "x", id: "not-a-number", action: "reply" } };
     expect(() => CreateMessageSchema.parse(body)).toThrow();
+  });
+});
+
+describe("directionQuery() — direction filter built server-side", () => {
+  const MB = "615c1f2e4a3b9c0d7e8f1a2b";
+
+  it("asks for mail from the account itself when filtering outgoing", () => {
+    expect(directionQuery(MB, "kiki@red-code.dev", "out")).toBe(`mailbox:${MB} from:"kiki@red-code.dev"`);
+  });
+
+  it("negates the same term for incoming", () => {
+    // The half that cannot be expressed with WildDuck's structured from/to params and
+    // is the whole reason this goes through `q`.
+    expect(directionQuery(MB, "kiki@red-code.dev", "in")).toBe(`mailbox:${MB} -from:"kiki@red-code.dev"`);
+  });
+
+  it("scopes the mailbox inside the query, not beside it", () => {
+    // WildDuck ignores the separate `mailbox` param when `q` is set — the two are
+    // different code paths in its search handler — so a selector left outside would
+    // quietly widen the search to the whole account.
+    expect(directionQuery(MB, "a@b.c", "in").startsWith(`mailbox:${MB} `)).toBe(true);
+  });
+
+  it("quotes the address so it stays data", () => {
+    // A local part may contain the very characters the parser reads as syntax: a
+    // leading `-` is negation, a space separates terms, `"` ends a phrase.
+    expect(directionQuery(MB, '-weird" or:x@b.c', "out")).toBe(`mailbox:${MB} from:"-weird\\" or:x@b.c"`);
   });
 });

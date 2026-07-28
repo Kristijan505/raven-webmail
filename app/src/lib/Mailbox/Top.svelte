@@ -23,6 +23,9 @@
   import { tooltip, clickable } from "$lib/actions";
   import { fade } from "svelte/transition";
   import { action, isDrafts, isInbox, isJunk, isSent, isTrash, mailboxName, plural, _delete, _put } from "$lib/util";
+  import { direction, mixesDirections, toggleDirection } from "$lib/direction";
+  import Down from "~icons/mdi/tray-arrow-down";
+  import Up from "~icons/mdi/tray-arrow-up";
 
   import MoveTo from "$lib/MoveTo.svelte";
   import { getContext } from "svelte";
@@ -228,6 +231,23 @@ import { locale } from "$lib/locale";
     background: var(--surface-2);
     color: var(--text-muted);
   }
+
+  /* Direction chips. Same footprint as the toolbar actions beside them, but they carry
+     state, so the active one is filled rather than merely hovered — a filter that is on
+     has to be visible without hovering, otherwise a folder just looks half empty. */
+  .chip {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-2);
+    border-radius: var(--radius-full);
+    color: var(--text-muted);
+  }
+
+  .chip.on {
+    background: var(--red);
+    color: #fff;
+  }
 </style>
 
 <TabTop {scrolled}>
@@ -242,6 +262,21 @@ import { locale } from "$lib/locale";
       {/if}
       <Ripple />
     </div>
+
+    {#if mixesDirections(mailbox)}
+      <!-- Only where a folder actually holds both. The filter runs on the server, so a
+           page stays a full page and the count describes what is shown. -->
+      <div class="chip btn-dark" class:on={$direction === "in"} use:clickable
+        use:tooltip={$locale.Received_only} on:click={() => toggleDirection("in")}>
+        <Down />
+        <Ripple />
+      </div>
+      <div class="chip btn-dark" class:on={$direction === "out"} use:clickable
+        use:tooltip={$locale.Sent_only} on:click={() => toggleDirection("out")}>
+        <Up />
+        <Ripple />
+      </div>
+    {/if}
 
     <div class="action btn-dark reload" use:clickable use:tooltip={$locale.Reload} on:click={reload}>
       <div class="reload-inner" style="transform: rotate({360 * reloadTimes}deg);">
