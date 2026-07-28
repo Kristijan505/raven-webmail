@@ -102,6 +102,26 @@ describe("reconcileFirstPage", () => {
     expect(out.nextCursor).toBe("page2");
   });
 
+  it("restarts from the fresh cursor when a gap opened between the pages", () => {
+    // More than a page arrived while nothing was listening (SSE drop, backgrounded
+    // tab), so the refetched first page stops ABOVE everything held and 110..101 was
+    // never fetched by anyone. Keeping the old cursor would point below the retained
+    // rows and strand that run permanently — no "load more" walks through it.
+    const current = { results: [msg(100), msg(99)], nextCursor: false as const };
+    const fresh = { results: [msg(160), msg(159)], nextCursor: "110" };
+    const out = reconcileFirstPage(current, fresh);
+    expect(ids(out.results)).toEqual([160, 159, 100, 99]);
+    expect(out.nextCursor).toBe("110");
+  });
+
+  it("still keeps the old cursor when the pages actually meet", () => {
+    // The distinction the line above turns on: here the fresh page reaches back into
+    // rows already held, so the two halves are one run and the old cursor is right.
+    const current = { results: [msg(50), msg(49), msg(20)], nextCursor: "deep" };
+    const fresh = { results: [msg(51), msg(50), msg(49)], nextCursor: "page2" };
+    expect(reconcileFirstPage(current, fresh).nextCursor).toBe("deep");
+  });
+
   it("clears the cursor along with the list when the mailbox is confirmed empty", () => {
     const out = reconcileFirstPage(
       { results: [msg(9)], nextCursor: "page2" },

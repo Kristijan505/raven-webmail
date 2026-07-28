@@ -61,6 +61,11 @@ export const reconcileFirstPage = (
   const older = fresh.nextCursor ? current.results.filter(m => m.id < minFreshId) : [];
   const results = dedupById([...fresh.results, ...older]);
 
+  // Does the fresh page reach back into rows we already hold? Only then do the two
+  // halves of the list actually meet, and only then does keeping the old cursor make
+  // sense — see below.
+  const continuous = current.results.some(m => m.id >= minFreshId);
+
   // The cursor has to continue after the LAST row we hold, and the results and the
   // cursor therefore have to be decided together — which is why they are returned
   // together rather than left to the caller to pair up.
@@ -71,5 +76,13 @@ export const reconcileFirstPage = (
   // The cursor we already had still points past the last page loaded, so it stays.
   // Only when nothing older was retained does the fresh page describe the whole list,
   // and its cursor becomes the right one.
-  return { results, nextCursor: older.length ? current.nextCursor : fresh.nextCursor };
+  //
+  // All of which assumes the fresh page and the retained rows are one continuous run.
+  // They are not when more than a page arrived while we were not listening — an SSE
+  // drop, a backgrounded tab — because then the fresh page stops above everything we
+  // hold and the messages in between were never fetched by anyone. Keeping the old
+  // cursor there strands them for good: it points below the retained rows, so no amount
+  // of "load more" ever walks through the gap. The fresh cursor is the one that does,
+  // and dedup absorbs the retained rows when paging reaches them again.
+  return { results, nextCursor: older.length && continuous ? current.nextCursor : fresh.nextCursor };
 };

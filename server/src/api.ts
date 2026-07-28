@@ -16,7 +16,7 @@ import * as https from "https";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import ipaddr from "ipaddr.js";
-import { destroyOtherSessions, sessionCookieClearOptions } from "./session";
+import { destroyOtherSessions, rotateSession, sessionCookieClearOptions } from "./session";
 import { logger } from "./logger";
 
 const fromWeb = (Readable as any).fromWeb as ((stream: any) => NodeJS.ReadableStream);
@@ -226,6 +226,19 @@ const cacheMailboxIds = (uid: string, ids: Set<string>): void => {
 
 // Open /updates responses, so they can be closed when their session is evicted.
 // Bounded by the number of connected clients and cleaned up when each disconnects.
+//
+// PROCESS-LOCAL, and that is a real limit on what sessionsEvicted can promise. Session
+// records live in Mongo and are therefore shared, so after an eviction any NEW request
+// fails auth on every instance. An already-open stream is different: it holds the
+// WildDuck token it captured at open time in memory, and only the instance it is
+// connected to can reach it. Run more than one instance and a password change closes
+// the streams on the instance handling it while identical streams elsewhere keep
+// delivering, with the flag still reporting a complete eviction.
+//
+// Deploying a single instance per environment is what makes the flag true today, so
+// this holds as long as that does. Scaling out needs the eviction broadcast between
+// instances (shared pub/sub) — or the flag downgraded to say what it can actually
+// vouch for.
 type LiveStream = { user: string; session: string; close: () => void };
 const liveStreams = new Set<LiveStream>();
 
@@ -235,8 +248,15 @@ const liveStreams = new Set<LiveStream>();
 // that lands in that window finds nothing to close, reports success, and then the
 // pending open registers a stream still holding the old token. Comparing the counter
 // captured before the await against this tells that stream it was already evicted.
+//
+// Only ever needed to catch an open that was ALREADY in flight, which resolves in
+// milliseconds — so entries are swept on write rather than kept for the life of the
+// process. Without that the map would hold one row, with a user and session id in it,
+// for every account that has ever changed a password since boot.
+const EVICTION_MEMORY_MS = 10 * 60_000;
+
 let evictionCounter = 0;
-const lastEviction = new Map<string, { keep: string; at: number }>();
+const lastEviction = new Map<string, { keep: string; at: number; ts: number }>();
 
 const wasEvictedSince = (user: string, session: string, since: number): boolean => {
   const e = lastEviction.get(user);
@@ -246,7 +266,11 @@ const wasEvictedSince = (user: string, session: string, since: number): boolean 
 // Cut off every live update stream for this user except the session doing the change.
 // Returns how many were closed.
 const closeOtherLiveStreams = (user: string, keepSession: string): number => {
-  lastEviction.set(user, { keep: keepSession, at: ++evictionCounter });
+  const now = Date.now();
+  for (const [key, entry] of lastEviction) {
+    if (now - entry.ts > EVICTION_MEMORY_MS) lastEviction.delete(key);
+  }
+  lastEviction.set(user, { keep: keepSession, at: ++evictionCounter, ts: now });
   let closed = 0;
   for (const entry of [...liveStreams]) {
     if (entry.user !== user || entry.session === keepSession) continue;
@@ -677,11 +701,22 @@ export const api = (config: Config) => {
       // deleted" — zero deletions because there were no other sessions is success, and
       // the UI must not warn about it. It is false only when the eviction could not be
       // carried out at all. The count is logged so that is auditable after the fact.
-      sessionsEvicted = await destroyOtherSessions(id, req.sessionID)
+      // Rotate before evicting. The exception below is "keep the session making the
+      // change" — but a copied raven.sid arrives on that exact id, so the exception
+      // would spare the copy too. rotateSession moves this browser to an id no one
+      // else can be holding first; only then does "everything except mine" mean it.
+      sessionsEvicted = await rotateSession(req)
+        .then(() => destroyOtherSessions(id, req.sessionID))
         .then((count: number) => {
           // Session records alone are not enough: an /updates response already open
           // holds its own token and would keep streaming. Close those too, or the flag
           // below would claim more than was actually done.
+          //
+          // Since rotation, this also closes the caller's OWN stream — it was opened
+          // under the id we just retired, and that id is exactly what cannot be trusted
+          // any more. The client reconnects on its own: it is a native EventSource, and
+          // by the time the browser retries it holds the new cookie set by the response
+          // below, which passes the wasEvictedSince check as the session that was kept.
           const streams = closeOtherLiveStreams(id, req.sessionID);
           logger.info({ count, streams }, "other sessions invalidated after password change");
           return true;

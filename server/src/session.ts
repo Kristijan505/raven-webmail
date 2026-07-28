@@ -1,6 +1,6 @@
 import ExpressSession from "express-session";
 import MongoSession from "connect-mongodb-session";
-import type { CookieOptions } from "express";
+import type { CookieOptions, Request } from "express";
 import { Config } from "./config";
 
 const MongoStore = MongoSession(ExpressSession);
@@ -8,6 +8,37 @@ const MongoStore = MongoSession(ExpressSession);
 // session() runs once at boot. Keep the store reachable afterwards so a password
 // change can evict that user's OTHER sessions (see destroyOtherSessions).
 let activeStore: any = null;
+
+/**
+ * Give this browser a NEW session id, carrying its authentication across.
+ *
+ * Without this, evicting "every session except the current one" cannot remediate the
+ * case it exists for. A stolen `raven.sid` is not a second session — it is a copy of
+ * this one, so the thief arrives on the very id being kept, and the exception written
+ * to protect the user's own tab protects the thief's tab just as well. The password
+ * changes, `sessionsEvicted: true` goes back, and the copied cookie keeps its WildDuck
+ * token and full API access.
+ *
+ * Rotating first breaks the tie: regenerate() destroys the old record and mints a new
+ * id for the browser that proved knowledge of the old password, and the copy is left
+ * pointing at an id that no longer exists. Everything else is then evicted by the id
+ * that no other client can be holding.
+ *
+ * regenerate() deliberately empties the new session, so `authentication` — the WildDuck
+ * token, user id and username minted at login — is carried over by hand, and saved
+ * before the caller deletes anything, so a crash between the two cannot leave the user
+ * holding a session id with no authentication on it.
+ */
+export const rotateSession = (req: Request): Promise<void> => {
+  const carried = req.session.authentication;
+  return new Promise<void>((resolve, reject) => {
+    req.session.regenerate(err => {
+      if(err) return reject(err);
+      req.session.authentication = carried;
+      req.session.save(saveErr => saveErr ? reject(saveErr) : resolve());
+    });
+  });
+}
 
 /**
  * Destroy every stored session belonging to `userId` except `keepSessionId`.

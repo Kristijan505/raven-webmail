@@ -5,7 +5,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "test": "echo 'Test configuration pending'",
+    "test": "vitest run",
     "predev": "svelte-kit sync",
     "dev": "vite dev --port 3000",
     "prebuild": "svelte-kit sync",
@@ -40,6 +40,7 @@
     "tslib": "^2.8.1",
     "typescript": "^5.9.3",
     "unplugin-icons": "^23.0.1",
+    "vitest": "^4.1.9",
     "workbox-cacheable-response": "^7.4.0",
     "workbox-expiration": "^7.4.0",
     "workbox-precaching": "^7.4.0",
