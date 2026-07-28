@@ -149,3 +149,39 @@ describe("wasSent", () => {
     expect(wasSent(mine, work, null)).toBe(false);
   });
 });
+
+describe("wasSent and an untrustworthy From", () => {
+  const spoofed = { from: { address: ME } }; // forged to look like our own address
+
+  it("classifies freshly delivered mail by its mailbox, not by From", () => {
+    // The forged case that matters: mail arrives into Inbox or Junk, so a From that
+    // claims the account's own address never gets to speak there.
+    expect(wasSent(spoofed, inbox, ME)).toBe(false);
+    expect(wasSent(spoofed, junk, ME)).toBe(false);
+    expect(moveDestinations(inbox, all, [spoofed], ME).map(m => m.path))
+      .not.toContain("Sent");
+  });
+
+  it("accepts From once the user has filed the message away themselves", () => {
+    // Documented limitation, asserted so it stays a decision rather than a surprise.
+    expect(wasSent(spoofed, trash, ME)).toBe(true);
+  });
+});
+
+describe("Junk has a complete set of exits", () => {
+  // The move menu leaves Trash to the dedicated Delete button, so these two have to be
+  // read together: whatever the menu drops, the button must still reach. Junk is where
+  // that pairing broke — Delete there erased outright, so dropping Trash from the menu
+  // left no non-destructive way out at all.
+  it("offers Inbox and the user's own folders, and leaves Trash to the button", () => {
+    const paths = moveDestinations(junk, all, [theirs], ME).map(m => m.path);
+    expect(paths).toContain("INBOX");
+    expect(paths).toEqual(expect.arrayContaining(["Work", "Bills"]));
+    expect(paths).not.toContain("Trash");
+    expect(paths).not.toContain("Junk");
+  });
+
+  it("treats mail in Junk as received even when From claims our own address", () => {
+    expect(moveDestinations(junk, all, [mine], ME).map(m => m.path)).toContain("INBOX");
+  });
+});

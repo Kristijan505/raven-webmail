@@ -229,9 +229,24 @@ const cacheMailboxIds = (uid: string, ids: Set<string>): void => {
 type LiveStream = { user: string; session: string; close: () => void };
 const liveStreams = new Set<LiveStream>();
 
+// The last eviction seen for a user: which session survived it, and a counter that
+// only moves forward. A stream opening while an eviction runs would otherwise slip
+// through — watch() is awaited before the stream can be registered, so an eviction
+// that lands in that window finds nothing to close, reports success, and then the
+// pending open registers a stream still holding the old token. Comparing the counter
+// captured before the await against this tells that stream it was already evicted.
+let evictionCounter = 0;
+const lastEviction = new Map<string, { keep: string; at: number }>();
+
+const wasEvictedSince = (user: string, session: string, since: number): boolean => {
+  const e = lastEviction.get(user);
+  return !!e && e.at > since && e.keep !== session;
+};
+
 // Cut off every live update stream for this user except the session doing the change.
 // Returns how many were closed.
 const closeOtherLiveStreams = (user: string, keepSession: string): number => {
+  lastEviction.set(user, { keep: keepSession, at: ++evictionCounter });
   let closed = 0;
   for (const entry of [...liveStreams]) {
     if (entry.user !== user || entry.session === keepSession) continue;
@@ -583,7 +598,14 @@ export const api = (config: Config) => {
   */
 
   api.get("/updates", handler(async (req, res) => {
+    // Captured BEFORE the await: an eviction can land while watch() is in flight, and
+    // this connection must not come up afterwards still carrying the old token.
+    const openedAt = evictionCounter;
     const stream = await watch(userId(req), token(req));
+    if (wasEvictedSince(userId(req), req.sessionID, openedAt)) {
+      (stream as NodeJS.ReadableStream & { destroy?: () => void }).destroy?.();
+      throw new ApiError(StatusCodes.FORBIDDEN, "Forbidden", "forbidden");
+    }
     res.type("text/event-stream");
     stream.pipe(res);
     // Registered so a password change can actually cut it off. This response captured

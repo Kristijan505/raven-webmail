@@ -74,7 +74,13 @@ import { locale } from "$lib/locale";
   })
 
   const del = action(async () => {
-    if(isTrash(mailbox) || isJunk(mailbox)) {
+    // Junk deliberately NOT permanent here. The tooltip in Junk reads "Delete", not
+    // "Delete permanently" (that wording is reserved for Trash), and Clear-folder in
+    // Junk moves everything to Trash rather than erasing it — so a single Delete that
+    // erased outright contradicted both its own label and the button beside it. It is
+    // also the only non-destructive way out of Junk now that the move menu leaves
+    // Trash to the dedicated button. Permanent deletion stays where the label says so.
+    if(isTrash(mailbox)) {
       await Promise.all(selection.map(async item => {
         await _delete(`/api/mailboxes/${mailbox.id}/messages/${item.id}`);
       }))

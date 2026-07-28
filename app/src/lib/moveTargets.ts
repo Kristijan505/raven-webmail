@@ -55,6 +55,19 @@ export const wasSent = (
   if (mailbox.specialUse === SENT) return true;
   if (mailbox.specialUse === JUNK || mailbox.path === INBOX_PATH) return false;
 
+  // Known and accepted: From is written by the sender, so a message forged with the
+  // account's own address reads as sent once it leaves Inbox/Junk, and the menu then
+  // offers Sent for it. The folder checks above are what keep that harmless where it
+  // would matter — freshly delivered mail is classified by the mailbox it landed in,
+  // never by this comparison — so reaching here at all takes the user deliberately
+  // filing the message elsewhere first, and the worst outcome is a foreign message
+  // sitting in Sent because they then chose to put it there. Nothing reads Sent as a
+  // security boundary. The alternatives were measured and cost more than they buy:
+  // `outbound` is the trustworthy signal but exists only on the full message, so the
+  // list would need one upstream fetch per row; verifying it server-side on the move
+  // instead would reject legitimate restores for every imported or migrated message,
+  // which have no `outbound` at all; and a marker written at send time cannot say
+  // anything about mail that predates it, which is the case this rule exists to cover.
   const from = message?.from?.address?.trim().toLowerCase();
   const mine = accountAddress?.trim().toLowerCase();
   return !!from && !!mine && from === mine;
