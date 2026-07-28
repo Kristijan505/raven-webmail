@@ -18,9 +18,15 @@ export type Direction = "in" | "out";
 
 const KEY = "raven.direction";
 
+// Guarded exactly like theme.ts and locale.ts: localStorage access throws a
+// SecurityError where storage is disabled or third-party storage is blocked. This runs
+// at module import, and the mailbox imports it, so an unguarded read would not cost the
+// user their saved filter — it would cost them the whole authenticated UI. The write
+// can throw on the same grounds, and on quota.
 const stored = (): Direction | null => {
   if (typeof localStorage === "undefined") return null;
-  const value = localStorage.getItem(KEY);
+  let value: string | null = null;
+  try { value = localStorage.getItem(KEY); } catch (_e) { return null; }
   return value === "in" || value === "out" ? value : null;
 };
 
@@ -28,8 +34,10 @@ export const direction = writable<Direction | null>(stored());
 
 direction.subscribe(value => {
   if (typeof localStorage === "undefined") return;
-  if (value) localStorage.setItem(KEY, value);
-  else localStorage.removeItem(KEY);
+  try {
+    if (value) localStorage.setItem(KEY, value);
+    else localStorage.removeItem(KEY);
+  } catch (_e) { /* the filter still applies for this session */ }
 });
 
 /** Turn a chip on, or off again when it is already the active one. */

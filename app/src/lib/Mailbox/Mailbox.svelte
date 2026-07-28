@@ -28,20 +28,27 @@
     return `/api/mailboxes/${mailbox.id}/messages${all.length ? "?" + all.join("&") : ""}`;
   }
 
+  // Every listing request belongs to a generation, and changing the filter supersedes
+  // whatever is in flight. Without that, a "load more" started under the old filter
+  // lands after the new list is installed and appends its rows — and its cursor — into
+  // it, and two quick chip toggles can finish out of order and leave the older answer on
+  // screen. A superseded response is dropped rather than merged.
+  let listGeneration = 0;
+
   const next = action(async () => {
     if(!messages.nextCursor) return;
+    const generation = listGeneration;
     loadingMore = true;
     try {
       const json: Messages = await _get(listUrl([`next=${messages.nextCursor}`, "limit=50"]))
+      if(generation !== listGeneration) return;
       messages = {
         ...messages,
         results: dedup([ ...messages.results, ...json.results ]),
         nextCursor: json.nextCursor,
       }
+    } finally {
       loadingMore = false;
-    } catch(e) {
-      loadingMore = false;
-      throw e;
     }
   })
 
@@ -54,19 +61,41 @@
   // filter carried over from an earlier session has to be applied once on arrival too,
   // not only when the user touches a chip.
   let appliedDirection: ReturnType<typeof activeDirection> = null;
-  $: if(active !== appliedDirection) {
-    appliedDirection = active;
-    reload();
+  $: if(active !== appliedDirection) applyDirection(active);
+
+  // The chip must never claim a filter the list is not showing. appliedDirection moves
+  // first so this does not re-enter while the request is out, but a failure puts both it
+  // and the store back: otherwise a lit chip sits over unfiltered rows, and since
+  // `active` would by then equal appliedDirection, nothing would ever retry.
+  //
+  // reloadNow rather than reload, because action() reports a failure and swallows it —
+  // useful for a button, useless for deciding whether the filter took.
+  const applyDirection = async (value: ReturnType<typeof activeDirection>) => {
+    const previous = appliedDirection;
+    appliedDirection = value;
+    try {
+      await reloadNow();
+    } catch(e: any) {
+      appliedDirection = previous;
+      direction.set(previous);
+      _error(e?.message);
+    }
   }
 
-  const reload = action(async () => {
+  const reloadNow = async () => {
+    const generation = ++listGeneration;
     const json: Messages = await _get(listUrl(["limit=50"]));
+    if(generation !== listGeneration) return;
     selection = [];
     messages = json;
-  })
+  }
+
+  const reload = action(reloadNow);
 
   const prev = action(async () => {
+    const generation = listGeneration;
     const json: Messages = await _get(listUrl());
+    if(generation !== listGeneration) return;
     // See reconcile.ts for why the next cursor decides the fate of rows below the
     // refetched page — that is what finally retires an orphaned autosaved draft.
     const { results, nextCursor } = reconcileFirstPage(messages, json);
@@ -110,6 +139,7 @@
   import CircularProgress from "$lib/CircularProgress.svelte";
   import { dedupById, reconcileFirstPage } from "./reconcile";
   import { activeDirection, direction, directionParam } from "$lib/direction";
+  import { _error } from "$lib/Notify/notify";
 
   const dedup = dedupById;
 

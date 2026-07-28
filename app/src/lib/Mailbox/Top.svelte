@@ -23,7 +23,7 @@
   import { tooltip, clickable } from "$lib/actions";
   import { fade } from "svelte/transition";
   import { action, isDrafts, isInbox, isJunk, isSent, isTrash, mailboxName, plural, _delete, _put } from "$lib/util";
-  import { direction, mixesDirections, toggleDirection } from "$lib/direction";
+  import { activeDirection, direction, mixesDirections, toggleDirection } from "$lib/direction";
   import Down from "~icons/mdi/tray-arrow-down";
   import Up from "~icons/mdi/tray-arrow-up";
 
@@ -142,6 +142,12 @@ import { locale } from "$lib/locale";
     
     selection = [];
   }
+
+  // While a direction filter is on, the folder's own total describes rows that are not
+  // being shown — a folder of 100 with 10 outgoing would read "100 messages" above a
+  // list of 10. The filtered listing reports its own total, so use that one; unfiltered,
+  // mailbox.total is the live figure the SSE counters keep up to date.
+  $: shownTotal = activeDirection(mailbox, $direction) ? messages.total : mailbox.total;
 
   const move = action(async (to: Mailbox) => {
     if(mailbox.id === to.id) return;
@@ -304,7 +310,7 @@ import { locale } from "$lib/locale";
     </div>
 
     <div class="total">
-      {mailbox.total} {plural(mailbox.total, $locale.message_count)}
+      {shownTotal} {plural(shownTotal, $locale.message_count)}
     </div>
   {:else if selection.length !== 0}
     <div class="only-when-selection" in:fade|local={{ duration: 200 }}>
