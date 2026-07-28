@@ -92,3 +92,49 @@ describe("claimCarried", () => {
     expect(claimCarried([att("ATT00003", { hash: "h1" })], [])).toEqual([]);
   });
 });
+
+describe("claimCarried and the rest of the draft's parts", () => {
+  const att = (id: string, over: Partial<Attachment> = {}): Attachment =>
+    ({ id, filename: `${id}.pdf`, sizeKb: 10, related: false, ...over } as Attachment);
+  const ids = (list: Attachment[]) => list.map(a => a.id);
+  const upload = (filename: string) => ({ id: "s1", filename, contentType: "application/pdf", size: 1024 });
+
+  it("does not let an upload vouch for the carried file it replaced", () => {
+    // Remove ponuda.pdf, then attach your own ponuda.pdf: the upload lands in the
+    // draft's attachments too, and counting it as evidence would restore the original
+    // beside it — the message then goes out carrying the file twice.
+    const original = [att("ATT00003", { hash: "h1", filename: "ponuda.pdf" })];
+    const onDraft = [att("ATT00001", { hash: "h1", filename: "ponuda.pdf" })];
+    expect(claimCarried(original, onDraft, [upload("ponuda.pdf")])).toEqual([]);
+  });
+
+  it("still keeps a carried file when an upload merely shares its name", () => {
+    // Two parts, one name: the upload accounts for one of them, the carried copy for
+    // the other. Discarding by name alone would have dropped both.
+    const original = [att("ATT00003", { hash: "h1", filename: "ponuda.pdf" })];
+    const onDraft = [
+      att("ATT00001", { hash: "h1", filename: "ponuda.pdf" }),
+      att("ATT00002", { hash: "h9", filename: "ponuda.pdf" }),
+    ];
+    expect(ids(claimCarried(original, onDraft, [upload("ponuda.pdf")]))).toEqual(["ATT00003"]);
+  });
+
+  it("ignores embedded parts on the draft as evidence", () => {
+    const original = [att("ATT00003", { hash: "h1", filename: "logo.png" })];
+    const onDraft = [att("ATT00001", { hash: "h1", filename: "logo.png", related: true })];
+    expect(claimCarried(original, onDraft)).toEqual([]);
+  });
+
+  it("settles certain hash pairs before falling back to name and size", () => {
+    // Same name and size; the first original has no hash, the second does, and only the
+    // second's copy survives. Matching in one greedy pass let the hashless one take that
+    // copy, swapping which id was selected — the next save would restore the removed
+    // file and drop the kept one.
+    const original = [
+      att("ATT00003", { filename: "ponuda.pdf", sizeKb: 10 }),
+      att("ATT00004", { hash: "h2", filename: "ponuda.pdf", sizeKb: 10 }),
+    ];
+    const onDraft = [att("ATT00001", { hash: "h2", filename: "ponuda.pdf", sizeKb: 10 })];
+    expect(ids(claimCarried(original, onDraft))).toEqual(["ATT00004"]);
+  });
+});

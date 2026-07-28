@@ -292,7 +292,7 @@
     if(reference?.action !== "forward") return null;
     try {
       const original: FullMessage = await _get(`/api/mailboxes/${reference.mailbox}/messages/${reference.id}`);
-      return claimCarried(original.attachments ?? [], draft.attachments ?? []);
+      return claimCarried(original.attachments ?? [], draft.attachments ?? [], draft.files ?? []);
     } catch {
       return null;
     }

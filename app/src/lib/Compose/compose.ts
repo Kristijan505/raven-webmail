@@ -93,16 +93,60 @@ export const sameFile = (copy: Attachment, source: Attachment): boolean =>
     ? copy.hash === source.hash
     : copy.filename === source.filename && copy.sizeKb === source.sizeKb;
 
-export const claimCarried = (original: Attachment[], onDraft: Attachment[]): Attachment[] => {
-  const unclaimed = [...onDraft];
-  return original
-    .filter(item => !item.related)
-    .filter(item => {
-      const index = unclaimed.findIndex(copy => sameFile(copy, item));
-      if(index === -1) return false;
-      unclaimed.splice(index, 1);
-      return true;
-    });
+export const claimCarried = (
+  original: Attachment[],
+  onDraft: Attachment[],
+  uploaded: MessageFile[] = [],
+): Attachment[] => {
+  // Only the copies WildDuck made from the reference are evidence of what survived.
+  // The draft's attachments also hold the embedded images and, once the user attaches
+  // anything, their own uploads — and an upload of the very file that was removed would
+  // otherwise vouch for it, restoring the original alongside the upload so the message
+  // goes out carrying it twice. Uploads are matched off by name and consumed, so a
+  // second copy of a name that appears twice is still available to a real carried part.
+  const carried = original.filter(item => !item.related);
+  const pool = onDraft.filter(item => !item.related);
+
+  // An upload consumes the part the reference cannot account for. Taking the first
+  // name match instead would let it swallow the carried copy and leave its own behind,
+  // which reads as "the carried file is gone" — so where a name appears more than once,
+  // prefer the part whose content matches no original.
+  const fromOriginal = new Set(carried.map(item => item.hash).filter(Boolean));
+  for (const file of uploaded) {
+    const matches = pool
+      .map((item, index) => ({ item, index }))
+      .filter(entry => entry.item.filename === file.filename);
+    if (!matches.length) continue;
+    const pick = matches.find(entry => !entry.item.hash || !fromOriginal.has(entry.item.hash)) ?? matches[0];
+    pool.splice(pick.index, 1);
+  }
+
+  const claimed = new Set<Attachment>();
+
+  // Exact hashes first. Greedy matching in one pass lets an original with NO hash take,
+  // through the name-and-size fallback, the copy that belongs by hash to a different
+  // original of the same name and size — which silently swaps which id is selected, so
+  // the next save restores the removed file and drops the kept one. Certain pairs are
+  // settled before any guessing starts.
+  for (const item of carried) {
+    if (!item.hash) continue;
+    const index = pool.findIndex(copy => copy.hash === item.hash);
+    if (index === -1) continue;
+    pool.splice(index, 1);
+    claimed.add(item);
+  }
+
+  // Then name and size, but never across two known hashes: those already had their say.
+  for (const item of carried) {
+    if (claimed.has(item)) continue;
+    const index = pool.findIndex(copy =>
+      !(copy.hash && item.hash) && copy.filename === item.filename && copy.sizeKb === item.sizeKb);
+    if (index === -1) continue;
+    pool.splice(index, 1);
+    claimed.add(item);
+  }
+
+  return carried.filter(item => claimed.has(item));
 }
 
 export const referenceFor = (
