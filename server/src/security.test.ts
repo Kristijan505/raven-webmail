@@ -165,27 +165,43 @@ describe("CreateMessageSchema — draft send round-trip (reply/forward)", () => 
 
 describe("directionQuery() — direction filter built server-side", () => {
   const MB = "615c1f2e4a3b9c0d7e8f1a2b";
+  const ME = ["kiki@red-code.dev"];
 
   it("asks for mail from the account itself when filtering outgoing", () => {
-    expect(directionQuery(MB, "kiki@red-code.dev", "out")).toBe(`mailbox:${MB} from:"kiki@red-code.dev"`);
+    expect(directionQuery(MB, ME, "out")).toBe(`mailbox:${MB} from:kiki@red-code.dev`);
   });
 
   it("negates the same term for incoming", () => {
     // The half that cannot be expressed with WildDuck's structured from/to params and
     // is the whole reason this goes through `q`.
-    expect(directionQuery(MB, "kiki@red-code.dev", "in")).toBe(`mailbox:${MB} -from:"kiki@red-code.dev"`);
+    expect(directionQuery(MB, ME, "in")).toBe(`mailbox:${MB} -from:kiki@red-code.dev`);
   });
 
-  it("scopes the mailbox inside the query, not beside it", () => {
-    // WildDuck ignores the separate `mailbox` param when `q` is set — the two are
-    // different code paths in its search handler — so a selector left outside would
-    // quietly widen the search to the whole account.
-    expect(directionQuery(MB, "a@b.c", "in").startsWith(`mailbox:${MB} `)).toBe(true);
+  it("does NOT quote the address", () => {
+    // logic-query-parser splits `from:"a@b.c"` into `from:` and a bare `a@b.c`, which
+    // WildDuck then reads as a FULLTEXT term — the filter quietly stops being a sender
+    // filter. Quoting here looks careful and is the bug.
+    expect(directionQuery(MB, ME, "out")).not.toContain('"');
   });
 
-  it("quotes the address so it stays data", () => {
-    // A local part may contain the very characters the parser reads as syntax: a
-    // leading `-` is negation, a space separates terms, `"` ends a phrase.
-    expect(directionQuery(MB, '-weird" or:x@b.c', "out")).toBe(`mailbox:${MB} from:"-weird\\" or:x@b.c"`);
+  it("scopes every branch to the mailbox when the account has aliases", () => {
+    // The parser has no parentheses and binds `and` tighter than `or`, so a single
+    // leading selector — `mailbox:X from:a or from:b` — leaves the second alias
+    // unscoped and matching across the whole account. Repeating it is the fix.
+    const q = directionQuery(MB, ["a@x.com", "b@x.com"], "out");
+    expect(q).toBe(`mailbox:${MB} from:a@x.com or mailbox:${MB} from:b@x.com`);
+  });
+
+  it("excludes every alias for incoming", () => {
+    expect(directionQuery(MB, ["a@x.com", "b@x.com"], "in"))
+      .toBe(`mailbox:${MB} -from:a@x.com -from:b@x.com`);
+  });
+
+  it("refuses an address that would be read as syntax", () => {
+    // Whitespace splits the token and a quote starts a phrase; neither can be escaped,
+    // so such an address is dropped rather than silently widening the filter.
+    expect(directionQuery(MB, ['bad addr@x.com', "ok@x.com"], "out"))
+      .toBe(`mailbox:${MB} from:ok@x.com`);
+    expect(() => directionQuery(MB, ['bad addr@x.com'], "out")).toThrow();
   });
 });

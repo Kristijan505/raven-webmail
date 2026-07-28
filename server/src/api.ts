@@ -332,24 +332,29 @@ const ownedMailboxIds = async (req: Request, fresh: boolean): Promise<Set<string
 //
 // Cached because it is needed on every page of a filtered listing and effectively never
 // changes. Same shape as the mailbox-id cache above, including the bound on entries.
+// ALL of them, not just the primary: mail sent from an alias is still sent mail, and
+// judging it by the primary address alone files it as received — in the list filter and
+// in the move menu alike, since both answer the same question.
 const ADDRESS_TTL_MS = 10 * 60_000;
-const addressCache = new Map<string, { address: string; at: number }>();
+const addressCache = new Map<string, { addresses: string[]; at: number }>();
 
-const ownAddress = async (req: Request): Promise<string> => {
+export const ownAddresses = async (req: Request): Promise<string[]> => {
   const uid = userId(req);
   const hit = addressCache.get(uid);
-  if (hit && Date.now() - hit.at < ADDRESS_TTL_MS) return hit.address;
+  if (hit && Date.now() - hit.at < ADDRESS_TTL_MS) return hit.addresses;
 
-  const user = await get(`/users/${uid}`, token(req));
-  const address = String((user as { address?: unknown })?.address ?? "").trim();
-  if (!address) throw new ApiError(StatusCodes.BAD_GATEWAY, "Upstream error", "upstream_error");
+  const list = await get(`/users/${uid}/addresses`, token(req));
+  const addresses = ((list as { results?: Array<{ address?: unknown }> })?.results ?? [])
+    .map(entry => String(entry?.address ?? "").trim().toLowerCase())
+    .filter(Boolean);
+  if (!addresses.length) throw new ApiError(StatusCodes.BAD_GATEWAY, "Upstream error", "upstream_error");
 
   if (addressCache.size >= MAILBOX_IDS_MAX_ENTRIES) {
     const oldest = addressCache.keys().next().value;
     if (oldest !== undefined) addressCache.delete(oldest);
   }
-  addressCache.set(uid, { address, at: Date.now() });
-  return address;
+  addressCache.set(uid, { addresses, at: Date.now() });
+  return addresses;
 };
 
 /**
@@ -365,12 +370,30 @@ const ownAddress = async (req: Request): Promise<string> => {
  * parameter whenever `q` is present — the two take different code paths in its search
  * handler — so passing it alongside would silently search the entire account.
  *
- * The address is quoted: it is data, and the parser treats bare `-` and spaces as
- * syntax. Quoting is also what makes a `-` inside a local part harmless.
+ * Addresses are NOT quoted. `from:"a@b.c"` looks like the careful thing to write and is
+ * the opposite: logic-query-parser splits it into two tokens, `from:` with no value and
+ * a bare `a@b.c`, and WildDuck then reads the second as a FULLTEXT term. The filter
+ * silently stops being a sender filter — matching any message that merely mentions the
+ * address, and for the negated half excluding them. Unquoted, it stays one token.
+ *
+ * Since quoting cannot do it, the address is kept safe by refusing anything that could
+ * be read as syntax: whitespace would split the token, a quote would start a phrase.
+ * Real WildDuck addresses are normalised and never look like that.
+ *
+ * The mailbox is repeated per branch rather than factored out in front. The parser has
+ * no parentheses and binds `and` tighter than `or`, so `mailbox:X from:a or from:b`
+ * parses as `(mailbox:X AND from:a) OR from:b` — the second alias unscoped, matching
+ * across every folder in the account. Repeating it puts the selector inside both
+ * branches, which is the same thing parentheses would have done.
  */
-export const directionQuery = (mailbox: string, address: string, direction: "in" | "out"): string => {
-  const from = `from:${JSON.stringify(address)}`;
-  return `mailbox:${mailbox} ${direction === "out" ? from : `-${from}`}`;
+const SAFE_ADDRESS = /^[^\s"]+@[^\s"]+$/;
+
+export const directionQuery = (mailbox: string, addresses: string[], direction: "in" | "out"): string => {
+  const safe = addresses.filter(address => SAFE_ADDRESS.test(address));
+  if (!safe.length) throw new ApiError(StatusCodes.BAD_GATEWAY, "Upstream error", "upstream_error");
+  return direction === "out"
+    ? safe.map(address => `mailbox:${mailbox} from:${address}`).join(" or ")
+    : `mailbox:${mailbox} ${safe.map(address => `-from:${address}`).join(" ")}`;
 };
 
 const assertOwnsMailbox = async (req: Request, mailboxId: string): Promise<void> => {
@@ -834,7 +857,7 @@ export const api = (config: Config) => {
     const direction = req.query.direction;
     if (direction === "in" || direction === "out") {
       const mailbox = seg(req.params.mailbox);
-      const q = directionQuery(mailbox, await ownAddress(req), direction);
+      const q = directionQuery(mailbox, await ownAddresses(req), direction);
       const body = await get(`/users/${userId(req)}/search?${qs.stringify({ ...allowed, q })}`, token(req));
       // Search omits specialUse; the list UI reads it off the mailbox it already holds,
       // but keep the shape identical so nothing downstream has to know which endpoint
@@ -1120,18 +1143,27 @@ export const api = (config: Config) => {
 
   pages.get("/layout", pageHandler(async (req, res) => {
     const generation = mailboxIdsGeneration;
-    const [user, boxes] = await Promise.all([
+    // Addresses come along so the client can answer "did I send this?" the same way the
+    // server does when it filters a folder. Two answers to one question drift apart:
+    // the list would call a message sent while the move menu offered to put it back in
+    // the Inbox. Failing to read them is not worth failing the whole page over — the
+    // move menu then falls back to the primary address, which is what it used before.
+    const [user, boxes, addresses] = await Promise.all([
       get(`/users/${userId(req)}`, token(req)),
-      get(`/users/${userId(req)}/mailboxes?counters=true`, token(req))
+      get(`/users/${userId(req)}/mailboxes?counters=true`, token(req)),
+      ownAddresses(req).catch(() => [] as string[]),
     ])
     rememberMailboxIds(req, boxes, generation);
 
+    const props = {
+      user,
+      mailboxes: boxes.results,
+      addresses: addresses.length ? addresses : [String(user?.address ?? "")].filter(Boolean),
+      username: req.session.authentication!.username
+    };
+
     return res.json({
-      props: {
-        user,
-        mailboxes: boxes.results,
-        username: req.session.authentication!.username
-      },
+      props,
       stuff: {
         user,
         mailboxes: boxes.results,

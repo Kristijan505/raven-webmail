@@ -31,9 +31,9 @@ describe("moveDestinations", () => {
 
   it("never offers Drafts, and offers Sent only for mail that was sent", () => {
     for (const source of [inbox, sent, trash, junk, work]) {
-      expect(names(moveDestinations(source, all, [theirs], ME))).not.toContain("Drafts");
+      expect(names(moveDestinations(source, all, [theirs], [ME]))).not.toContain("Drafts");
       // Received mail must never be filable into Sent, whatever folder it is in now.
-      expect(names(moveDestinations(source, all, [theirs], ME))).not.toContain("Sent");
+      expect(names(moveDestinations(source, all, [theirs], [ME]))).not.toContain("Sent");
     }
   });
 
@@ -52,23 +52,23 @@ describe("moveDestinations", () => {
   });
 
   it("offers Inbox and custom folders from Trash, so undelete works", () => {
-    expect(names(moveDestinations(trash, all, [theirs], ME))).toEqual(["INBOX", "Work", "Bills"]);
+    expect(names(moveDestinations(trash, all, [theirs], [ME]))).toEqual(["INBOX", "Work", "Bills"]);
   });
 
   it("offers Inbox and custom folders from Spam", () => {
-    expect(names(moveDestinations(junk, all, [theirs], ME))).toEqual(["INBOX", "Work", "Bills"]);
+    expect(names(moveDestinations(junk, all, [theirs], [ME]))).toEqual(["INBOX", "Work", "Bills"]);
   });
 
   it("never offers the folder you are already in", () => {
-    expect(names(moveDestinations(work, all, [theirs], ME))).toEqual(["INBOX", "Bills"]);
+    expect(names(moveDestinations(work, all, [theirs], [ME]))).toEqual(["INBOX", "Bills"]);
   });
 
   it("survives an account missing special-use folders", () => {
     // find() returns undefined for a Trash that was deleted or a Junk never
     // provisioned; nothing here may throw, because a throw in the calling reactive
     // block freezes the Svelte scheduler.
-    expect(() => moveDestinations(work, [work, bills], [theirs], ME)).not.toThrow();
-    expect(names(moveDestinations(work, [work, bills], [theirs], ME))).toEqual(["Bills"]);
+    expect(() => moveDestinations(work, [work, bills], [theirs], [ME])).not.toThrow();
+    expect(names(moveDestinations(work, [work, bills], [theirs], [ME]))).toEqual(["Bills"]);
   });
 
   it("returns nothing rather than throwing when the mailbox is missing", () => {
@@ -78,31 +78,31 @@ describe("moveDestinations", () => {
   it("never offers Inbox for mail this account sent", () => {
     // The reported bug: a sent message trashed and then restored into the Inbox reads
     // as received. It can still be filed away, and now it can go back to Sent.
-    expect(names(moveDestinations(trash, all, [mine], ME))).toEqual(["Sent", "Work", "Bills"]);
+    expect(names(moveDestinations(trash, all, [mine], [ME]))).toEqual(["Sent", "Work", "Bills"]);
   });
 
   it("never offers Sent for mail this account received", () => {
-    expect(names(moveDestinations(trash, all, [theirs], ME))).toEqual(["INBOX", "Work", "Bills"]);
+    expect(names(moveDestinations(trash, all, [theirs], [ME]))).toEqual(["INBOX", "Work", "Bills"]);
   });
 
   it("lets a sent message filed in a custom folder go back to Sent", () => {
-    expect(names(moveDestinations(work, all, [mine], ME))).toEqual(["Sent", "Bills"]);
+    expect(names(moveDestinations(work, all, [mine], [ME]))).toEqual(["Sent", "Bills"]);
   });
 
   it("lets a received message filed in a custom folder go back to Inbox", () => {
-    expect(names(moveDestinations(work, all, [theirs], ME))).toEqual(["INBOX", "Bills"]);
+    expect(names(moveDestinations(work, all, [theirs], [ME]))).toEqual(["INBOX", "Bills"]);
   });
 
   it("offers custom folders only for a mixed selection", () => {
     // Neither Inbox nor Sent is right for all of it, so offer what is right for both.
-    expect(names(moveDestinations(trash, all, [mine, theirs], ME))).toEqual(["Work", "Bills"]);
+    expect(names(moveDestinations(trash, all, [mine, theirs], [ME]))).toEqual(["Work", "Bills"]);
   });
 
   it("falls back to custom folders when the direction is unknown", () => {
     // No messages passed, or no sender to compare: never open up Inbox or Sent on a
     // guess.
-    expect(names(moveDestinations(trash, all, [], ME))).toEqual(["Work", "Bills"]);
-    expect(names(moveDestinations(trash, all, [{}], ME))).toEqual(["INBOX", "Work", "Bills"]);
+    expect(names(moveDestinations(trash, all, [], [ME]))).toEqual(["Work", "Bills"]);
+    expect(names(moveDestinations(trash, all, [{}], [ME]))).toEqual(["INBOX", "Work", "Bills"]);
     expect(names(moveDestinations(trash, all, [mine], null))).toEqual(["INBOX", "Work", "Bills"]);
   });
 
@@ -123,29 +123,29 @@ describe("wasSent", () => {
   it("trusts the folder where the folder knows", () => {
     // Mail you addressed to yourself sits in the Inbox with your own address on it.
     // The folder is authoritative there, so it does not read as sent.
-    expect(wasSent(mine, inbox, ME)).toBe(false);
-    expect(wasSent(mine, junk, ME)).toBe(false);
+    expect(wasSent(mine, inbox, [ME])).toBe(false);
+    expect(wasSent(mine, junk, [ME])).toBe(false);
     // And anything in Sent was sent, whatever address it carries — which is what keeps
     // mail sent from an alias classified correctly for as long as it stays there.
-    expect(wasSent(theirs, sent, ME)).toBe(true);
+    expect(wasSent(theirs, sent, [ME])).toBe(true);
   });
 
   it("falls back to the sender only where the folder says nothing", () => {
     for (const folder of [trash, work]) {
-      expect(wasSent(mine, folder, ME)).toBe(true);
-      expect(wasSent(theirs, folder, ME)).toBe(false);
+      expect(wasSent(mine, folder, [ME])).toBe(true);
+      expect(wasSent(theirs, folder, [ME])).toBe(false);
     }
   });
 
   it("compares addresses case-insensitively and ignores surrounding space", () => {
-    expect(wasSent({ from: { address: "  KiKi@Red-Code.DEV " } }, work, ME)).toBe(true);
+    expect(wasSent({ from: { address: "  KiKi@Red-Code.DEV " } }, work, [ME])).toBe(true);
   });
 
   it("treats an unknown sender or unknown account address as received", () => {
     // Conservative on purpose: "received" allows Inbox and denies Sent, so a guess
     // never lets something that was not sent into Sent.
-    expect(wasSent({}, work, ME)).toBe(false);
-    expect(wasSent({ from: null }, work, ME)).toBe(false);
+    expect(wasSent({}, work, [ME])).toBe(false);
+    expect(wasSent({ from: null }, work, [ME])).toBe(false);
     expect(wasSent(mine, work, null)).toBe(false);
   });
 });
@@ -156,15 +156,15 @@ describe("wasSent and an untrustworthy From", () => {
   it("classifies freshly delivered mail by its mailbox, not by From", () => {
     // The forged case that matters: mail arrives into Inbox or Junk, so a From that
     // claims the account's own address never gets to speak there.
-    expect(wasSent(spoofed, inbox, ME)).toBe(false);
-    expect(wasSent(spoofed, junk, ME)).toBe(false);
-    expect(moveDestinations(inbox, all, [spoofed], ME).map(m => m.path))
+    expect(wasSent(spoofed, inbox, [ME])).toBe(false);
+    expect(wasSent(spoofed, junk, [ME])).toBe(false);
+    expect(moveDestinations(inbox, all, [spoofed], [ME]).map(m => m.path))
       .not.toContain("Sent");
   });
 
   it("accepts From once the user has filed the message away themselves", () => {
     // Documented limitation, asserted so it stays a decision rather than a surprise.
-    expect(wasSent(spoofed, trash, ME)).toBe(true);
+    expect(wasSent(spoofed, trash, [ME])).toBe(true);
   });
 });
 
@@ -174,7 +174,7 @@ describe("Junk has a complete set of exits", () => {
   // that pairing broke — Delete there erased outright, so dropping Trash from the menu
   // left no non-destructive way out at all.
   it("offers Inbox and the user's own folders, and leaves Trash to the button", () => {
-    const paths = moveDestinations(junk, all, [theirs], ME).map(m => m.path);
+    const paths = moveDestinations(junk, all, [theirs], [ME]).map(m => m.path);
     expect(paths).toContain("INBOX");
     expect(paths).toEqual(expect.arrayContaining(["Work", "Bills"]));
     expect(paths).not.toContain("Trash");
@@ -182,6 +182,28 @@ describe("Junk has a complete set of exits", () => {
   });
 
   it("treats mail in Junk as received even when From claims our own address", () => {
-    expect(moveDestinations(junk, all, [mine], ME).map(m => m.path)).toContain("INBOX");
+    expect(moveDestinations(junk, all, [mine], [ME]).map(m => m.path)).toContain("INBOX");
+  });
+});
+
+describe("aliases count as this account", () => {
+  const ALIAS = "info@red-code.dev";
+  const fromAlias = { from: { address: ALIAS } };
+
+  it("treats mail sent from an alias as sent", () => {
+    // Judging by the primary address alone filed it as received, so a message the user
+    // sent from an alias was offered "back to Inbox" — a folder it was never in.
+    expect(wasSent(fromAlias, trash, [ME])).toBe(false);
+    expect(wasSent(fromAlias, trash, [ME, ALIAS])).toBe(true);
+  });
+
+  it("offers Sent, not Inbox, for a message sent from an alias", () => {
+    const paths = moveDestinations(trash, all, [fromAlias], [ME, ALIAS]).map(m => m.path);
+    expect(paths).toContain("Sent");
+    expect(paths).not.toContain("INBOX");
+  });
+
+  it("compares case-insensitively", () => {
+    expect(wasSent({ from: { address: "INFO@Red-Code.DEV" } }, trash, [ME, ALIAS])).toBe(true);
   });
 });
