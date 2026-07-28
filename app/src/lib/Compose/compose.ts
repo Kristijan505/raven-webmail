@@ -12,6 +12,17 @@ export type Draft = {
   text: string
   html: string
   files: MessageFile[]
+  // Attachments the ORIGINAL message carries into a forward. Not the same thing as
+  // `files`, which is what the user attached here and lives in storage: these are parts
+  // of the referenced message, and WildDuck copies them itself when it creates the
+  // draft. Read off the original — never off the draft's own copies, whose ids belong
+  // to the new message's mime tree and are not what WildDuck matches against.
+  //
+  // `null` means "we could not read the original", which is different from "there are
+  // none": one has to fall back to letting WildDuck copy everything, the other has to
+  // send an empty list. Keeping them distinct is what stops a failed lookup from
+  // quietly dropping the attachments off a forward.
+  carried?: Attachment[] | null
   reference?: Reference
   [kShowBcc]: boolean,
   [kShowCc]: boolean
@@ -38,7 +49,35 @@ export type Reference = {
   mailbox: string
   id: number
   action: "reply" | "replyAll" | "forward"
-  attachments: boolean
+  // true = copy all of the original's attachments, false = none, array = copy exactly
+  // these ids. WildDuck matches an array against the ORIGINAL message's attachment ids
+  // (`!options.reference.attachments.includes(attachment.id)` in its messages API), and
+  // skips anything marked `related` in every case — embedded images travel with the
+  // body, not as attachments.
+  attachments: boolean | string[]
+}
+
+/**
+ * The `attachments` directive to send for a draft, given what the user has left on it.
+ *
+ * WildDuck does NOT round-trip this: a GET on a saved draft returns `reference` as
+ * {mailbox, id, action} only. Since save() is create-new + delete-old and send() saves
+ * first, the message that actually goes out is always rebuilt from a reference read
+ * back off the server — so whatever this returns is what decides, every time.
+ *
+ * Deriving it here rather than storing it on the draft keeps one rule in one place:
+ * forward carries attachments, reply and replyAll do not, and a forward carries exactly
+ * the ones still on the draft. An unknown carried list falls back to `true`, which is
+ * what the directive meant before it could be narrowed — losing the lookup must not
+ * also lose the attachments.
+ */
+export const referenceFor = (
+  reference: Reference | void,
+  carried: Attachment[] | null | undefined,
+): Reference | void => {
+  if(!reference) return reference;
+  if(reference.action !== "forward") return { ...reference, attachments: false };
+  return { ...reference, attachments: carried ? carried.map(item => item.id) : true };
 }
 
 export type Address = {
@@ -70,7 +109,7 @@ export const kSent = Symbol("draft-sent");
 import { crossfade, fly } from "svelte/transition";
 import { _delete, _post, HttpError } from "$lib/util";
 import { Expunge } from "$lib/events";
-import type { Mailbox, User } from "$lib/types";
+import type { Attachment, Mailbox, User } from "$lib/types";
 
 export const [crossin, crossout] = crossfade({
   duration: 300,
@@ -121,10 +160,11 @@ export const save = (draft: Draft): Promise<number> => {
 
 const saveNow = async (draft: Draft) => {
 
-  const { id, mailbox, key, files, ...json } = draft;
+  const { id, mailbox, key, files, carried, ...json } = draft;
 
-  const { message } = await _post(`/api/mailboxes/${draft.mailbox}/messages`, createMessageBody({ 
+  const { message } = await _post(`/api/mailboxes/${draft.mailbox}/messages`, createMessageBody({
     ...json,
+    reference: referenceFor(json.reference, carried),
     files: files?.map(file => file.id).filter(Boolean) as string[],
   }));
   

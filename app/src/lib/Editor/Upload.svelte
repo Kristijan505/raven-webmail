@@ -119,6 +119,7 @@
 
   import { fileError, fileFile, fileLoaded, fileState } from "$lib/Compose/compose";
   import type { Draft, MessageFile } from "$lib/Compose/compose";
+  import type { Attachment } from "$lib/types";
   import type { AxiosProgressEvent } from "axios";
 
   import { fly, scale } from "svelte/transition";
@@ -226,8 +227,21 @@ import { locale } from "$lib/locale";
     }
   }
 
+  // Attachments the forwarded message brings with it. They are not uploads — WildDuck
+  // copies them from the original when it builds the draft — but to the person writing
+  // the mail they are simply attachments, and showing nothing was indistinguishable
+  // from having lost them. Dropping one narrows the id list sent with the reference,
+  // which is how WildDuck is told to leave it behind.
+  $: total = draft.files.length + (draft.carried?.length ?? 0);
+
+  // Same shape as remove() above: assign back onto the draft and let the autosave carry
+  // it, so both kinds of attachment are persisted by the one path.
+  const drop = (item: Attachment) => {
+    draft.carried = (draft.carried ?? []).filter(other => other.id !== item.id);
+  }
+
   const click = () => {
-   if (draft.files.length === 0 && !open) {
+   if (total === 0 && !open) {
       input?.click();
    } else {
       open = !open;
@@ -246,9 +260,9 @@ import { locale } from "$lib/locale";
         <CircularProgress size="100%" />
       </x-loading>
     {/if}
-    {#if draft.files.length}
+    {#if total}
       <x-bubble transition:scale|local={{duration: 200}}>
-        {draft.files.length}
+        {total}
       </x-bubble>
     {/if}
     <Ripple />
@@ -261,6 +275,11 @@ import { locale } from "$lib/locale";
       </svg>
       <x-popup-body>
         <x-scroll>
+          {#each draft.carried ?? [] as item (item.id)}
+            <FileItem
+              file={{ id: item.id, filename: item.filename, contentType: item.contentType, size: item.sizeKb * 1024 }}
+              onRemove={() => drop(item)} />
+          {/each}
           {#each draft.files as file (file)}
             <FileItem {file} onRemove={() => remove(file)} />
           {/each}
