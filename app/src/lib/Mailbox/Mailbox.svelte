@@ -71,31 +71,39 @@
   //
   // reloadNow rather than reload, because action() reports a failure and swallows it —
   // useful for a button, useless for deciding whether the filter took.
+  // The last filter whose results actually reached the screen. Rolling back to
+  // appliedDirection instead would aim at a direction that was only ever attempted: a
+  // pending "incoming" superseded by an "outgoing" that then fails would restore
+  // "incoming", whose own response the generation check has already discarded — leaving
+  // the previous rows under a chip that matches nothing, and no retry, because active
+  // would equal appliedDirection again.
+  let renderedDirection: ReturnType<typeof activeDirection> = null;
+
   let applyToken = 0;
   const applyDirection = async (value: ReturnType<typeof activeDirection>) => {
     const token = ++applyToken;
-    const previous = appliedDirection;
     appliedDirection = value;
     try {
       await reloadNow();
     } catch(e: any) {
       // Only if this is still the newest attempt. A slow failure from a filter the user
       // has already moved on from would otherwise roll the state back over a newer
-      // request that succeeded — leaving its rows on screen with the wrong chip lit and,
-      // since active would then match appliedDirection, no way for the list to recover.
+      // request that succeeded — leaving its rows on screen with the wrong chip lit.
       if(token !== applyToken) return;
-      appliedDirection = previous;
-      direction.set(previous);
+      appliedDirection = renderedDirection;
+      direction.set(renderedDirection);
       _error(e?.message);
     }
   }
 
   const reloadNow = async () => {
     const generation = ++listGeneration;
+    const requested = active;
     const json: Messages = await _get(listUrl(["limit=50"]));
     if(generation !== listGeneration) return;
     selection = [];
     messages = json;
+    renderedDirection = requested;
   }
 
   const reload = action(reloadNow);
