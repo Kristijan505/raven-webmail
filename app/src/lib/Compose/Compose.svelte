@@ -278,11 +278,28 @@
   //
   // Returning null on failure is deliberate: it means "unknown", which referenceFor()
   // turns back into "copy everything" rather than "copy nothing".
-  const carriedAttachments = async (reference: any): Promise<Attachment[] | null> => {
+  //
+  // The original alone is not the answer, though — it is the id space, not the choice.
+  // Removing an attachment narrows the directive, and WildDuck does not round-trip the
+  // directive, so on the next open the original still lists everything it ever had.
+  // Rebuilding from it would quietly undo the removal: the row would come back and the
+  // next save would copy the file again, and Send would attach something the user had
+  // explicitly taken off. What DOES survive is the draft's own copies, since WildDuck
+  // rebuilt them from the last directive it was given — so the two are intersected, the
+  // original supplying the ids and the draft supplying the choice.
+  const sameFile = (copy: Attachment, source: Attachment): boolean =>
+    (!!copy.hash && copy.hash === source.hash) ||
+    (copy.filename === source.filename && copy.sizeKb === source.sizeKb);
+
+  const carriedAttachments = async (draft: FullMessage): Promise<Attachment[] | null> => {
+    const reference = draft.reference as any;
     if(reference?.action !== "forward") return null;
     try {
       const original: FullMessage = await _get(`/api/mailboxes/${reference.mailbox}/messages/${reference.id}`);
-      return (original.attachments ?? []).filter(item => !item.related);
+      const onDraft = draft.attachments ?? [];
+      return (original.attachments ?? [])
+        .filter(item => !item.related)
+        .filter(item => onDraft.some(copy => sameFile(copy, item)));
     } catch {
       return null;
     }
@@ -308,7 +325,7 @@
         html,
         text,
         reference: message.reference,
-        carried: await carriedAttachments(message.reference),
+        carried: await carriedAttachments(message),
         files: message.files || [],
         [kShowBcc]: false,
         [kShowCc]: false,
