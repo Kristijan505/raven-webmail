@@ -58,21 +58,6 @@ export type Reference = {
 }
 
 /**
- * The `attachments` directive to send for a draft, given what the user has left on it.
- *
- * WildDuck does NOT round-trip this: a GET on a saved draft returns `reference` as
- * {mailbox, id, action} only. Since save() is create-new + delete-old and send() saves
- * first, the message that actually goes out is always rebuilt from a reference read
- * back off the server — so whatever this returns is what decides, every time.
- *
- * Deriving it here rather than storing it on the draft keeps one rule in one place:
- * forward carries attachments, reply and replyAll do not, and a forward carries exactly
- * the ones still on the draft. An unknown carried list falls back to `true`, which is
- * what the directive meant before it could be narrowed — losing the lookup must not
- * also lose the attachments.
- */
-
-/**
  * Which of the ORIGINAL message's attachments a forward draft still carries.
  *
  * The original supplies the ids — the only ones WildDuck matches a narrowed directive
@@ -152,6 +137,20 @@ export const claimCarried = (
   return carried.filter(item => claimed.has(item));
 }
 
+/**
+ * The `attachments` directive to send for a draft, given what the user has left on it.
+ *
+ * WildDuck does NOT round-trip this: a GET on a saved draft returns `reference` as
+ * {mailbox, id, action} only. Since save() is create-new + delete-old and send() saves
+ * first, the message that actually goes out is always rebuilt from a reference read
+ * back off the server — so whatever this returns is what decides, every time.
+ *
+ * Deriving it here rather than storing it on the draft keeps one rule in one place:
+ * forward carries attachments, reply and replyAll do not, and a forward carries exactly
+ * the ones still on the draft. An unknown carried list falls back to `true`, which is
+ * what the directive meant before it could be narrowed — losing the lookup must not
+ * also lose the attachments.
+ */
 export const referenceFor = (
   reference: Reference | void,
   carried: Attachment[] | null | undefined,
