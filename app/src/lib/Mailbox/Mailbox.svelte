@@ -64,36 +64,43 @@
   let appliedDirection: ReturnType<typeof activeDirection> = null;
   $: if(active !== appliedDirection) applyDirection(active);
 
-  // The chip must never claim a filter the list is not showing. appliedDirection moves
-  // first so this does not re-enter while the request is out, but a failure puts both it
-  // and the store back: otherwise a lit chip sits over unfiltered rows, and since
-  // `active` would by then equal appliedDirection, nothing would ever retry.
-  //
-  // reloadNow rather than reload, because action() reports a failure and swallows it —
-  // useful for a button, useless for deciding whether the filter took.
-  // The last filter whose results actually reached the screen. Rolling back to
-  // appliedDirection instead would aim at a direction that was only ever attempted: a
-  // pending "incoming" superseded by an "outgoing" that then fails would restore
-  // "incoming", whose own response the generation check has already discarded — leaving
-  // the previous rows under a chip that matches nothing, and no retry, because active
-  // would equal appliedDirection again.
+  // The last filter whose results actually reached the screen — the only thing that can
+  // say what the list is showing.
   let renderedDirection: ReturnType<typeof activeDirection> = null;
 
+  // The chip must never claim a filter the list is not showing. appliedDirection moves
+  // first so this does not re-enter while the request is out; everything after settles it
+  // against what was actually rendered.
+  //
+  // Deliberately NOT wrapped in action(): that reports a failure and swallows it, which
+  // is right for a button and useless for deciding whether the filter took. The toolbar's
+  // Reload goes through prev(), which refetches page one under the current filter and
+  // leaves the generation alone — so reloadNow has exactly one caller, and this is it.
   let applyToken = 0;
   const applyDirection = async (value: ReturnType<typeof activeDirection>) => {
     const token = ++applyToken;
     appliedDirection = value;
+
+    let failure: string | null = null;
     try {
       await reloadNow();
     } catch(e: any) {
-      // Only if this is still the newest attempt. A slow failure from a filter the user
-      // has already moved on from would otherwise roll the state back over a newer
-      // request that succeeded — leaving its rows on screen with the wrong chip lit.
-      if(token !== applyToken) return;
+      failure = e?.message ?? null;
+    }
+
+    // A newer apply has taken over the state; it will settle it on its own terms.
+    if(token !== applyToken) return;
+
+    // Resolving is not the same as having rendered. A request superseded by a manual
+    // reload returns without throwing and without installing anything, so if that reload
+    // then failed, treating this as success left the old rows under a lit chip with
+    // nothing to retry. Whatever DID reach the screen is the truth, so the filter falls
+    // back to it — which is also the right answer when this request simply failed.
+    if(renderedDirection !== value) {
       appliedDirection = renderedDirection;
       direction.set(renderedDirection);
-      _error(e?.message);
     }
+    if(failure) _error(failure);
   }
 
   const reloadNow = async () => {
@@ -105,8 +112,6 @@
     messages = json;
     renderedDirection = requested;
   }
-
-  const reload = action(reloadNow);
 
   const prev = action(async () => {
     const generation = listGeneration;
