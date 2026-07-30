@@ -366,9 +366,16 @@ export const ownAddresses = async (req: Request): Promise<string[]> => {
  * boolean. The client sends `direction`; the query is assembled from that plus the
  * session's own user.
  *
- * Note `mailbox:` goes INSIDE the query. WildDuck ignores the separate `mailbox`
- * parameter whenever `q` is present — the two take different code paths in its search
- * handler — so passing it alongside would silently search the entire account.
+ * The folder selector is `in:`, NOT `mailbox:`. Both name the same thing on WildDuck's
+ * master branch, but `mailbox:` was only added later and the deployed 1.46.25 has no
+ * case for it — an unknown keyword is dropped without a word, which left `-from:me` as
+ * the entire query and returned every received message in the ACCOUNT rather than in the
+ * folder. `in:` has been there all along, resolves the id scoped to the user, and falls
+ * back to a mailbox id that matches nothing when it cannot resolve.
+ *
+ * It goes INSIDE the query either way: WildDuck ignores the separate `mailbox` parameter
+ * whenever `q` is present — the two take different code paths in its search handler — so
+ * passing it alongside would silently search the whole account too.
  *
  * Addresses are NOT quoted. `from:"a@b.c"` looks like the careful thing to write and is
  * the opposite: logic-query-parser splits it into two tokens, `from:` with no value and
@@ -392,8 +399,8 @@ export const directionQuery = (mailbox: string, addresses: string[], direction: 
   const safe = addresses.filter(address => SAFE_ADDRESS.test(address));
   if (!safe.length) throw new ApiError(StatusCodes.BAD_GATEWAY, "Upstream error", "upstream_error");
   return direction === "out"
-    ? safe.map(address => `mailbox:${mailbox} from:${address}`).join(" or ")
-    : `mailbox:${mailbox} ${safe.map(address => `-from:${address}`).join(" ")}`;
+    ? safe.map(address => `in:${mailbox} from:${address}`).join(" or ")
+    : `in:${mailbox} ${safe.map(address => `-from:${address}`).join(" ")}`;
 };
 
 const assertOwnsMailbox = async (req: Request, mailboxId: string): Promise<void> => {

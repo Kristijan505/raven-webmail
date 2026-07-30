@@ -168,13 +168,13 @@ describe("directionQuery() — direction filter built server-side", () => {
   const ME = ["kiki@red-code.dev"];
 
   it("asks for mail from the account itself when filtering outgoing", () => {
-    expect(directionQuery(MB, ME, "out")).toBe(`mailbox:${MB} from:kiki@red-code.dev`);
+    expect(directionQuery(MB, ME, "out")).toBe(`in:${MB} from:kiki@red-code.dev`);
   });
 
   it("negates the same term for incoming", () => {
     // The half that cannot be expressed with WildDuck's structured from/to params and
     // is the whole reason this goes through `q`.
-    expect(directionQuery(MB, ME, "in")).toBe(`mailbox:${MB} -from:kiki@red-code.dev`);
+    expect(directionQuery(MB, ME, "in")).toBe(`in:${MB} -from:kiki@red-code.dev`);
   });
 
   it("does NOT quote the address", () => {
@@ -186,22 +186,22 @@ describe("directionQuery() — direction filter built server-side", () => {
 
   it("scopes every branch to the mailbox when the account has aliases", () => {
     // The parser has no parentheses and binds `and` tighter than `or`, so a single
-    // leading selector — `mailbox:X from:a or from:b` — leaves the second alias
+    // leading selector — `in:X from:a or from:b` — leaves the second alias
     // unscoped and matching across the whole account. Repeating it is the fix.
     const q = directionQuery(MB, ["a@x.com", "b@x.com"], "out");
-    expect(q).toBe(`mailbox:${MB} from:a@x.com or mailbox:${MB} from:b@x.com`);
+    expect(q).toBe(`in:${MB} from:a@x.com or in:${MB} from:b@x.com`);
   });
 
   it("excludes every alias for incoming", () => {
     expect(directionQuery(MB, ["a@x.com", "b@x.com"], "in"))
-      .toBe(`mailbox:${MB} -from:a@x.com -from:b@x.com`);
+      .toBe(`in:${MB} -from:a@x.com -from:b@x.com`);
   });
 
   it("refuses an address that would be read as syntax", () => {
     // Whitespace splits the token and a quote starts a phrase; neither can be escaped,
     // so such an address is dropped rather than silently widening the filter.
     expect(directionQuery(MB, ['bad addr@x.com', "ok@x.com"], "out"))
-      .toBe(`mailbox:${MB} from:ok@x.com`);
+      .toBe(`in:${MB} from:ok@x.com`);
     expect(() => directionQuery(MB, ['bad addr@x.com'], "out")).toThrow();
   });
 });

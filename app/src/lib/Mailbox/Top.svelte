@@ -242,15 +242,15 @@ import { locale } from "$lib/locale";
     color: var(--text-muted);
   }
 
-  /* Direction chips. Same footprint as the toolbar actions beside them, but they carry
-     state, so the active one is filled rather than merely hovered — a filter that is on
-     has to be visible without hovering, otherwise a folder just looks half empty. */
+  /* Direction chips carry the `action` class so TabTop sizes them exactly like every
+     other toolbar button — font-size, padding and the round hit area all come from
+     there. Styling them separately is what made the active one read as a stretched pill
+     instead of a circle: the icon fell back to the surrounding font size while the fill
+     traced a box that no longer matched its neighbours.
+
+     Only the state is added here. A filter that is on has to be visible without
+     hovering, otherwise a folder just looks half empty. */
   .chip {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: var(--space-2);
-    border-radius: var(--radius-full);
     color: var(--text-muted);
   }
 
@@ -279,13 +279,13 @@ import { locale } from "$lib/locale";
       <!-- Icon-only and stateful, so both have to be spoken as well as drawn: the tooltip
            only appears on hover, and `class:on` is colour. clickable() sets the name,
            aria-pressed carries the state. -->
-      <div class="chip btn-dark" class:on={$direction === "in"} use:clickable={$locale.Received_only}
+      <div class="action chip btn-dark" class:on={$direction === "in"} use:clickable={$locale.Received_only}
         aria-pressed={$direction === "in"}
         use:tooltip={$locale.Received_only} on:click={() => toggleDirection("in")}>
         <Down />
         <Ripple />
       </div>
-      <div class="chip btn-dark" class:on={$direction === "out"} use:clickable={$locale.Sent_only}
+      <div class="action chip btn-dark" class:on={$direction === "out"} use:clickable={$locale.Sent_only}
         aria-pressed={$direction === "out"}
         use:tooltip={$locale.Sent_only} on:click={() => toggleDirection("out")}>
         <Up />
