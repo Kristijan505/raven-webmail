@@ -1296,6 +1296,49 @@ export const api = (config: Config) => {
   api.get("/unified/inbox/messages", unifiedMessages("inbox"));
   api.get("/unified/sent/messages", unifiedMessages("sent"));
 
+  // Bulk actions over a unified selection. Trash and spam need each message's OWN
+  // account's folder — the client cannot know another account's Trash id — so the
+  // grouping happens here: (mailbox, message) pairs, grouped by mailbox, owning
+  // account bound per group exactly like the path-scoped routes bind theirs, that
+  // account's Trash/Junk resolved, one bulk PUT per source mailbox.
+  const UnifiedBulkSchema = z.object({
+    action: z.enum(["trash", "spam"]),
+    items: z.array(z.object({
+      mailbox: z.string().min(1),
+      message: z.number().int().positive(),
+    })).min(1).max(1000),
+  });
+
+  api.put("/unified/messages", bulkLimiter, handler(async (req, res) => {
+    const { action, items } = validate(() => UnifiedBulkSchema.parse(req.body));
+    const accounts = sessionAccounts(req).filter(usableAccount);
+    if (!accounts.length) throw new ApiError(StatusCodes.FORBIDDEN, "Forbidden", "forbidden");
+
+    const groups = new Map<string, number[]>();
+    for (const item of items) groups.set(item.mailbox, [...(groups.get(item.mailbox) ?? []), item.message]);
+
+    for (const [mailboxId, ids] of groups) {
+      let owner: (SessionAccount & { token: string }) | null = null;
+      outer: for (const fresh of [false, true] as const) {
+        for (const account of accounts) {
+          if ((await ownedMailboxIdsFor(account, fresh)).has(mailboxId)) { owner = account; break outer; }
+        }
+      }
+      // A mailbox no account owns must not pick an arbitrary token to travel with.
+      if (!owner) throw new ApiError(StatusCodes.FORBIDDEN, "Invalid mailbox", "forbidden");
+      const boxes = await mailboxesFor(owner);
+      const target = action === "trash"
+        ? boxes.find(b => b.specialUse === "\\Trash")
+        : boxes.find(b => b.specialUse === "\\Junk");
+      if (!target) throw new ApiError(StatusCodes.CONFLICT, "Folder not available", "folder_not_available");
+      await put(`/users/${owner.id}/mailboxes/${seg(mailboxId)}/messages`, owner.token, {
+        message: ids.join(","),
+        moveTo: target.id,
+      });
+    }
+    res.json({ success: true });
+  }));
+
   api.post("/storage", uploadLimiter, handler(async (req, res) => {
     const contentType = String(req.headers["content-type"] || "");
     const contentLength = String(req.headers["content-length"] || "");

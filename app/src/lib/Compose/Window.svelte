@@ -20,7 +20,29 @@
   import { add } from "$lib/actions";
   import Editor from "$lib/Editor/Editor.svelte";
   import AddrInput from "./AddrInput.svelte";
+  import { accounts, tabAccount } from "$lib/account";
+  import { _get } from "$lib/util";
  
+  // From = the account whose Drafts this draft lives in. Switching retargets
+  // draft.mailbox to the chosen account's Drafts and lets the immutable-save
+  // machinery migrate it (create in the new home, retire from the old — kSavedIn).
+  // Locked once a reference exists (replies cannot cross accounts: WildDuck
+  // resolves the reference within one user) or once files were uploaded (they live
+  // in the first account's storage).
+  $: fromLocked = !!current?.reference || (current?.files?.length ?? 0) > 0;
+  $: fromId = current?.accountId ?? $tabAccount;
+  $: fromChoices = $accounts.filter(a => !a.needsReauth);
+
+  const switchFrom = async (accId: string) => {
+    if (!current || fromLocked || accId === fromId) return;
+    const boxes = await _get(`/api/mailboxes?account=${encodeURIComponent(accId)}`).catch(() => null);
+    const drafts = boxes?.results?.find((b: { specialUse?: string }) => b.specialUse === "\\Drafts");
+    if (!drafts) return;
+    current.accountId = accId;
+    current.mailbox = drafts.id;
+    current = current; // the autosave sees the change and migrates the draft
+  };
+
   let prev = clone(current);
   let timer: any;
   let token = 1;
@@ -248,6 +270,26 @@ import { locale } from "$lib/locale";
     user-select: none;
   }
 
+  .from-select {
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font: inherit;
+    padding: 0;
+    outline: none;
+    cursor: pointer;
+  }
+
+  .from-select:disabled {
+    color: var(--text-muted);
+    cursor: default;
+  }
+
+  .from-select option {
+    background: var(--surface);
+    color: var(--text);
+  }
+
   .subject {
     font-size: 0.9rem;
     padding: 0 0.5em;
@@ -319,6 +361,18 @@ import { locale } from "$lib/locale";
   </div>
   <div class="window-contents">
     <x-metadata>
+      {#if fromChoices.length > 1}
+        <label class="label-input from-row">
+          <x-label>{$locale["From:"]}</x-label>
+          <select class="from-select" disabled={fromLocked} title={fromLocked ? $locale.From_locked : null}
+            value={fromId} on:change={(e) => switchFrom(e.currentTarget.value)}>
+            {#each fromChoices as acc (acc.id)}
+              <option value={acc.id}>{acc.username}</option>
+            {/each}
+          </select>
+        </label>
+      {/if}
+
       <label class="label-input" for="compose-to">
         <x-label>{$locale["To:"]}</x-label>
         <AddrInput id="compose-to" name="to" bind:addrs={current.to} />

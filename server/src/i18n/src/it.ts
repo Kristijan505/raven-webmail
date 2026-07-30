@@ -128,6 +128,7 @@ const locale: Locale = {
   "Sign_in_again": "Accedi di nuovo",
   "Sign_out_account": "Esci da questo account",
   "Sign_out_other_devices": "Esci da questo account sugli altri dispositivi",
+  "From_locked": "Impossibile cambiare account per questo messaggio",
   "Mark_as_seen": "Segna come visto",
   "Mark_as_not_seen": "Segna non visto",
   "Mark_as_spam": "Segna spam",

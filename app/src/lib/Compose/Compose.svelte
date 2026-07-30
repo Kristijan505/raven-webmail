@@ -52,6 +52,7 @@
   import type { Attachment, FullMessage, Mailbox, User } from "$lib/types";
   import DOMPurify from "dompurify";
   import { EDITOR_URI_REGEXP, FETCHABLE_ATTRS, stripSelfProxyRefs } from "$lib/actions";
+  import { tabAccount } from "$lib/account";
   import { onMount } from "svelte";
   import { add } from "$lib/actions";
   import { locale } from "$lib/locale";
@@ -320,6 +321,9 @@
         reference: message.reference,
         carried: await carriedAttachments(message),
         files: message.files || [],
+        // Pinned at open: uploads go to THIS account's storage even if the tab
+        // switches accounts while the window stays open.
+        accountId: get(tabAccount) ?? undefined,
         [kShowBcc]: false,
         [kShowCc]: false,
         [kSent]: false

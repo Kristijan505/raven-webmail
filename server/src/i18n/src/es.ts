@@ -126,6 +126,7 @@ const locale: Locale = {
   Sign_in_again: "Vuelve a iniciar sesión",
   Sign_out_account: "Cerrar sesión de esta cuenta",
   Sign_out_other_devices: "Cerrar sesión de esta cuenta en otros dispositivos",
+  From_locked: "No se puede cambiar la cuenta para este mensaje",
   Mark_as_seen: "Marcar como leído",
   Mark_as_not_seen: "Marcar como no leído",
   Mark_as_spam: "Marcar como spam",

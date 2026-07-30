@@ -123,6 +123,7 @@ export default {
   Sign_in_again: "Sign in again",
   Sign_out_account: "Sign out this account",
   Sign_out_other_devices: "Sign out this account on other devices",
+  From_locked: "The account cannot be changed for this message",
   Mark_as_seen: "Mark as seen",
   Mark_as_not_seen: "Mark as not seen",
   Mark_as_spam: "Mark as spam",

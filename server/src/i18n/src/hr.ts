@@ -125,6 +125,7 @@ const locale: Locale = {
   Sign_in_again: "Potrebna ponovna prijava",
   Sign_out_account: "Odjavi ovaj račun",
   Sign_out_other_devices: "Odjavi ovaj račun s ostalih uređaja",
+  From_locked: "Račun se za ovu poruku ne može promijeniti",
   Mark_as_seen: "Označi kao pročitano",
   Mark_as_not_seen: "Označi kao nepročitano",
   Mark_as_spam: "Označi kao neželjeno",

@@ -22,7 +22,7 @@
   import Ripple from "$lib/Ripple.svelte";
   import { tooltip, clickable } from "$lib/actions";
   import { fade } from "svelte/transition";
-  import { action, isDrafts, isInbox, isJunk, isSent, isTrash, mailboxName, plural, _delete, _put } from "$lib/util";
+  import { action, isDrafts, isInbox, isJunk, isSent, isTrash, mailboxName, plural, _delete, _get, _put } from "$lib/util";
   import { activeDirection, direction, mixesDirections, toggleDirection } from "$lib/direction";
   import { isUnifiedMailbox } from "$lib/unified";
   import Down from "~icons/mdi/tray-arrow-down";
@@ -46,6 +46,52 @@ import { locale } from "$lib/locale";
   const { prev, next } = getContext("mailbox") as MailboxContext;
 
   $: unified = isUnifiedMailbox(mailbox);
+
+  // A unified selection can span accounts. Trash/spam go through the unified bulk
+  // endpoint (each message's OWN account's folder is resolved server-side). MoveTo
+  // appears only when the whole selection lives in one account — Kristijan's call —
+  // with that account's folders fetched on demand.
+  $: selAccountId = unified && selection.length && selection.every(m => m.account?.id && m.account.id === selection[0].account?.id)
+    ? selection[0].account?.id ?? null
+    : null;
+
+  let unifiedFolders: Mailbox[] | null = null;
+  let unifiedFoldersFor: string | null = null;
+  $: if (unified) syncUnifiedFolders(selAccountId);
+  const syncUnifiedFolders = async (acc: string | null) => {
+    if (!acc) { unifiedFolders = null; unifiedFoldersFor = null; return; }
+    if (unifiedFoldersFor === acc) return;
+    unifiedFoldersFor = acc;
+    const json = await _get(`/api/mailboxes?account=${encodeURIComponent(acc)}`).catch(() => null);
+    if (unifiedFoldersFor !== acc) return; // superseded by a newer selection
+    unifiedFolders = json?.results ?? null;
+  };
+
+  // The REAL source folder of the selection: a single-account selection in a unified
+  // view shares one mailbox (that account's INBOX or Sent), and handing that to the
+  // move menu is what lets the ordinary moveDestinations rules apply unchanged.
+  $: unifiedSource = unified && selAccountId && unifiedFolders
+    ? unifiedFolders.find(b => b.id === (selection[0]?.mailbox ?? "")) ?? null
+    : null;
+
+  const unifiedBulk = action(async (act: "trash" | "spam") => {
+    await _put("/api/unified/messages", {
+      action: act,
+      items: selection.map(m => ({ mailbox: m.mailbox ?? mailbox.id, message: m.id })),
+    });
+    removeSelection();
+  });
+
+  const moveUnified = action(async (to: Mailbox) => {
+    if (selection.length === 0) return;
+    // One source mailbox (see unifiedSource), one bulk PUT; the server checks the
+    // destination belongs to the same account as the source.
+    await _put(`/api/mailboxes/${selection[0].mailbox}/messages`, {
+      message: selection.map(m => m.id).join(","),
+      moveTo: to.id,
+    });
+    removeSelection();
+  });
 
   let reloadTimes = 0;
   const reload = () => {
@@ -352,6 +398,11 @@ import { locale } from "$lib/locale";
             <UnMarkSpam />
             <Ripple />
           </div>
+        {:else if unified && mailbox.id === "unified-inbox"}
+          <div class="action btn-dark" use:clickable use:tooltip={$locale.Mark_as_spam} on:click={() => unifiedBulk("spam")}>
+            <MarkSpam />
+            <Ripple />
+          </div>
         {:else if !unified && !isDrafts(mailbox) && !isSent(mailbox) && !isTrash(mailbox)}
           <div class="action btn-dark" use:clickable use:tooltip={$locale.Mark_as_spam} on:click={spam}> 
             <MarkSpam />
@@ -359,9 +410,12 @@ import { locale } from "$lib/locale";
           </div>
         {/if}
 
-        {#if !unified}
-          <!-- Unified delete needs each account's OWN Trash resolved server-side;
-               that arrives with the unified bulk endpoint (slice 3c). -->
+        {#if unified}
+          <div class="action btn-dark" use:clickable use:tooltip={$locale.Delete} on:click={() => unifiedBulk("trash")}>
+            <Delete />
+            <Ripple />
+          </div>
+        {:else}
           <div class="action btn-dark" use:clickable use:tooltip={isTrash(mailbox) ? $locale.Delete_permanently : isDrafts(mailbox) ? $locale.Discard_drafts : $locale.Delete} on:click={del}>
             <Delete />
             <Ripple />
@@ -372,6 +426,10 @@ import { locale } from "$lib/locale";
       {#if !unified}
         <div class="action-group">
           <MoveTo {mailbox} messages={selection} onMove={move} />
+        </div>
+      {:else if unifiedSource && unifiedFolders}
+        <div class="action-group">
+          <MoveTo mailbox={unifiedSource} mailboxesOverride={unifiedFolders} messages={selection} onMove={moveUnified} />
         </div>
       {/if}
 

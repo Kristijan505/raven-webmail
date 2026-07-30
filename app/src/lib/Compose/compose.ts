@@ -23,6 +23,11 @@ export type Draft = {
   // send an empty list. Keeping them distinct is what stops a failed lookup from
   // quietly dropping the attachments off a forward.
   carried?: Attachment[] | null
+  // The account this draft belongs to (storage uploads follow it). Set when the
+  // compose opens; a From switch retargets it together with `mailbox`.
+  accountId?: string
+  // Where the last-saved copy actually lives — see saveNow.
+  [kSavedIn]?: string
   reference?: Reference
   [kShowBcc]: boolean,
   [kShowCc]: boolean
@@ -183,6 +188,7 @@ export const createMessageBody = (target: Partial<typeof baseDraft>) => {
 
 
 export const kShowBcc = Symbol("draft-show-bcc");
+export const kSavedIn = Symbol("draft-saved-in");
 export const kShowCc = Symbol("draft-show-cc");
 export const kSent = Symbol("draft-sent");
 
@@ -240,7 +246,13 @@ export const save = (draft: Draft): Promise<number> => {
 
 const saveNow = async (draft: Draft) => {
 
-  const { id, mailbox, key, files, carried, ...json } = draft;
+  const { id, mailbox, key, files, carried, accountId, ...json } = draft;
+
+  // Where the superseded copy actually LIVES. After a From switch draft.mailbox
+  // already points at ANOTHER account's Drafts; the create goes there, but the
+  // delete must follow the old copy home — this is what migrates a draft across
+  // accounts with the ordinary create-new + delete-old machinery.
+  const savedIn = draft[kSavedIn] ?? mailbox;
 
   const { message } = await _post(`/api/mailboxes/${draft.mailbox}/messages`, createMessageBody({
     ...json,
@@ -261,13 +273,13 @@ const saveNow = async (draft: Draft) => {
   // orphan, which is precisely the duplicate the save chain exists to prevent. Retry
   // once for a transient blip, treat "already gone" as done, and report the rest to
   // the console instead of pretending it worked.
-  const retire = () => _delete(`/api/mailboxes/${mailbox}/messages/${id}`);
+  const retire = () => _delete(`/api/mailboxes/${savedIn}/messages/${id}`);
   const goneAlready = (e: any) => e instanceof HttpError && e.status === 404;
   retire()
     .catch(e => goneAlready(e) ? undefined : retire())
-    .then(() => Expunge.dispatch({ command: "EXPUNGE", mailbox, uid: id }))
+    .then(() => Expunge.dispatch({ command: "EXPUNGE", mailbox: savedIn, uid: id }))
     .catch(e => {
-      if(goneAlready(e)) return Expunge.dispatch({ command: "EXPUNGE", mailbox, uid: id });
+      if(goneAlready(e)) return Expunge.dispatch({ command: "EXPUNGE", mailbox: savedIn, uid: id });
       console.warn(`[raven] superseded draft ${id} could not be deleted; it may linger in Drafts`, e);
     })
 
@@ -277,6 +289,7 @@ const saveNow = async (draft: Draft) => {
   // and reads draft.id straight away. Writing it here means the handoff never depends
   // on which of those two lands first.
   draft.id = message.id;
+  draft[kSavedIn] = mailbox;
 
   return message.id;
 }
