@@ -119,6 +119,14 @@ export const mergeUnifiedRound = (rounds: UnifiedRoundInput[], limit: number): U
 
   const results: UnifiedRoundResult["results"] = [];
   while (results.length < limit) {
+    // Stop as soon as ANY account has used up its fetched rows while more pages
+    // remain. Its next page can hold rows newer than anything still queued here, and
+    // emitting past that point puts them out of order — the merge would serve a
+    // 16:30 from one account before a 17:00 that had simply not been fetched yet.
+    // The cursor below advances that account, so the next round has the rows it
+    // needs; the cost is an occasional short page, never a wrong order.
+    if (queues.some(q => q.taken >= q.rows.length && q.round.nextCursor)) break;
+
     let best: { queue: typeof queues[number]; row: UnifiedRow } | null = null;
     for (const queue of queues) {
       const row = queue.rows[queue.taken];

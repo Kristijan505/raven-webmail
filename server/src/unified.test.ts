@@ -93,10 +93,14 @@ describe("mergeUnifiedRound", () => {
   });
 
   it("marks an exhausted account done, and only all-done ends the list", () => {
+    // B carries two rows so the merge can drain A before B's page runs out — an
+    // account is only `done` once its rows have actually been SERVED, which is why
+    // the shape here is not simply one row each.
     const merged = mergeUnifiedRound([
       round(ACC_A, { results: [row(1, "2026-07-30T08:00:00Z")], nextCursor: false }),
-      round(ACC_B, { results: [row(2, "2026-07-30T09:00:00Z")], nextCursor: "moreB" }),
+      round(ACC_B, { results: [row(2, "2026-07-30T09:00:00Z"), row(3, "2026-07-30T07:00:00Z")], nextCursor: "moreB" }),
     ], 10);
+    expect(ids(merged)).toEqual(["715c:2", "615c:1", "715c:3"]);
     expect(merged.cursor[ACC_A]).toEqual({ cursor: null, skip: 0, done: true });
     expect(merged.cursor[ACC_B]).toEqual({ cursor: "moreB", skip: 0 });
     expect(merged.hasMore).toBe(true);
@@ -128,5 +132,35 @@ describe("mergeUnifiedRound", () => {
     expect(merged.total).toBe(42);
     expect(merged.hasMore).toBe(true); // A:1 still unserved via skip
     expect(merged.cursor[ACC_A]).toEqual({ cursor: null, skip: 1 });
+  });
+});
+
+describe("mergeUnifiedRound — ordering across page boundaries", () => {
+  it("stops rather than serve a row an unfetched page could outrank", () => {
+    // The bug the E2E harness caught, reduced. Account A's fetched page has one row
+    // left (18:00) and MORE pages behind it; account B has one row left (16:30) and
+    // is likewise mid-list. Emitting both would serve 16:30 before A's 17:00 — which
+    // exists, but on a page nobody had fetched yet.
+    const merged = mergeUnifiedRound([
+      round(ACC_A, { results: [row(2, "2026-07-30T18:00:00Z")], pageCursor: "pA", nextCursor: "nextA" }),
+      round(ACC_B, { results: [row(8, "2026-07-30T16:30:00Z")], pageCursor: "pB", nextCursor: "nextB" }),
+    ], 10);
+    expect(ids(merged)).toEqual(["615c:2"]);
+    // A is exhausted, so it advances; B keeps its unserved row for the next round.
+    expect(merged.cursor[ACC_A]).toEqual({ cursor: "nextA", skip: 0 });
+    expect(merged.cursor[ACC_B]).toEqual({ cursor: "pB", skip: 0 });
+    expect(merged.hasMore).toBe(true);
+  });
+
+  it("keeps draining an account that has no more pages", () => {
+    // The guard is about UNFETCHED rows. An exhausted account with nothing behind it
+    // can never outrank anything, so the merge must keep going — otherwise the last
+    // page of a finished account would stall the whole list.
+    const merged = mergeUnifiedRound([
+      round(ACC_A, { results: [row(2, "2026-07-30T18:00:00Z")], nextCursor: false }),
+      round(ACC_B, { results: [row(8, "2026-07-30T16:30:00Z"), row(7, "2026-07-30T15:00:00Z")], nextCursor: false }),
+    ], 10);
+    expect(ids(merged)).toEqual(["615c:2", "715c:8", "715c:7"]);
+    expect(merged.hasMore).toBe(false);
   });
 });
