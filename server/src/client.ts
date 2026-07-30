@@ -64,6 +64,18 @@ export type Authentication = {
   token: string
 }
 
+/**
+ * One signed-in account inside a session. A live entry is a full Authentication; a
+ * STUB — token stripped, `needsReauth: true` — is what surgical eviction leaves behind
+ * when this account's password was changed elsewhere with "sign out other devices"
+ * checked. The stub keeps id+username so the client can say "sign in again as X"
+ * instead of the account silently vanishing from the switcher.
+ */
+export type SessionAccount = Omit<Authentication, "token"> & {
+  token?: string | null
+  needsReauth?: boolean
+}
+
 export const authenticate = async (username: string, password: string): Promise<Authentication> => {
   const res = await fetch(url("/authenticate"), {
     method: "POST",

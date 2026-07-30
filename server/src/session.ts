@@ -1,6 +1,8 @@
 import ExpressSession from "express-session";
 import MongoSession from "connect-mongodb-session";
 import type { CookieOptions, Request } from "express";
+import type { SessionData } from "express-session";
+import type { Authentication, SessionAccount } from "./client";
 import { Config } from "./config";
 
 const MongoStore = MongoSession(ExpressSession);
@@ -8,6 +10,31 @@ const MongoStore = MongoSession(ExpressSession);
 // session() runs once at boot. Keep the store reachable afterwards so a password
 // change can evict that user's OTHER sessions (see destroyOtherSessions).
 let activeStore: any = null;
+
+/**
+ * A session entry that can actually speak for its account: it has a token and has not
+ * been stubbed by a surgical eviction.
+ */
+export const usableAccount = (a: SessionAccount): a is SessionAccount & { token: string } =>
+  typeof a.token === "string" && a.token.length > 0 && a.needsReauth !== true;
+
+/**
+ * Every account in this session, whatever its vintage. Sessions written before the
+ * multi-account model hold a single `authentication`; reading through this shim is
+ * what lets them survive the deploy instead of logging everyone out.
+ */
+export const accountsOf = (session: SessionData): SessionAccount[] =>
+  session.accounts ?? (session.authentication ? [session.authentication] : []);
+
+/**
+ * The one write path for the account list. Also maintains the legacy mirror
+ * (`authentication` = first usable account) so a ROLLBACK to a single-account build
+ * still finds a working session — multi-account code never reads the mirror.
+ */
+export const writeAccounts = (session: SessionData, accounts: SessionAccount[]): void => {
+  session.accounts = accounts;
+  session.authentication = (accounts.find(usableAccount) as Authentication | undefined) ?? null;
+};
 
 /**
  * Give this browser a NEW session id, carrying its authentication across.
@@ -30,11 +57,15 @@ let activeStore: any = null;
  * holding a session id with no authentication on it.
  */
 export const rotateSession = (req: Request): Promise<void> => {
+  // Carry the WHOLE account bag, not just the legacy mirror — rotating away a session
+  // that holds several signed-in accounts must not quietly drop all but one of them.
   const carried = req.session.authentication;
+  const carriedAccounts = req.session.accounts;
   return new Promise<void>((resolve, reject) => {
     req.session.regenerate(err => {
       if(err) return reject(err);
       req.session.authentication = carried;
+      if(carriedAccounts) req.session.accounts = carriedAccounts;
       req.session.save(saveErr => saveErr ? reject(saveErr) : resolve());
     });
   });
@@ -74,6 +105,74 @@ export const destroyOtherSessions = async (userId: string, keepSessionId: string
     [idField]: { $ne: keepSessionId },
   });
   return result?.deletedCount ?? 0;
+}
+
+/**
+ * The Mongo operations behind evictAccountFromOtherSessions, built pure so the exact
+ * queries are pinned by tests — this is the part reviews keep finding bugs in, and a
+ * wrong filter here is either a mass logout or a failed eviction.
+ */
+export const buildEvictionOps = (userId: string, keepSessionId: string, idField: string) => ({
+  // Legacy single-account sessions hold nothing but this account, so the stub IS
+  // deletion — exactly what the pre-multi-account eviction did to them.
+  deleteLegacy: {
+    filter: {
+      "session.authentication.id": userId,
+      "session.accounts": { $exists: false },
+      [idField]: { $ne: keepSessionId },
+    },
+  },
+  // Multi-account sessions lose ONLY this account's credentials. The entry stays as a
+  // stub — token stripped, needsReauth flagged — so the client can offer "sign in
+  // again as X", and a colleague holding ten shared mailboxes keeps the other nine.
+  stubAccounts: {
+    filter: {
+      "session.accounts": { $elemMatch: { id: userId, needsReauth: { $ne: true } } },
+      [idField]: { $ne: keepSessionId },
+    },
+    update: {
+      $set: { "session.accounts.$[entry].needsReauth": true },
+      $unset: { "session.accounts.$[entry].token": "" },
+    },
+    options: { arrayFilters: [{ "entry.id": userId }] },
+  },
+  // The legacy mirror may point at the very account being evicted; left alone, a
+  // rollback to a single-account build would resurrect its token. New code reads
+  // `accounts` and never misses the mirror.
+  clearMirror: {
+    filter: {
+      "session.accounts": { $exists: true },
+      "session.authentication.id": userId,
+      [idField]: { $ne: keepSessionId },
+    },
+    update: { $set: { "session.authentication": null } },
+  },
+});
+
+/**
+ * Surgically evict ONE account from every other session that holds it.
+ *
+ * This is the opt-in half of a password change ("sign out this account on other
+ * devices"). It deliberately does NOT destroy whole sessions: with shared mailboxes a
+ * password change is often routine, and the colleague who has the shared box plus
+ * their own mail signed in must lose exactly the shared box — as a visible stub that
+ * asks for the new password — and nothing else.
+ *
+ * Same store access and the same blank-argument guards as destroyOtherSessions above
+ * (Mongo serializes undefined to null, and `{$ne: null}` matches everything).
+ */
+export const evictAccountFromOtherSessions = async (userId: string, keepSessionId: string): Promise<number> => {
+  const store = activeStore;
+  const collection = store?.collection;
+  if(!collection) throw new Error("session store is not initialized");
+  if(!userId) throw new Error("evictAccountFromOtherSessions requires a user id");
+  if(!keepSessionId) throw new Error("evictAccountFromOtherSessions requires the current session id");
+  const idField: string = store.options?.idField ?? "_id";
+  const ops = buildEvictionOps(userId, keepSessionId, idField);
+  const del = await collection.deleteMany(ops.deleteLegacy.filter);
+  const stub = await collection.updateMany(ops.stubAccounts.filter, ops.stubAccounts.update, ops.stubAccounts.options);
+  await collection.updateMany(ops.clearMirror.filter, ops.clearMirror.update);
+  return (del?.deletedCount ?? 0) + (stub?.modifiedCount ?? 0);
 }
 
 // Only a real trusted-proxy value counts. An explicit trust_proxy=false means

@@ -16,7 +16,8 @@ import * as https from "https";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import ipaddr from "ipaddr.js";
-import { destroyOtherSessions, rotateSession, sessionCookieClearOptions } from "./session";
+import { accountsOf, evictAccountFromOtherSessions, rotateSession, sessionCookieClearOptions, usableAccount, writeAccounts } from "./session";
+import type { SessionAccount } from "./client";
 import { logger } from "./logger";
 
 const fromWeb = (Readable as any).fromWeb as ((stream: any) => NodeJS.ReadableStream);
@@ -90,6 +91,9 @@ const searchQueryString = (reqQuery: Request["query"]): string => {
 const LoginSchema = z.object({
   username: z.string().min(1),
   password: z.string().min(1),
+  // "Add account": append to the accounts already in this session instead of
+  // replacing them. Ignored when the session has none — that is a fresh login.
+  add: z.boolean().optional(),
 });
 // Signature HTML is stored in WildDuck metadata and rendered in two places:
 //   1. SignatureEditor (sandboxed iframe + DOMPurify before innerHTML assignment)
@@ -119,6 +123,11 @@ export const MeSchema = z.object({
   name: z.string().min(1).max(256).optional(),
   existingPassword: z.string().max(PASSWORD_MAX_LENGTH).optional(),
   password: z.string().min(PASSWORD_MIN_LENGTH).max(PASSWORD_MAX_LENGTH).optional(),
+  // "Sign out this account on other devices." Only meaningful together with a
+  // password change; the route defaults it to ON — the reflex after a break-in
+  // must work without reading fine print, while routine rotation of a shared
+  // mailbox is where a user deliberately unchecks it.
+  evictOtherSessions: z.boolean().optional(),
 }).refine(
   (body) => !body.password || !!body.existingPassword,
   { message: "existingPassword is required to change the password" }
@@ -239,7 +248,23 @@ const cacheMailboxIds = (uid: string, ids: Set<string>): void => {
 // this holds as long as that does. Scaling out needs the eviction broadcast between
 // instances (shared pub/sub) — or the flag downgraded to say what it can actually
 // vouch for.
-type LiveStream = { user: string; session: string; close: () => void };
+type LiveStream = { users: Set<string>; session: string; close: () => void };
+
+// Split an upstream SSE byte stream into whole events (blank-line separated) so
+// several upstreams can share one client response. Piping raw chunks would
+// interleave PARTIAL frames: a TCP chunk can end mid-line, and two pipes writing
+// into the same response corrupt each other's framing. Exported for tests.
+export const sseEventSplitter = (onEvent: (event: string) => void) => {
+  let buffer = "";
+  return (chunk: Buffer | string) => {
+    buffer += chunk.toString();
+    let i;
+    while ((i = buffer.indexOf("\n\n")) !== -1) {
+      onEvent(buffer.slice(0, i + 2));
+      buffer = buffer.slice(i + 2);
+    }
+  };
+};
 const liveStreams = new Set<LiveStream>();
 
 // The last eviction seen for a user: which session survived it, and a counter that
@@ -273,11 +298,22 @@ const closeOtherLiveStreams = (user: string, keepSession: string): number => {
   lastEviction.set(user, { keep: keepSession, at: ++evictionCounter, ts: now });
   let closed = 0;
   for (const entry of [...liveStreams]) {
-    if (entry.user !== user || entry.session === keepSession) continue;
+    if (!entry.users.has(user) || entry.session === keepSession) continue;
     liveStreams.delete(entry);
     try { entry.close(); closed++; } catch { /* already gone */ }
   }
   return closed;
+};
+
+// Close THIS session's own merged stream (per-account logout): the client's
+// EventSource reconnects on its own and comes back subscribed only to the
+// accounts that remain in the session.
+const closeSessionLiveStreams = (session: string): void => {
+  for (const entry of [...liveStreams]) {
+    if (entry.session !== session) continue;
+    liveStreams.delete(entry);
+    try { entry.close(); } catch { /* already gone */ }
+  }
 };
 
 // Bumped by every invalidation. A refresh captures it before its upstream call and
@@ -309,21 +345,25 @@ const rememberMailboxIds = (req: Request, boxes: unknown, generation: number): v
   cacheMailboxIds(userId(req), new Set(results.map(b => String(b.id))));
 };
 
-const ownedMailboxIds = async (req: Request, fresh: boolean): Promise<Set<string>> => {
-  const uid = userId(req);
-  const hit = mailboxIdsCache.get(uid);
+// Per-ACCOUNT core, because bindMailboxAccount has to ask this question for every
+// account in the session before any single account is "the" account.
+const ownedMailboxIdsFor = async (account: SessionAccount & { token: string }, fresh: boolean): Promise<Set<string>> => {
+  const hit = mailboxIdsCache.get(account.id);
   const age = hit ? Date.now() - hit.at : Infinity;
   // `fresh` asks to bypass the normal TTL, but not the refresh floor — see
   // forgetMailboxIds above for why that is safe.
   if (hit && age < (fresh ? MAILBOX_IDS_REFRESH_MIN_MS : MAILBOX_IDS_TTL_MS)) return hit.ids;
 
   const generation = mailboxIdsGeneration;
-  const boxes = await get(`/users/${uid}/mailboxes`, token(req));
+  const boxes = await get(`/users/${account.id}/mailboxes`, account.token);
   const ids = new Set<string>(((boxes?.results ?? []) as Array<{ id: unknown }>).map(b => String(b.id)));
 
-  if (generation === mailboxIdsGeneration) cacheMailboxIds(uid, ids);
+  if (generation === mailboxIdsGeneration) cacheMailboxIds(account.id, ids);
   return ids;
 };
+
+const ownedMailboxIds = (req: Request, fresh: boolean): Promise<Set<string>> =>
+  ownedMailboxIdsFor(activeAccount(req), fresh);
 
 // The account's own From address, for telling outgoing mail from incoming. Read from
 // WildDuck rather than from the session: `authentication.username` is whatever the user
@@ -426,6 +466,73 @@ export const seg = (value: string | string[] | undefined): string => {
     throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid path parameter", "invalid_path_parameter");
   }
   return encodeURIComponent(value);
+};
+
+// ---------------------------------------------------------------------------
+// Which account does this request speak for?
+//
+// A session is a bag of signed-in accounts (accountsOf), and mailbox ObjectIds
+// are globally unique — one Mongo collection for every user — so a mailbox id
+// in the URL determines its owning account by itself. Resolution order:
+//   1. the account BOUND by bindMailboxAccount(): mailbox-scoped routes pin the
+//      owner of the path mailbox, and every userId()/token() call downstream
+//      follows it — which is what keeps the upstream URLs, ownership checks and
+//      caches speaking for the right account without rewriting any of them;
+//   2. an explicit ?account=<id>: must be a member of this session (403
+//      otherwise); naming a re-auth stub gets a distinct error so the client
+//      can prompt for that account's password;
+//   3. the first usable account — for a single-account session exactly the
+//      pre-multi-account behavior.
+const kAccount: unique symbol = Symbol("raven-resolved-account");
+
+const sessionAccounts = (req: Request): SessionAccount[] => accountsOf(req.session);
+
+export const activeAccount = (req: Request): SessionAccount & { token: string } => {
+  const bound = (req as any)[kAccount] as (SessionAccount & { token: string }) | undefined;
+  if (bound) return bound;
+  const accounts = sessionAccounts(req);
+  const wanted = typeof req.query.account === "string" && req.query.account ? req.query.account : null;
+  if (wanted) {
+    const hit = accounts.find(a => a.id === wanted);
+    if (!hit) throw new ApiError(StatusCodes.FORBIDDEN, "Forbidden", "forbidden");
+    if (!usableAccount(hit)) throw new ApiError(StatusCodes.FORBIDDEN, "Account requires sign-in", "account_reauth_required");
+    return hit;
+  }
+  const first = accounts.find(usableAccount);
+  if (!first) throw new ApiError(StatusCodes.FORBIDDEN, "Forbidden", "forbidden");
+  return first;
+};
+
+export const token = (req: Request): string => activeAccount(req).token;
+
+export const userId = (req: Request): string => activeAccount(req).id;
+
+// Pin the owning account of a path mailbox to the request. 403 when no account
+// in the session owns it — a foreign id must not get an arbitrary token to
+// travel with. Single-account sessions skip the pre-flight entirely and keep
+// today's behavior: WildDuck scopes every URL by /users/{id}/ and answers 404
+// for foreign ids itself.
+const bindMailboxAccount = async (req: Request, rawMailbox: string | string[] | undefined): Promise<void> => {
+  seg(rawMailbox); // shape-check early; separators and dot-segments are invalid everywhere
+  const id = rawMailbox as string;
+  const accounts = sessionAccounts(req).filter(usableAccount);
+  if (!accounts.length) throw new ApiError(StatusCodes.FORBIDDEN, "Forbidden", "forbidden");
+  if (accounts.length === 1) {
+    (req as any)[kAccount] = accounts[0];
+    return;
+  }
+  // Cached pass over every account first, only then the fresh (refetching) pass,
+  // so one account's stale cache cannot 403 a mailbox created seconds ago while a
+  // refetch for a DIFFERENT account still lies ahead.
+  for (const fresh of [false, true] as const) {
+    for (const account of accounts) {
+      if ((await ownedMailboxIdsFor(account, fresh)).has(id)) {
+        (req as any)[kAccount] = account;
+        return;
+      }
+    }
+  }
+  throw new ApiError(StatusCodes.FORBIDDEN, "Invalid mailbox", "forbidden");
 };
 
 // Defense-in-depth CSRF guard for state-changing requests. SameSite=lax is the
@@ -585,7 +692,9 @@ const passwordChangeLimiter = rateLimit({
   limit: LOGIN_RATE_MAX,
   skipSuccessfulRequests: true,
   skip: (req) => req.body?.password == null,
-  keyGenerator: (req) => req.session?.authentication?.id ?? "unauthenticated",
+  // Keyed per SESSION (one browser = one human): with several accounts signed
+  // in, switching accounts must not hand out a fresh bucket.
+  keyGenerator: (req) => req.sessionID ?? "unauthenticated",
   standardHeaders: true,
   legacyHeaders: false,
   message: (req: Request) => ({ error: { status: 429, message: errMsg(req, "too_many_attempts", "Too many attempts, please try again later") } }),
@@ -600,7 +709,7 @@ const passwordChangeLimiter = rateLimit({
 const sessionLimiter = (name: string, limit: number) => rateLimit({
   windowMs: LOGIN_RATE_WINDOW_MS,
   limit,
-  keyGenerator: (req: Request) => `${name}:${req.session?.authentication?.id ?? "unauthenticated"}`,
+  keyGenerator: (req: Request) => `${name}:${req.sessionID ?? "unauthenticated"}`,
   standardHeaders: true,
   legacyHeaders: false,
   message: (req: Request) => ({ error: { status: 429, message: errMsg(req, "too_many_attempts", "Too many attempts, please try again later") } }),
@@ -635,13 +744,27 @@ export const api = (config: Config) => {
   }))
 
   api.post("/login", loginLimiter, handler(async (req, res) => {
-    const { username, password } = validate(() => LoginSchema.parse(req.body));
+    const { username, password, add } = validate(() => LoginSchema.parse(req.body));
     const v = await authenticate(username, password);
+    if (add && sessionAccounts(req).length) {
+      // "Add account": the same privilege boundary as a fresh login, so the id
+      // still rotates — but the bag is carried across and this account appended.
+      // Signing into an account already present (including a re-auth stub)
+      // REPLACES its entry: that is how a stubbed shared mailbox comes back
+      // after its password changed elsewhere.
+      await rotateSession(req);
+      writeAccounts(req.session, [...sessionAccounts(req).filter(a => a.id !== v.id), v]);
+      await new Promise<void>((resolve, reject) => {
+        req.session.save(err => err ? reject(err) : resolve());
+      });
+      res.json({});
+      return;
+    }
     // Rotate the session id at the privilege boundary to defeat session fixation.
     await new Promise<void>((resolve, reject) => {
       req.session.regenerate(err => err ? reject(err) : resolve());
     });
-    req.session.authentication = v;
+    writeAccounts(req.session, [v]);
     await new Promise<void>((resolve, reject) => {
       req.session.save(err => err ? reject(err) : resolve());
     });
@@ -649,6 +772,21 @@ export const api = (config: Config) => {
   }))
 
   api.post("/logout", handler(async (req, res) => {
+    // Sign out ONE account when asked and at least one other usable account
+    // remains; the whole session otherwise (also the pre-multi-account path).
+    const one = typeof req.body?.account === "string" && req.body.account ? String(req.body.account) : null;
+    const accounts = sessionAccounts(req);
+    if (one && accounts.some(a => a.id === one) && accounts.some(a => a.id !== one && usableAccount(a))) {
+      writeAccounts(req.session, accounts.filter(a => a.id !== one));
+      await new Promise<void>((resolve, reject) => {
+        req.session.save(err => err ? reject(err) : resolve());
+      });
+      // The merged update stream still carries the removed account's events;
+      // close it and the EventSource reconnects with what remains.
+      closeSessionLiveStreams(req.sessionID);
+      res.json({});
+      return;
+    }
     // Destroy the server-side session record and clear the cookie so the
     // session id cannot be reused after logout (and so a fixated id is dropped).
     await new Promise<void>((resolve) => {
@@ -700,33 +838,66 @@ export const api = (config: Config) => {
   */
 
   api.get("/updates", handler(async (req, res) => {
-    // Captured BEFORE the await: an eviction can land while watch() is in flight, and
-    // this connection must not come up afterwards still carrying the old token.
+    const accounts = sessionAccounts(req).filter(usableAccount);
+    if (!accounts.length) throw new ApiError(StatusCodes.FORBIDDEN, "Forbidden", "forbidden");
+    // Captured BEFORE the awaits: an eviction can land while watch() is in
+    // flight, and this connection must not come up afterwards still carrying an
+    // evicted token.
     const openedAt = evictionCounter;
-    const stream = await watch(userId(req), token(req));
-    if (wasEvictedSince(userId(req), req.sessionID, openedAt)) {
+    // One upstream stream per account, multiplexed into this one response. The
+    // events need no tagging: they carry mailbox ids, which are globally unique.
+    const settled = await Promise.allSettled(accounts.map(a => watch(a.id, a.token as string)));
+    const destroy = (stream: NodeJS.ReadableStream) =>
       (stream as NodeJS.ReadableStream & { destroy?: () => void }).destroy?.();
+    const kept: Array<{ account: SessionAccount; stream: NodeJS.ReadableStream }> = [];
+    settled.forEach((result, i) => {
+      if (result.status !== "fulfilled") return;
+      // The pre-registration window: an account evicted while its watch() was in
+      // flight must not come up at all.
+      if (wasEvictedSince(accounts[i].id, req.sessionID, openedAt)) destroy(result.value);
+      else kept.push({ account: accounts[i], stream: result.value });
+    });
+    if (!kept.length) {
+      // Single-account behavior preserved: an expired token surfaces its own
+      // error (403 session_expired) rather than a generic one.
+      const failure = settled.find((r): r is PromiseRejectedResult => r.status === "rejected");
+      if (failure) throw failure.reason;
       throw new ApiError(StatusCodes.FORBIDDEN, "Forbidden", "forbidden");
     }
     res.type("text/event-stream");
-    stream.pipe(res);
-    // Registered so a password change can actually cut it off. This response captured
-    // its WildDuck token when it opened and keeps piping regardless of what happens to
-    // the session record afterwards — so without this, deleting a stolen session left
-    // that client still receiving counters and arrival/expunge events while PUT /me
-    // reported the eviction complete. The flag has to be true only when it is true.
+    const live = new Set(kept);
+    // Registered so a password change can cut this off. Each response captured
+    // its WildDuck tokens when it opened and keeps piping regardless of what
+    // happens to the session record afterwards — closing the stream here is what
+    // makes sessionsEvicted honest.
     const entry: LiveStream = {
-      user: userId(req),
+      users: new Set(kept.map(k => k.account.id)),
       session: req.sessionID,
-      // Tear down the upstream too, not just our response — otherwise the connection
-      // to WildDuck stays open behind a client that can no longer receive it.
       close: () => {
-        (stream as NodeJS.ReadableStream & { destroy?: () => void }).destroy?.();
+        for (const { stream } of live) destroy(stream);
         res.end();
       },
     };
+    for (const item of kept) {
+      // Whole events only: raw chunks from parallel upstreams interleave partial
+      // frames (see sseEventSplitter).
+      const push = sseEventSplitter(event => { if (!res.writableEnded) res.write(event); });
+      item.stream.on("data", push);
+      const gone = () => {
+        live.delete(item);
+        destroy(item.stream);
+        // The last upstream dying ends the response, so the client reconnects
+        // instead of listening to a stream that can never speak again.
+        if (!live.size && !res.writableEnded) res.end();
+      };
+      item.stream.on("end", gone);
+      item.stream.on("error", gone);
+    }
     liveStreams.add(entry);
-    const drop = () => liveStreams.delete(entry);
+    const drop = () => {
+      liveStreams.delete(entry);
+      for (const { stream } of live) destroy(stream);
+    };
     res.on("close", drop);
     res.on("finish", drop);
   }))
@@ -739,14 +910,18 @@ export const api = (config: Config) => {
     // password is being changed, re-authenticate the current one first and reject
     // with 403 on mismatch — otherwise a hijacked (or left-open) session could
     // silently take over the account password. Never forward existingPassword.
-    const { existingPassword, ...update } = body;
-    const id = userId(req); // throws 403 if unauthenticated -> session.authentication is set below
+    // evictOtherSessions is raven-only too; neither field may reach WildDuck.
+    const { existingPassword, evictOtherSessions, ...update } = body;
+    // The account being edited follows ?account= (activeAccount). Captured ONCE,
+    // before any rotation, so the whole handler speaks for one account.
+    const account = activeAccount(req);
+    const id = account.id;
     if (update.password != null) {
       // Verify the current password by re-authenticating. Only a genuine credential
       // failure counts as "wrong password": WildDuck answers 403 (or resolves with
       // success:false). A transport/backend failure (WildDuck down -> 502/5xx, invalid
       // JSON) must surface as-is, not masquerade as an incorrect password.
-      const auth = await authenticate(req.session.authentication!.username, existingPassword ?? "")
+      const auth = await authenticate(account.username, existingPassword ?? "")
         .catch((e) => {
           if (e instanceof ApiError && e.status === StatusCodes.FORBIDDEN) return null;
           throw e;
@@ -755,60 +930,48 @@ export const api = (config: Config) => {
         throw new ApiError(StatusCodes.FORBIDDEN, "Current password is incorrect", "invalid_existing_password");
       }
     }
-    const json = await put(`/users/${id}`, token(req), update);
+    const json = await put(`/users/${id}`, account.token, update);
 
     // Only meaningful for a password change; true otherwise so the client's check
     // (`sessionsEvicted === false`) never fires on a plain name update.
     let sessionsEvicted = true;
+    // ON unless explicitly unchecked — the reflex after a break-in must work
+    // without reading fine print; routine rotation of a shared mailbox is where
+    // the user deliberately unchecks it.
+    const evictRequested = update.password != null && evictOtherSessions !== false;
 
     if (update.password != null) {
-      // Evict this user's OTHER sessions now that the password has changed. Changing
-      // the password is what someone does when they think a session was stolen, and
-      // without this it does not evict anything: every session holds its own WildDuck
-      // token from login, so a copied raven.sid keeps working. The current session is
-      // kept — it just proved knowledge of the old password above, and logging the
-      // user out of the tab they are working in would be gratuitous.
+      // The rotation happens UNCONDITIONALLY: a stolen COPY of this cookie rides
+      // the current session id, and the password change is the moment to strand
+      // it (see rotateSession). What the checkbox governs is OTHER sessions —
+      // and there the eviction is surgical: the account is stubbed out of them
+      // (needsReauth, token stripped) so a colleague with ten shared mailboxes
+      // loses exactly this one, visibly, and keeps the other nine. Their open
+      // update streams are closed too; the EventSource reconnects without the
+      // evicted account, so the flag stays honest about live listeners.
       //
-      // Runs AFTER the change, and its failure is reported rather than thrown. Failing
-      // the response is not an option: the password HAS changed by this point, so a 5xx
-      // would tell the user the opposite of the truth. But swallowing it silently is
-      // worse — they would read "Password updated" and believe the other sessions were
-      // evicted when they were not, which is the entire reason they changed it. So the
-      // change succeeds and the client is told what actually happened.
-      // The flag answers "is it certain no other session survives?", NOT "was anything
-      // deleted" — zero deletions because there were no other sessions is success, and
-      // the UI must not warn about it. It is false only when the eviction could not be
-      // carried out at all. The count is logged so that is auditable after the fact.
-      // Rotate before evicting. The exception below is "keep the session making the
-      // change" — but a copied raven.sid arrives on that exact id, so the exception
-      // would spare the copy too. rotateSession moves this browser to an id no one
-      // else can be holding first; only then does "everything except mine" mean it.
+      // Runs AFTER the change, and its failure is reported rather than thrown:
+      // the password HAS changed by this point, so a 5xx would tell the user the
+      // opposite of the truth — but they must also not read "Password updated"
+      // and believe devices were signed out when they were not.
       sessionsEvicted = await rotateSession(req)
-        .then(() => destroyOtherSessions(id, req.sessionID))
-        .then((count: number) => {
-          // Session records alone are not enough: an /updates response already open
-          // holds its own token and would keep streaming. Close those too, or the flag
-          // below would claim more than was actually done.
-          //
-          // Since rotation, this also closes the caller's OWN stream — it was opened
-          // under the id we just retired, and that id is exactly what cannot be trusted
-          // any more. The client reconnects on its own: it is a native EventSource, and
-          // by the time the browser retries it holds the new cookie set by the response
-          // below, which passes the wasEvictedSince check as the session that was kept.
+        .then(async () => {
+          if (!evictRequested) return true;
+          const count = await evictAccountFromOtherSessions(id, req.sessionID);
           const streams = closeOtherLiveStreams(id, req.sessionID);
-          logger.info({ count, streams }, "other sessions invalidated after password change");
+          logger.info({ count, streams }, "account evicted from other sessions after password change");
           return true;
         })
         .catch((e: any) => {
           logger.error(
             { detail: String(e?.message) },
-            "password changed but other sessions could not be invalidated",
+            "password changed but rotation/eviction could not be completed",
           );
           return false;
         });
     }
 
-    res.json({ ...json, sessionsEvicted });
+    res.json({ ...json, sessionsEvicted, evictionRequested: evictRequested });
   }))
 
   api.put("/signature", handler(async (req, res) => {
@@ -834,12 +997,14 @@ export const api = (config: Config) => {
   }))
 
   api.delete("/mailboxes/:mailbox", handler(async (req, res) => {
+    await bindMailboxAccount(req, req.params.mailbox);
     await del(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}`, token(req));
     forgetMailboxIds(req);
     res.json({});
   }))
 
   api.put("/mailboxes/:mailbox", handler(async (req, res) => {
+    await bindMailboxAccount(req, req.params.mailbox);
     const body = validate(() => MailboxUpdateSchema.parse(req.body));
     const json = await put(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}`, token(req), body);
     forgetMailboxIds(req);
@@ -847,6 +1012,7 @@ export const api = (config: Config) => {
   }))
 
   api.get("/mailboxes/:mailbox/messages", handler(async (req, res) => {
+    await bindMailboxAccount(req, req.params.mailbox);
     // Allow-list the two params the UI sends (pagination cursor + page size).
     // Forwarding req.query verbatim would let clients inject undocumented
     // WildDuck params (metaData, threadCounters, unseen, etc.).
@@ -879,6 +1045,7 @@ export const api = (config: Config) => {
   }))
 
   api.put("/mailboxes/:mailbox/messages", bulkLimiter, handler(async (req, res) => {
+    await bindMailboxAccount(req, req.params.mailbox);
     const body = validate(() => BulkMessageUpdateSchema.parse(req.body));
     // moveTo relocates real mail, so confirm the destination is the caller's own.
     if (body.moveTo != null) await assertOwnsMailbox(req, body.moveTo);
@@ -887,6 +1054,7 @@ export const api = (config: Config) => {
   }))
 
   api.post("/mailboxes/:mailbox/messages", draftLimiter, handler(async (req, res) => {
+    await bindMailboxAccount(req, req.params.mailbox);
     const body = validate(() => CreateMessageSchema.parse(req.body));
     // `reference` makes WildDuck read the referenced message to build the quoted body
     // and carry attachments across — a read primitive pointed at a mailbox id the
@@ -897,21 +1065,25 @@ export const api = (config: Config) => {
   }))
 
   api.delete("/mailboxes/:mailbox/messages", bulkLimiter, handler(async (req, res) => {
+    await bindMailboxAccount(req, req.params.mailbox);
     await del(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages`, token(req));
     res.json({});
   }))
 
   api.get("/mailboxes/:mailbox/messages/:message", handler(async (req, res) => {
+    await bindMailboxAccount(req, req.params.mailbox);
     const body = await get(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages/${seg(req.params.message)}`, token(req));
     res.json(body);
   }))
 
   api.delete("/mailboxes/:mailbox/messages/:message", handler(async (req, res) => {
+    await bindMailboxAccount(req, req.params.mailbox);
     const body = await del(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages/${seg(req.params.message)}`, token(req));
     res.json(body);
   }))
 
   api.put("/mailboxes/:mailbox/messages/:message/flag", handler(async (req, res) => {
+    await bindMailboxAccount(req, req.params.mailbox);
     const value = !!req.body.value;
     // Validate the message id is a numeric string before embedding it in the
     // bulk-update body sent to WildDuck (it is not in the URL path here, so
@@ -930,6 +1102,7 @@ export const api = (config: Config) => {
   }))
 
   api.post("/mailboxes/:mailbox/messages/:message/submit", submitLimiter, handler(async (req, res) => {
+    await bindMailboxAccount(req, req.params.mailbox);
     // The submit endpoint takes no meaningful client-supplied fields — the draft
     // to send is identified by the URL params alone. Accept an empty body only.
     const body = await post(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages/${seg(req.params.message)}/submit`, token(req), {});
@@ -937,6 +1110,7 @@ export const api = (config: Config) => {
   }))
 
   api.get("/mailboxes/:mailbox/messages/:message/attachments/:attachment", handler(async (req, res) => {
+    await bindMailboxAccount(req, req.params.mailbox);
     const back = await fetch(url(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages/${seg(req.params.message)}/attachments/${seg(req.params.attachment)}`), {
       headers: { "x-access-token": token(req) }
     }).catch(e => {
@@ -971,6 +1145,7 @@ export const api = (config: Config) => {
   }));
 
   api.get("/mailboxes/:mailbox/messages/:message/source", handler(async (req, res) => {
+    await bindMailboxAccount(req, req.params.mailbox);
     const back = await fetch(url(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages/${seg(req.params.message)}/message.eml`), {
       headers: { "x-access-token": token(req) }
     }).catch(e => {
@@ -1059,7 +1234,7 @@ export const api = (config: Config) => {
 
   api.get("/proxy-image", imageProxyLimiter, handler(async (req, res) => {
     // Require an authenticated session so this can never be used as an open proxy.
-    if (req.session.authentication == null) {
+    if (!sessionAccounts(req).some(usableAccount)) {
       throw new ApiError(StatusCodes.FORBIDDEN, "Forbidden", "forbidden");
     }
     // Only same-origin loads (the app and the message iframe) and direct address-bar
@@ -1166,7 +1341,10 @@ export const api = (config: Config) => {
       user,
       mailboxes: boxes.results,
       addresses: addresses.length ? addresses : [String(user?.address ?? "")].filter(Boolean),
-      username: req.session.authentication!.username
+      username: activeAccount(req).username,
+      // Every account in this session, for the switcher. needsReauth entries are
+      // the stubs surgical eviction leaves behind — shown as "sign in again".
+      accounts: sessionAccounts(req).map(a => ({ id: a.id, username: a.username, needsReauth: !usableAccount(a) })),
     };
 
     return res.json({
@@ -1194,6 +1372,7 @@ export const api = (config: Config) => {
   }))
 
   pages.get("/mailbox/:mailbox", pageHandler(async (req, res) => {
+    await bindMailboxAccount(req, req.params.mailbox);
     
     const {limit = PAGE_SIZE_LIMIT} = req.query;
 
@@ -1206,6 +1385,7 @@ export const api = (config: Config) => {
   }))
 
   pages.get("/mailbox/:mailbox/message/:message", pageHandler(async (req, res) => {
+    await bindMailboxAccount(req, req.params.mailbox);
     
     const [ mailbox, message ] = await Promise.all([
       get(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}`, token(req)),
@@ -1216,22 +1396,6 @@ export const api = (config: Config) => {
   }))
 
   return api;
-}
-
-export const token = (req: Request): string => {
-  if(req.session.authentication == null) {
-    throw new ApiError(StatusCodes.FORBIDDEN, "Forbidden", "forbidden");
-  }
-
-  return req.session.authentication.token;
-}
-
-export const userId = (req: Request): string => {
-  if(req.session.authentication == null) {
-    throw new ApiError(StatusCodes.FORBIDDEN, "Forbidden", "forbidden");
-  }
-
-  return req.session.authentication.id;
 }
 
 export const query = (req: Request): string => {
