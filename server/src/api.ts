@@ -539,6 +539,28 @@ export const token = (req: Request): string => activeAccount(req).token;
 
 export const userId = (req: Request): string => activeAccount(req).id;
 
+/**
+ * Resolve the account for a PAGE load, leniently.
+ *
+ * activeAccount() is strict on purpose: an API request naming a re-auth stub must
+ * fail rather than quietly act as a different account. Page loads are the opposite
+ * case — their job is to render the app and tell the client what the session holds.
+ * A tab pinned to an account that has since been stubbed (a colleague's shared
+ * mailbox whose password changed) would otherwise 403, and pageHandler turns 403 into
+ * a redirect to /login: the colleague gets signed out of the UI although their own
+ * account still works, which is exactly what surgical eviction exists to prevent.
+ * The client re-pins from the account the layout answers with.
+ */
+const bindPageAccount = (req: Request): void => {
+  const accounts = sessionAccounts(req);
+  const wanted = typeof req.query.account === "string" && req.query.account ? req.query.account : null;
+  const asked = wanted ? accounts.find(a => a.id === wanted) : null;
+  const chosen = (asked && usableAccount(asked)) ? asked : accounts.find(usableAccount);
+  if (chosen) (req as any)[kAccount] = chosen;
+  // Nothing usable: leave it unbound so activeAccount() throws the 403 that sends
+  // the browser to the login page, which is the right answer for a dead session.
+};
+
 // Pin the owning account of a path mailbox to the request. 403 when no account
 // in the session owns it — a foreign id must not get an arbitrary token to
 // travel with. Single-account sessions skip the pre-flight entirely and keep
@@ -968,6 +990,8 @@ export const api = (config: Config) => {
     // Only meaningful for a password change; true otherwise so the client's check
     // (`sessionsEvicted === false`) never fires on a plain name update.
     let sessionsEvicted = true;
+    // Captured BEFORE rotation: the id a stolen copy of this cookie is riding.
+    const preRotateSession = req.sessionID;
     // ON unless explicitly unchecked — the reflex after a break-in must work
     // without reading fine print; routine rotation of a shared mailbox is where
     // the user deliberately unchecks it.
@@ -989,6 +1013,12 @@ export const api = (config: Config) => {
       // and believe devices were signed out when they were not.
       sessionsEvicted = await rotateSession(req)
         .then(async () => {
+          // ALWAYS, checkbox or not. Rotation destroys the old session record, but an
+          // /updates response opened under it holds its own WildDuck watches and keeps
+          // delivering mailbox events — arrivals, counters, expunges — to whoever holds
+          // the copied cookie. API access dies with the record; this is what stops the
+          // event feed. The honest browser reconnects with its new cookie.
+          closeSessionLiveStreams(preRotateSession);
           if (!evictRequested) return true;
           const count = await evictAccountFromOtherSessions(id, req.sessionID);
           const streams = closeOtherLiveStreams(id, req.sessionID);
@@ -1487,6 +1517,8 @@ export const api = (config: Config) => {
   
   api.use("/pages", pages);
 
+  pages.use((req, _res, next) => { bindPageAccount(req); next(); });
+
   pages.get("/layout", pageHandler(async (req, res) => {
     const generation = mailboxIdsGeneration;
     // Addresses come along so the client can answer "did I send this?" the same way the
@@ -1511,8 +1543,17 @@ export const api = (config: Config) => {
       inbox: Array<{ id: string; unseen: number; total: number }>;
       sent: Array<{ id: string; total: number }>;
     } = null;
+    // Which account owns which mailbox, so a deep link into ANOTHER account's folder
+    // (a bookmark, a link from a unified row) can switch the tab instead of rendering
+    // that folder's mail under this account's sidebar. The server resolves the data
+    // correctly either way — this only keeps the chrome honest.
+    const mailboxAccounts: Record<string, string> = {};
     if (usableAll.length > 1) {
       const metas = await Promise.allSettled(usableAll.map(a => mailboxesFor(a)));
+      metas.forEach((meta, i) => {
+        if (meta.status !== "fulfilled") return;
+        for (const b of meta.value) mailboxAccounts[b.id] = usableAll[i].id;
+      });
       // Per mailbox, NOT summed: COUNTERS events arrive per mailbox, and the client
       // keeps the badges live by updating exactly the entry an event names.
       const inbox: Array<{ id: string; unseen: number; total: number }> = [];
@@ -1536,6 +1577,7 @@ export const api = (config: Config) => {
       // the stubs surgical eviction leaves behind — shown as "sign in again".
       accounts: sessionAccounts(req).map(a => ({ id: a.id, username: a.username, needsReauth: !usableAccount(a) })),
       unified,
+      mailboxAccounts,
     };
 
     return res.json({

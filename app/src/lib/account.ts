@@ -6,6 +6,14 @@ export type AccountEntry = { id: string; username: string; needsReauth: boolean 
 export const accounts = writable<AccountEntry[]>([]);
 
 /**
+ * Which account owns which mailbox, from the layout payload. Only populated once a
+ * second account exists — with one account there is nothing to disambiguate. Lets a
+ * deep link into another account's folder switch the tab rather than render that
+ * folder under the wrong sidebar.
+ */
+export const mailboxAccounts = writable<Record<string, string>>({});
+
+/**
  * The account THIS TAB is looking at.
  *
  * Deliberately tab state, not session state: requests carry it explicitly
@@ -54,4 +62,7 @@ export const withAccount = (url: string): string => {
  * while login/logout/eviction changes the set and resyncs them.
  */
 export const accountsSignature = (list: AccountEntry[]): string =>
-  list.map(a => a.id).sort().join(",");
+  // needsReauth is part of the signature: an account being stubbed elsewhere changes
+  // what this browser can do, so other tabs have to resync — an id-only signature
+  // would call the set unchanged and leave them showing a live account that is not.
+  list.map(a => `${a.id}${a.needsReauth ? "!" : ""}`).sort().join(",");

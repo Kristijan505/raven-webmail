@@ -24,6 +24,19 @@
   import { mailboxName } from "$lib/util";
   import { locale } from "$lib/locale";
   import Mailbox from "$lib/Mailbox/Mailbox.svelte";
+  import { mailboxAccounts, setTabAccount, tabAccount } from "$lib/account";
+
+  // A deep link into ANOTHER account's folder — a bookmark, or a link followed from a
+  // unified row. The server already resolved the mail correctly (the path mailbox
+  // binds the owning account), but the chrome around it still belongs to whoever the
+  // tab points at. Re-pin and reload so the sidebar, folder list and compose all
+  // belong to the owner. Guarded on the map being populated, which only happens with
+  // more than one account signed in.
+  $: owner = $mailboxAccounts[mailbox.id];
+  $: if (owner && $tabAccount && owner !== $tabAccount) {
+    setTabAccount(owner);
+    location.reload();
+  }
 </script>
 
 <svelte:head>

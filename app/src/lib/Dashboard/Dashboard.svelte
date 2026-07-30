@@ -61,6 +61,7 @@
   import { isNarrow, sortMailboxes, watchAuth, _get } from "$lib/util";
   import { accounts as accountList, accountsSignature } from "$lib/account";
   import { applyCounters } from "$lib/unified";
+  import { invalidateAll } from "$app/navigation";
   import { goto } from "$app/navigation";
   import { Counters, Exists, Expunge } from "$lib/events";
   import { fly } from "svelte/transition";
@@ -79,6 +80,16 @@
     }
 
     const stream = new EventSource("/api/updates");
+    // The server closes this stream when an account of ours is evicted elsewhere, so
+    // a drop is the one signal that our account list may have changed under us.
+    // Re-read the layout on reconnect and the switcher shows the re-auth stub at
+    // once, instead of keeping a dead account on screen until the next navigation.
+    // Debounced because EventSource also errors on ordinary network blips.
+    let resync: any;
+    stream.onerror = () => {
+      clearTimeout(resync);
+      resync = setTimeout(() => { void invalidateAll().catch(() => {}); }, 1500);
+    };
     stream.onmessage = (event) => {
       const data = JSON.parse(event.data);
       if(data.command === "COUNTERS") {
@@ -106,7 +117,7 @@
       // accounts in another tab must not bounce this one, while login/logout/
       // eviction changes the set and resyncs every tab.
       watchAuth($accountList.length ? accountsSignature($accountList) : (user?.id ?? null)),
-      () => stream.close(),
+      () => { clearTimeout(resync); stream.close(); },
       () => destroyComposer(),
     ]
 
