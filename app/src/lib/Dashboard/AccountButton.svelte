@@ -16,6 +16,9 @@
   import { locale } from "$lib/locale";
   import { clickable } from "$lib/actions";
   import { _message } from "$lib/Notify/notify";
+  import AddIcon from "~icons/mdi/account-plus-outline";
+  import Check from "~icons/mdi/check";
+  import { accounts, setTabAccount, tabAccount } from "$lib/account";
 
   const signOut = action(async () => {
     open = false;
@@ -27,6 +30,33 @@
   // opening the profile page. The on:mousedown preventDefault on the row keeps
   // the click from being eaten by the popup's focus handling, so this actually
   // fires (HTTPS gives us the Clipboard API).
+  const switchTo = (acc: { id: string; username: string; needsReauth: boolean }) => {
+    open = false;
+    if (acc.needsReauth) {
+      // The stub surgical eviction leaves behind — same flow as adding the
+      // account, with the username already filled in.
+      goto(`/login?add=1&username=${encodeURIComponent(acc.username)}`);
+      return;
+    }
+    if (acc.id === $tabAccount) return;
+    setTabAccount(acc.id);
+    // Full reload on purpose: the layout, sidebar and every cache on screen belong
+    // to the previous account; a clean slate beats chasing stale state.
+    location.assign("/");
+  };
+
+  const addAccount = () => {
+    open = false;
+    goto("/login?add=1");
+  };
+
+  const signOutThis = action(async () => {
+    open = false;
+    await _post("/api/logout", { account: $tabAccount });
+    setTabAccount(null);
+    location.assign("/");
+  });
+
   const copyEmail = async () => {
     if (!user.address) return;
     try {
@@ -128,6 +158,44 @@
     background: var(--border);
     margin: 0.4rem 0;
   }
+
+  .switch-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-4);
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    color: var(--text);
+  }
+
+  .switch-name {
+    flex: 1;
+    min-width: 0;
+    max-width: 14rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 0.9rem;
+  }
+
+  .switch-active .switch-name {
+    font-weight: 600;
+  }
+
+  .switch-reauth {
+    flex: none;
+    color: var(--red);
+    font-size: 0.75rem;
+  }
+
+  .switch-check {
+    flex: none;
+    display: flex;
+    color: var(--color-success);
+    font-size: 1rem;
+  }
 </style>
 
 <div class="wrap">
@@ -159,6 +227,28 @@
 
         <div class="account-sep"></div>
 
+        {#if $accounts.length > 1}
+          {#each $accounts as acc (acc.id)}
+            <div class="switch-item btn-dark" class:switch-active={!acc.needsReauth && acc.id === $tabAccount}
+              use:clickable={acc.username}
+              on:mousedown={(e) => { if (e.button === 0) e.preventDefault(); }}
+              on:click={() => switchTo(acc)}>
+              <span class="switch-name">{acc.username}</span>
+              {#if acc.needsReauth}
+                <span class="switch-reauth">{$locale.Sign_in_again}</span>
+              {:else if acc.id === $tabAccount}
+                <span class="switch-check"><Check /></span>
+              {/if}
+              <Ripple />
+            </div>
+          {/each}
+          <div class="account-sep"></div>
+        {/if}
+
+        <MenuItem icon={AddIcon} on:click={addAccount}>{$locale.Add_account}</MenuItem>
+        {#if $accounts.length > 1}
+          <MenuItem icon={SignOut} on:click={signOutThis}>{$locale.Sign_out_account}</MenuItem>
+        {/if}
         <MenuItem icon={Account} href="/me" on:click={() => open = false}>{$locale.My_account}</MenuItem>
         <MenuItem icon={SignOut} on:click={signOut}>{$locale.Sign_out}</MenuItem>
       </Menu>

@@ -109,7 +109,7 @@ type GetPageOptions = {
 
 export const getPage = async ({ fetch, path, url }: GetPageOptions) => {
   const pathAndQuery = path || (url ? `/api/pages${url.pathname}${url.search}` : "");
-  const res = await fetch(pathAndQuery).catch(() => {
+  const res = await fetch(withAccount(pathAndQuery)).catch(() => {
     throw new HttpError(500, netErr("cannot_connect", "Cannot connect to the server"));
   });
 
@@ -149,7 +149,7 @@ export const action = <A extends any[], T>(fn: (...args: A) => T | Promise<T>) =
 }
 
 export const _get = async (url: string) => {
-  const res = await fetch(url).catch(e => {
+  const res = await fetch(withAccount(url)).catch(e => {
     throw new HttpError(500, netErr("cannot_connect", "Cannot connect to the server"));
   })
 
@@ -163,7 +163,7 @@ export const _get = async (url: string) => {
 }
 
 export const _delete = async (url: string) => {
-  const res = await fetch(url, {
+  const res = await fetch(withAccount(url), {
     method: "DELETE",
   }).catch(e => {
     throw new HttpError(500, netErr("cannot_connect", "Cannot connect to the server"));
@@ -179,7 +179,7 @@ export const _delete = async (url: string) => {
 }
 
 export const _post = async (url: string, body: any) => {
-  const res = await fetch(url, {
+  const res = await fetch(withAccount(url), {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body)
@@ -197,7 +197,7 @@ export const _post = async (url: string, body: any) => {
 }
 
 export const _put = async (url: string, body: any) => {
-  const res = await fetch(url, {
+  const res = await fetch(withAccount(url), {
     method: "PUT",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body)
@@ -275,6 +275,9 @@ export const plural = (count: number, forms: { one: string; few: string; other: 
   return (forms as Record<string, string | undefined>)[category] ?? forms.other;
 };
 import { intertab } from "./intertab";
+// Every /api request carries the tab's account (see account.ts) — the one funnel
+// that keeps multi-account tabs honest without touching call sites.
+import { withAccount } from "./account";
 
 /*
 export const watchAuth = (username: string | null) => {

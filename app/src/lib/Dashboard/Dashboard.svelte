@@ -59,6 +59,7 @@
   import Drawer from "./Drawer.svelte";
   import Top from "./Top.svelte";
   import { isNarrow, sortMailboxes, watchAuth, _get } from "$lib/util";
+  import { accounts as accountList, accountsSignature } from "$lib/account";
   import { goto } from "$app/navigation";
   import { Counters, Exists, Expunge } from "$lib/events";
   import { fly } from "svelte/transition";
@@ -97,7 +98,10 @@
           $mailboxes = $mailboxes;
         }
       }),
-      watchAuth(user?.id ?? null),
+      // Broadcast the SET of signed-in accounts, not the active one: switching
+      // accounts in another tab must not bounce this one, while login/logout/
+      // eviction changes the set and resyncs every tab.
+      watchAuth($accountList.length ? accountsSignature($accountList) : (user?.id ?? null)),
       () => stream.close(),
       () => destroyComposer(),
     ]

@@ -789,7 +789,7 @@ export const api = (config: Config) => {
       await new Promise<void>((resolve, reject) => {
         req.session.save(err => err ? reject(err) : resolve());
       });
-      res.json({});
+      res.json({ id: v.id });
       return;
     }
     // Rotate the session id at the privilege boundary to defeat session fixation.
@@ -800,7 +800,8 @@ export const api = (config: Config) => {
     await new Promise<void>((resolve, reject) => {
       req.session.save(err => err ? reject(err) : resolve());
     });
-    res.json({});
+    // Name the account so the client tab can point at it immediately.
+    res.json({ id: v.id });
   }))
 
   api.post("/logout", handler(async (req, res) => {

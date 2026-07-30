@@ -5,12 +5,28 @@ import { locale } from "$lib/locale";
   import Password from "$lib/Password.svelte";
   import TextField from "$lib/TextField.svelte";
   import { action, _post } from "$lib/util";
+  import { onMount } from "svelte";
+  import { setTabAccount } from "$lib/account";
 
   let username: string = "";
   let password: string = "";
+  // "Add account" mode: same form, but the session keeps its existing accounts and
+  // this one is appended. Arrives as ?add=1, optionally with ?username= prefilled
+  // from a re-auth stub in the switcher.
+  let isAdd = false;
+
+  onMount(() => {
+    const params = new URLSearchParams(location.search);
+    isAdd = params.get("add") === "1";
+    const prefill = params.get("username");
+    if (prefill) username = prefill;
+  });
 
   const login = action(async () => {
-    await _post("/api/login", {username, password});
+    const res = await _post("/api/login", isAdd ? { username, password, add: true } : { username, password });
+    // The response names the account, so the tab points at the one whose password
+    // was just typed — on a fresh login and on add alike.
+    if (res?.id) setTabAccount(res.id);
     goto("/");
   })
 </script>
@@ -43,12 +59,12 @@ import { locale } from "$lib/locale";
 </style>
 
 <svelte:head>
-  <title>{$locale.Sign_in}</title>
+  <title>{isAdd ? $locale.Add_account : $locale.Sign_in}</title>
 </svelte:head>
 
 <div class="page">
   
-  <h1>{$locale.Sign_in}</h1>
+  <h1>{isAdd ? $locale.Add_account : $locale.Sign_in}</h1>
   
   <Formy action={login} let:submit>
     
