@@ -12,6 +12,17 @@ export type Draft = {
   text: string
   html: string
   files: MessageFile[]
+  // Attachments the ORIGINAL message carries into a forward. Not the same thing as
+  // `files`, which is what the user attached here and lives in storage: these are parts
+  // of the referenced message, and WildDuck copies them itself when it creates the
+  // draft. Read off the original — never off the draft's own copies, whose ids belong
+  // to the new message's mime tree and are not what WildDuck matches against.
+  //
+  // `null` means "we could not read the original", which is different from "there are
+  // none": one has to fall back to letting WildDuck copy everything, the other has to
+  // send an empty list. Keeping them distinct is what stops a failed lookup from
+  // quietly dropping the attachments off a forward.
+  carried?: Attachment[] | null
   reference?: Reference
   [kShowBcc]: boolean,
   [kShowCc]: boolean
@@ -38,7 +49,115 @@ export type Reference = {
   mailbox: string
   id: number
   action: "reply" | "replyAll" | "forward"
-  attachments: boolean
+  // true = copy all of the original's attachments, false = none, array = copy exactly
+  // these ids. WildDuck matches an array against the ORIGINAL message's attachment ids
+  // (`!options.reference.attachments.includes(attachment.id)` in its messages API), and
+  // skips anything marked `related` in every case — embedded images travel with the
+  // body, not as attachments.
+  attachments: boolean | string[]
+}
+
+/**
+ * Which of the ORIGINAL message's attachments a forward draft still carries.
+ *
+ * The original supplies the ids — the only ones WildDuck matches a narrowed directive
+ * against — and the draft's own copies supply the choice, since WildDuck rebuilt those
+ * from the last directive it was given. The directive itself is not round-tripped, so
+ * this intersection is the only surviving record of what the user removed.
+ *
+ * Copies carry ids from the new message's mime tree, so they are joined on content.
+ * Two known hashes that differ settle it: they are different files, whatever their
+ * names say. Filename and size stand in only where a hash is missing.
+ *
+ * Each surviving copy accounts for exactly ONE original. A message may carry the same
+ * file twice, and asking merely whether SOME copy matches would let one survivor vouch
+ * for both — restoring the row that was just removed.
+ */
+export const sameFile = (copy: Attachment, source: Attachment): boolean =>
+  (copy.hash && source.hash)
+    ? copy.hash === source.hash
+    : copy.filename === source.filename && copy.sizeKb === source.sizeKb;
+
+export const claimCarried = (
+  original: Attachment[],
+  onDraft: Attachment[],
+  uploaded: MessageFile[] = [],
+): Attachment[] => {
+  // Only the copies WildDuck made from the reference are evidence of what survived.
+  // The draft's attachments also hold the embedded images and, once the user attaches
+  // anything, their own uploads — and an upload of the very file that was removed would
+  // otherwise vouch for it, restoring the original alongside the upload so the message
+  // goes out carrying it twice. Uploads are matched off by name and consumed, so a
+  // second copy of a name that appears twice is still available to a real carried part.
+  const carried = original.filter(item => !item.related);
+  const pool = onDraft.filter(item => !item.related);
+
+  // An upload consumes the part the reference cannot account for. Taking the first
+  // name match instead would let it swallow the carried copy and leave its own behind,
+  // which reads as "the carried file is gone" — so where a name appears more than once,
+  // prefer the part whose content matches no original.
+  const fromOriginal = new Set(carried.map(item => item.hash).filter(Boolean));
+  for (const file of uploaded) {
+    const matches = pool
+      .map((item, index) => ({ item, index }))
+      .filter(entry => entry.item.filename === file.filename);
+    if (!matches.length) continue;
+    const pick = matches.find(entry => !entry.item.hash || !fromOriginal.has(entry.item.hash)) ?? matches[0];
+    pool.splice(pick.index, 1);
+  }
+
+  const claimed = new Set<Attachment>();
+  const claim = (item: Attachment, match: (copy: Attachment) => boolean): void => {
+    const index = pool.findIndex(match);
+    if (index === -1) return;
+    pool.splice(index, 1);
+    claimed.add(item);
+  };
+
+  // Hash AND name first: the only pairing that is not a guess. Claiming on hash alone
+  // up front lets an original whose copy is gone take one that belongs to another
+  // original with the same bytes under a DIFFERENT name — the id and the filename that
+  // then go out are the ones the user removed, not the one they kept.
+  for (const item of carried) {
+    if (item.hash) claim(item, copy => copy.hash === item.hash && copy.filename === item.filename);
+  }
+
+  // Then hash alone, which still beats guessing: same bytes, filed under another name.
+  for (const item of carried) {
+    if (!claimed.has(item) && item.hash) claim(item, copy => copy.hash === item.hash);
+  }
+
+  // Name and size last, and never across two known hashes: those already had their say.
+  for (const item of carried) {
+    if (claimed.has(item)) continue;
+    claim(item, copy =>
+      !(copy.hash && item.hash) && copy.filename === item.filename && copy.sizeKb === item.sizeKb);
+  }
+
+  return carried.filter(item => claimed.has(item));
+}
+
+/**
+ * The `attachments` directive to send for a draft, given what the user has left on it.
+ *
+ * WildDuck does NOT round-trip this: a GET on a saved draft returns `reference` as
+ * {mailbox, id, action} only. Since save() is create-new + delete-old and send() saves
+ * first, the message that actually goes out is always rebuilt from a reference read
+ * back off the server — so whatever this returns is what decides, every time.
+ *
+ * Deriving it here rather than storing it on the draft keeps one rule in one place:
+ * forward carries attachments, reply and replyAll do not, and a forward carries exactly
+ * the ones still on the draft. An unknown carried list falls back to `true`, which is
+ * what the directive meant before it could be narrowed — losing the lookup must not
+ * also lose the attachments.
+ */
+export const referenceFor = (
+  reference: Reference | void,
+  carried: Attachment[] | null | undefined,
+): Reference | void => {
+  if(!reference) return reference;
+  if(reference.action !== "forward") return { ...reference, attachments: false };
+  return { ...reference, attachments: carried ? carried.map(item => item.id) : true };
 }
 
 export type Address = {
@@ -70,7 +189,7 @@ export const kSent = Symbol("draft-sent");
 import { crossfade, fly } from "svelte/transition";
 import { _delete, _post, HttpError } from "$lib/util";
 import { Expunge } from "$lib/events";
-import type { Mailbox, User } from "$lib/types";
+import type { Attachment, Mailbox, User } from "$lib/types";
 
 export const [crossin, crossout] = crossfade({
   duration: 300,
@@ -121,10 +240,11 @@ export const save = (draft: Draft): Promise<number> => {
 
 const saveNow = async (draft: Draft) => {
 
-  const { id, mailbox, key, files, ...json } = draft;
+  const { id, mailbox, key, files, carried, ...json } = draft;
 
-  const { message } = await _post(`/api/mailboxes/${draft.mailbox}/messages`, createMessageBody({ 
+  const { message } = await _post(`/api/mailboxes/${draft.mailbox}/messages`, createMessageBody({
     ...json,
+    reference: referenceFor(json.reference, carried),
     files: files?.map(file => file.id).filter(Boolean) as string[],
   }));
   

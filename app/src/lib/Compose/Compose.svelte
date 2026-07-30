@@ -1,7 +1,7 @@
 <svelte:options accessors />
 
 <script lang="ts">
-  import { createMessageBody, crossin, crossout, kSent, kShowBcc, kShowCc } from "./compose";
+  import { claimCarried, createMessageBody, crossin, crossout, kSent, kShowBcc, kShowCc } from "./compose";
   import type { Draft } from "./compose";
   import s from "html-escape";
 
@@ -49,7 +49,7 @@
   }
 
   import { action, _get, _post } from "$lib/util";
-  import type { FullMessage, Mailbox, User } from "$lib/types";
+  import type { Attachment, FullMessage, Mailbox, User } from "$lib/types";
   import DOMPurify from "dompurify";
   import { EDITOR_URI_REGEXP, FETCHABLE_ATTRS, stripSelfProxyRefs } from "$lib/actions";
   import { onMount } from "svelte";
@@ -265,20 +265,37 @@
     await open(drafts, res.message.id);
   }
 
-  // `attachments` is a creation-time directive that WildDuck does NOT round-trip: a GET
-  // on a saved draft returns `reference` as {mailbox, id, action} only. That silently
-  // broke forwarding. save() is create-new + delete-old, and send() calls save() before
-  // submitting, so the message that actually goes out is ALWAYS built from a reference
-  // read back off the server — i.e. one with the directive missing — and WildDuck never
-  // carries the original's attachments across. Every forward lost its images.
+  // What the original message brings into a forward, read off the ORIGINAL rather than
+  // off the draft. WildDuck copies these into the draft itself, so they do come back on
+  // a GET — but as parts of the new message, with ids from ITS mime tree, and those are
+  // not the ids WildDuck matches a narrowed list against. Reading the source keeps the
+  // ids meaningful and keeps user-uploaded files (which also land in the draft's
+  // attachments) from being counted twice.
   //
-  // The value is fully determined by the action, and `action` IS round-tripped: forward
-  // carries attachments, reply/replyAll do not. That is exactly what forward() and
-  // reply()/replyAll() set at creation time, so restoring it on read is not a guess.
-  const restoreReference = (reference: any) => {
-    if(!reference) return reference;
-    if(reference.attachments != null) return reference;
-    return { ...reference, attachments: reference.action === "forward" };
+  // Anything `related` is left out: those are the embedded images, they travel inside
+  // the body, and WildDuck skips them here too — listing them as attachments would
+  // promise a paperclip the recipient never sees.
+  //
+  // Returning null on failure is deliberate: it means "unknown", which referenceFor()
+  // turns back into "copy everything" rather than "copy nothing".
+  //
+  // The original alone is not the answer, though — it is the id space, not the choice.
+  // Removing an attachment narrows the directive, and WildDuck does not round-trip the
+  // directive, so on the next open the original still lists everything it ever had.
+  // Rebuilding from it would quietly undo the removal: the row would come back and the
+  // next save would copy the file again, and Send would attach something the user had
+  // explicitly taken off. What DOES survive is the draft's own copies, since WildDuck
+  // rebuilt them from the last directive it was given — so the two are intersected, the
+  // original supplying the ids and the draft supplying the choice.
+  const carriedAttachments = async (draft: FullMessage): Promise<Attachment[] | null> => {
+    const reference = draft.reference as any;
+    if(reference?.action !== "forward") return null;
+    try {
+      const original: FullMessage = await _get(`/api/mailboxes/${reference.mailbox}/messages/${reference.id}`);
+      return claimCarried(original.attachments ?? [], draft.attachments ?? [], draft.files ?? []);
+    } catch {
+      return null;
+    }
   }
 
   export const open = async (mailbox: Mailbox, id: number) => {
@@ -300,7 +317,8 @@
         subject: message.subject,
         html,
         text,
-        reference: restoreReference(message.reference),
+        reference: message.reference,
+        carried: await carriedAttachments(message),
         files: message.files || [],
         [kShowBcc]: false,
         [kShowCc]: false,
