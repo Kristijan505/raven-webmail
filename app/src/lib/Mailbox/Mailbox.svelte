@@ -20,25 +20,103 @@
   import Top from "./Top.svelte";
       
   let loadingMore = false;
+
+  // Every listing request carries the active direction filter, so paging and the count
+  // come back describing the filtered set rather than being trimmed afterwards.
+  const listUrl = (params: string[] = []) => {
+    const all = [...params, directionParam(active)].filter(Boolean);
+    return `/api/mailboxes/${mailbox.id}/messages${all.length ? "?" + all.join("&") : ""}`;
+  }
+
+  // Every listing request belongs to a generation, and changing the filter supersedes
+  // whatever is in flight. Without that, a "load more" started under the old filter
+  // lands after the new list is installed and appends its rows — and its cursor — into
+  // it, and two quick chip toggles can finish out of order and leave the older answer on
+  // screen. A superseded response is dropped rather than merged.
+  let listGeneration = 0;
+
   const next = action(async () => {
     if(!messages.nextCursor) return;
+    const generation = listGeneration;
     loadingMore = true;
     try {
-      const json: Messages = await _get(`/api/mailboxes/${mailbox.id}/messages?next=${messages.nextCursor}&limit=50`)
+      const json: Messages = await _get(listUrl([`next=${messages.nextCursor}`, "limit=50"]))
+      if(generation !== listGeneration) return;
       messages = {
         ...messages,
         results: dedup([ ...messages.results, ...json.results ]),
         nextCursor: json.nextCursor,
+        total: json.total ?? messages.total,
       }
+    } finally {
       loadingMore = false;
-    } catch(e) {
-      loadingMore = false;
-      throw e;
     }
   })
 
+  // Switching the filter is not a refresh of the same list — it is a different list, so
+  // it replaces rather than reconciles. reconcileFirstPage exists to decide what to keep
+  // from what is already on screen; here the answer is nothing, and running it would
+  // hold on to rows the new filter excludes.
+  $: active = activeDirection(mailbox, $direction);
+  // Starts as null, not as the stored value: the page was loaded unfiltered, so a
+  // filter carried over from an earlier session has to be applied once on arrival too,
+  // not only when the user touches a chip.
+  let appliedDirection: ReturnType<typeof activeDirection> = null;
+  $: if(active !== appliedDirection) applyDirection(active);
+
+  // The last filter whose results actually reached the screen — the only thing that can
+  // say what the list is showing.
+  let renderedDirection: ReturnType<typeof activeDirection> = null;
+
+  // The chip must never claim a filter the list is not showing. appliedDirection moves
+  // first so this does not re-enter while the request is out; everything after settles it
+  // against what was actually rendered.
+  //
+  // Deliberately NOT wrapped in action(): that reports a failure and swallows it, which
+  // is right for a button and useless for deciding whether the filter took. The toolbar's
+  // Reload goes through prev(), which refetches page one under the current filter and
+  // leaves the generation alone — so reloadNow has exactly one caller, and this is it.
+  let applyToken = 0;
+  const applyDirection = async (value: ReturnType<typeof activeDirection>) => {
+    const token = ++applyToken;
+    appliedDirection = value;
+
+    let failure: string | null = null;
+    try {
+      await reloadNow();
+    } catch(e: any) {
+      failure = e?.message ?? null;
+    }
+
+    // A newer apply has taken over the state; it will settle it on its own terms.
+    if(token !== applyToken) return;
+
+    // Resolving is not the same as having rendered. A request superseded by a manual
+    // reload returns without throwing and without installing anything, so if that reload
+    // then failed, treating this as success left the old rows under a lit chip with
+    // nothing to retry. Whatever DID reach the screen is the truth, so the filter falls
+    // back to it — which is also the right answer when this request simply failed.
+    if(renderedDirection !== value) {
+      appliedDirection = renderedDirection;
+      direction.set(renderedDirection);
+    }
+    if(failure) _error(failure);
+  }
+
+  const reloadNow = async () => {
+    const generation = ++listGeneration;
+    const requested = active;
+    const json: Messages = await _get(listUrl(["limit=50"]));
+    if(generation !== listGeneration) return;
+    selection = [];
+    messages = json;
+    renderedDirection = requested;
+  }
+
   const prev = action(async () => {
-    const json: Messages = await _get(`/api/mailboxes/${mailbox.id}/messages`);
+    const generation = listGeneration;
+    const json: Messages = await _get(listUrl());
+    if(generation !== listGeneration) return;
     // See reconcile.ts for why the next cursor decides the fate of rows below the
     // refetched page — that is what finally retires an orphaned autosaved draft.
     const { results, nextCursor } = reconcileFirstPage(messages, json);
@@ -55,7 +133,9 @@
     // The search list had the identical defect; this is the same fix.
     const selectedIds = new Set(selection.map(m => m.id));
     selection = results.filter(m => selectedIds.has(m.id));
-    messages = { ...messages, results, nextCursor }
+    // Adopt the refetched count too: while a filter is on this is the number the toolbar
+    // shows, and it describes the filtered set, which nothing else keeps up to date.
+    messages = { ...messages, results, nextCursor, total: json.total ?? messages.total }
   })
 
   const context: MailboxContext = { next, prev };
@@ -81,6 +161,8 @@
   import { action, _get } from "$lib/util";
   import CircularProgress from "$lib/CircularProgress.svelte";
   import { dedupById, reconcileFirstPage } from "./reconcile";
+  import { activeDirection, direction, directionParam } from "$lib/direction";
+  import { _error } from "$lib/Notify/notify";
 
   const dedup = dedupById;
 
@@ -93,12 +175,22 @@
     
     const removeIds = () => {
       if(messages.results.some(item => rids.includes(item.id))) {
+        const results = messages.results.filter(item => !rids.includes(item.id));
         messages = {
           ...messages,
-          results: messages.results.filter(item => !rids.includes(item.id)),
+          results,
+          total: Math.max(0, messages.total - (messages.results.length - results.length)),
         };
 
         selection = selection.filter(item => !rids.includes(item.id))
+      } else if(active) {
+        // The expunged message was not among the loaded rows, so nothing local can
+        // account for it — and while a filter is on, the folder counter the SSE event
+        // carries is not the number being displayed. The event says nothing about
+        // direction either, so whether it belonged to this filter can only be answered
+        // by asking: refetch page one, which brings a fresh filtered total with it.
+        clearTimeout(timer);
+        timer = setTimeout(prev, 500);
       }
       if(messages.results.length < 15) {
         clearTimeout(timer3);

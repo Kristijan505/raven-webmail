@@ -117,6 +117,8 @@ const locale: Locale = {
   Delete_folder: "Izbriši mapu",
   Delete_all_messages: "Izbriši sve poruke",
   Reload: "Osvježi",
+  Received_only: "Samo primljene",
+  Sent_only: "Samo poslane",
   Mark_as_seen: "Označi kao pročitano",
   Mark_as_not_seen: "Označi kao nepročitano",
   Mark_as_spam: "Označi kao neželjeno",

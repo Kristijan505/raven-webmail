@@ -26,13 +26,14 @@
   // Destination rules live in moveTargets.ts so they can be unit-tested on their own —
   // this is product semantics (what may be filed where), not view code, and it is the
   // kind of rule a later refactor silently loosens.
-  $: folders = moveDestinations(mailbox, $mailboxes, messages, $user?.address);
+  $: folders = moveDestinations(mailbox, $mailboxes, messages, $addresses);
 
 
   import MoveTo from "~icons/mdi/folder-move-outline";
   import PortalPopup from "./PortalPopup.svelte";
   import { mailboxIcon, mailboxName } from "./util";
   import { moveDestinations } from "./moveTargets";
+  import { addresses } from "./addresses";
   import { getContext } from "svelte";
   import Ripple from "./Ripple.svelte";
   import { tooltip, clickable } from "./actions";

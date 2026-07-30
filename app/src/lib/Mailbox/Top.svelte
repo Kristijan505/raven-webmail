@@ -23,6 +23,9 @@
   import { tooltip, clickable } from "$lib/actions";
   import { fade } from "svelte/transition";
   import { action, isDrafts, isInbox, isJunk, isSent, isTrash, mailboxName, plural, _delete, _put } from "$lib/util";
+  import { activeDirection, direction, mixesDirections, toggleDirection } from "$lib/direction";
+  import Down from "~icons/mdi/tray-arrow-down";
+  import Up from "~icons/mdi/tray-arrow-up";
 
   import MoveTo from "$lib/MoveTo.svelte";
   import { getContext } from "svelte";
@@ -127,9 +130,13 @@ import { locale } from "$lib/locale";
   const removeSelection = () => {
     const ids = selection.map(item => item.id);
     
+    // The count follows the rows. Under a direction filter it is the count on display,
+    // and the SSE counters only ever refresh the folder's own total.
+    const results = messages.results.filter(item => !ids.includes(item.id));
     messages = {
       ...messages,
-      results: messages.results.filter(item => !ids.includes(item.id))
+      results,
+      total: Math.max(0, messages.total - (messages.results.length - results.length)),
     }
 
     if(messages.results.length < 15 && messages.nextCursor) {
@@ -139,6 +146,12 @@ import { locale } from "$lib/locale";
     
     selection = [];
   }
+
+  // While a direction filter is on, the folder's own total describes rows that are not
+  // being shown — a folder of 100 with 10 outgoing would read "100 messages" above a
+  // list of 10. The filtered listing reports its own total, so use that one; unfiltered,
+  // mailbox.total is the live figure the SSE counters keep up to date.
+  $: shownTotal = activeDirection(mailbox, $direction) ? messages.total : mailbox.total;
 
   const move = action(async (to: Mailbox) => {
     if(mailbox.id === to.id) return;
@@ -228,6 +241,23 @@ import { locale } from "$lib/locale";
     background: var(--surface-2);
     color: var(--text-muted);
   }
+
+  /* Direction chips. Same footprint as the toolbar actions beside them, but they carry
+     state, so the active one is filled rather than merely hovered — a filter that is on
+     has to be visible without hovering, otherwise a folder just looks half empty. */
+  .chip {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-2);
+    border-radius: var(--radius-full);
+    color: var(--text-muted);
+  }
+
+  .chip.on {
+    background: var(--red);
+    color: #fff;
+  }
 </style>
 
 <TabTop {scrolled}>
@@ -242,6 +272,26 @@ import { locale } from "$lib/locale";
       {/if}
       <Ripple />
     </div>
+
+    {#if mixesDirections(mailbox)}
+      <!-- Only where a folder actually holds both. The filter runs on the server, so a
+           page stays a full page and the count describes what is shown. -->
+      <!-- Icon-only and stateful, so both have to be spoken as well as drawn: the tooltip
+           only appears on hover, and `class:on` is colour. clickable() sets the name,
+           aria-pressed carries the state. -->
+      <div class="chip btn-dark" class:on={$direction === "in"} use:clickable={$locale.Received_only}
+        aria-pressed={$direction === "in"}
+        use:tooltip={$locale.Received_only} on:click={() => toggleDirection("in")}>
+        <Down />
+        <Ripple />
+      </div>
+      <div class="chip btn-dark" class:on={$direction === "out"} use:clickable={$locale.Sent_only}
+        aria-pressed={$direction === "out"}
+        use:tooltip={$locale.Sent_only} on:click={() => toggleDirection("out")}>
+        <Up />
+        <Ripple />
+      </div>
+    {/if}
 
     <div class="action btn-dark reload" use:clickable use:tooltip={$locale.Reload} on:click={reload}>
       <div class="reload-inner" style="transform: rotate({360 * reloadTimes}deg);">
@@ -269,7 +319,7 @@ import { locale } from "$lib/locale";
     </div>
 
     <div class="total">
-      {mailbox.total} {plural(mailbox.total, $locale.message_count)}
+      {shownTotal} {plural(shownTotal, $locale.message_count)}
     </div>
   {:else if selection.length !== 0}
     <div class="only-when-selection" in:fade|local={{ duration: 200 }}>

@@ -1,3 +1,4 @@
+import { isOwnAddress } from "./addresses";
 import type { Mailbox } from "./types";
 
 // IMAP special-use attributes. Mirrors the predicates in util.ts, restated here so this
@@ -50,7 +51,7 @@ export type Directional = { from?: { address?: string } | null };
 export const wasSent = (
   message: Directional,
   mailbox: Mailbox,
-  accountAddress: string | null | undefined,
+  accountAddresses: string[] | null | undefined,
 ): boolean => {
   if (mailbox.specialUse === SENT) return true;
   if (mailbox.specialUse === JUNK || mailbox.path === INBOX_PATH) return false;
@@ -68,9 +69,7 @@ export const wasSent = (
   // instead would reject legitimate restores for every imported or migrated message,
   // which have no `outbound` at all; and a marker written at send time cannot say
   // anything about mail that predates it, which is the case this rule exists to cover.
-  const from = message?.from?.address?.trim().toLowerCase();
-  const mine = accountAddress?.trim().toLowerCase();
-  return !!from && !!mine && from === mine;
+  return isOwnAddress(accountAddresses, message?.from?.address);
 };
 
 /**
@@ -101,7 +100,7 @@ export const moveDestinations = (
   mailbox: Mailbox | undefined,
   mailboxes: Mailbox[],
   messages: Directional[] = [],
-  accountAddress: string | null | undefined = null,
+  accountAddresses: string[] | null | undefined = [],
 ): Mailbox[] => {
   if (!mailbox || mailbox.specialUse === DRAFTS) return [];
 
@@ -114,7 +113,7 @@ export const moveDestinations = (
   // Which way the selected mail travelled. A mixed selection satisfies neither test, so
   // it gets custom folders only — the intersection of what is allowed for each half,
   // rather than a menu that is wrong for some of what is selected.
-  const directions = messages.map(m => wasSent(m, mailbox, accountAddress));
+  const directions = messages.map(m => wasSent(m, mailbox, accountAddresses));
   const allSent = directions.length > 0 && directions.every(Boolean);
   const allReceived = directions.length > 0 && !directions.some(Boolean);
 
