@@ -24,6 +24,7 @@
   import { fade } from "svelte/transition";
   import { action, isDrafts, isInbox, isJunk, isSent, isTrash, mailboxName, plural, _delete, _put } from "$lib/util";
   import { activeDirection, direction, mixesDirections, toggleDirection } from "$lib/direction";
+  import { isUnifiedMailbox } from "$lib/unified";
   import Down from "~icons/mdi/tray-arrow-down";
   import Up from "~icons/mdi/tray-arrow-up";
 
@@ -44,6 +45,8 @@ import { locale } from "$lib/locale";
   const { mailboxes } = getContext("dash") as DashContext;
   const { prev, next } = getContext("mailbox") as MailboxContext;
 
+  $: unified = isUnifiedMailbox(mailbox);
+
   let reloadTimes = 0;
   const reload = () => {
     reloadTimes++;
@@ -51,12 +54,16 @@ import { locale } from "$lib/locale";
   }
 
   const markAsSeen = action(async (v: boolean) => {
-    const ids = selection.map(s => s.id);
-
-    await _put(`/api/mailboxes/${mailbox.id}/messages`, {
-      message: ids.join(","),
-      seen: v
-    })
+    // Grouped by SOURCE mailbox: in the unified views the selection spans
+    // accounts, and each per-mailbox bulk PUT binds to that mailbox's own account
+    // on the server. A single-mailbox list degenerates to exactly the old request.
+    const groups = new Map<string, number[]>();
+    for (const item of selection) {
+      const box = item.mailbox ?? mailbox.id;
+      groups.set(box, [...(groups.get(box) ?? []), item.id]);
+    }
+    await Promise.all([...groups].map(([box, ids]) =>
+      _put(`/api/mailboxes/${box}/messages`, { message: ids.join(","), seen: v })));
   
     for(const item of selection) {
       item.seen = v;
@@ -128,11 +135,13 @@ import { locale } from "$lib/locale";
   }
 
   const removeSelection = () => {
-    const ids = selection.map(item => item.id);
+    // Keyed by (mailbox, id): uids collide across accounts in the unified views,
+    // and a plain id filter would take innocent rows down with the selected ones.
+    const keys = new Set(selection.map(item => `${item.mailbox ?? mailbox.id}:${item.id}`));
     
     // The count follows the rows. Under a direction filter it is the count on display,
     // and the SSE counters only ever refresh the folder's own total.
-    const results = messages.results.filter(item => !ids.includes(item.id));
+    const results = messages.results.filter(item => !keys.has(`${item.mailbox ?? mailbox.id}:${item.id}`));
     messages = {
       ...messages,
       results,
@@ -303,19 +312,21 @@ import { locale } from "$lib/locale";
 
   {#if selection.length === 0 && messages.results.length !== 0}
     <div class="action-group" in:fade|local={{ duration: 200 }}>
-      <div class="clear-btn-wrap">
-        <div class="action btn-dark" use:clickable class:hover={clearMenuOpen} on:click={() => clearMenuOpen = true}>
-          <DotsVertical />
-          <Ripple />
+      {#if !unified}
+        <div class="clear-btn-wrap">
+          <div class="action btn-dark" use:clickable class:hover={clearMenuOpen} on:click={() => clearMenuOpen = true}>
+            <DotsVertical />
+            <Ripple />
+          </div>
+          <div class="clear-anchor">
+            <PortalPopup anchor="top-left" bind:open={clearMenuOpen}>
+              <Menu>
+                <MenuItem icon={Delete} on:click={() => clearOpen = true}>{$locale.Delete_all_messages}</MenuItem>
+              </Menu>
+            </PortalPopup>
+          </div>
         </div>
-        <div class="clear-anchor">
-          <PortalPopup anchor="top-left" bind:open={clearMenuOpen}>
-            <Menu>
-              <MenuItem icon={Delete} on:click={() => clearOpen = true}>{$locale.Delete_all_messages}</MenuItem>
-            </Menu>
-          </PortalPopup>
-        </div>
-      </div> 
+      {/if} 
     </div>
 
     <div class="total">
@@ -341,22 +352,28 @@ import { locale } from "$lib/locale";
             <UnMarkSpam />
             <Ripple />
           </div>
-        {:else if !isDrafts(mailbox) && !isSent(mailbox) && !isTrash(mailbox)}
+        {:else if !unified && !isDrafts(mailbox) && !isSent(mailbox) && !isTrash(mailbox)}
           <div class="action btn-dark" use:clickable use:tooltip={$locale.Mark_as_spam} on:click={spam}> 
             <MarkSpam />
             <Ripple />
           </div>
         {/if}
 
-        <div class="action btn-dark" use:clickable use:tooltip={isTrash(mailbox) ? $locale.Delete_permanently : isDrafts(mailbox) ? $locale.Discard_drafts : $locale.Delete} on:click={del}>
-          <Delete />
-          <Ripple />
-        </div>
+        {#if !unified}
+          <!-- Unified delete needs each account's OWN Trash resolved server-side;
+               that arrives with the unified bulk endpoint (slice 3c). -->
+          <div class="action btn-dark" use:clickable use:tooltip={isTrash(mailbox) ? $locale.Delete_permanently : isDrafts(mailbox) ? $locale.Discard_drafts : $locale.Delete} on:click={del}>
+            <Delete />
+            <Ripple />
+          </div>
+        {/if}
       </div>
 
-      <div class="action-group">
-        <MoveTo {mailbox} messages={selection} onMove={move} />
-      </div>
+      {#if !unified}
+        <div class="action-group">
+          <MoveTo {mailbox} messages={selection} onMove={move} />
+        </div>
+      {/if}
 
       <div class="selection-info">
         <Check />

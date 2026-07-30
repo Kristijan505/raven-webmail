@@ -9,6 +9,8 @@
   export let mailbox: Mailbox;
   export let messages: Messages;
   export let selection: TMessage[] = [];
+  // Unified views point this at /api/unified/...; real mailboxes leave it null.
+  export let listBase: string | null = null;
   let scrolled = false;
 
   import type { Mailbox, Messages, Message as TMessage } from "$lib/types";
@@ -25,7 +27,8 @@
   // come back describing the filtered set rather than being trimmed afterwards.
   const listUrl = (params: string[] = []) => {
     const all = [...params, directionParam(active)].filter(Boolean);
-    return `/api/mailboxes/${mailbox.id}/messages${all.length ? "?" + all.join("&") : ""}`;
+    const base = listBase ?? `/api/mailboxes/${mailbox.id}/messages`;
+    return `${base}${all.length ? "?" + all.join("&") : ""}`;
   }
 
   // Every listing request belongs to a generation, and changing the filter supersedes
@@ -57,6 +60,12 @@
   // it replaces rather than reconciles. reconcileFirstPage exists to decide what to keep
   // from what is already on screen; here the answer is nothing, and running it would
   // hold on to rows the new filter excludes.
+  // Unified views: many source mailboxes behind one synthetic one. Rows carry
+  // their real mailbox; SSE events match against the id SET, and refetches
+  // replace rather than reconcile (uid-window reasoning is single-mailbox).
+  $: unified = isUnifiedMailbox(mailbox);
+  $: liveSet = mailbox.id === "unified-inbox" ? $inboxIds : mailbox.id === "unified-sent" ? $sentIds : null;
+
   $: active = activeDirection(mailbox, $direction);
   // Starts as null, not as the stored value: the page was loaded unfiltered, so a
   // filter carried over from an earlier session has to be applied once on arrival too,
@@ -117,6 +126,13 @@
     const generation = listGeneration;
     const json: Messages = await _get(listUrl());
     if(generation !== listGeneration) return;
+    if (unified) {
+      // Replace, don't reconcile: reconcileFirstPage reasons in ONE mailbox's uid
+      // space, and rows here come from many.
+      selection = [];
+      messages = json;
+      return;
+    }
     // See reconcile.ts for why the next cursor decides the fate of rows below the
     // refetched page — that is what finally retires an orphaned autosaved draft.
     const { results, nextCursor } = reconcileFirstPage(messages, json);
@@ -160,8 +176,9 @@
   import Ripple from "$lib/Ripple.svelte";
   import { action, _get } from "$lib/util";
   import CircularProgress from "$lib/CircularProgress.svelte";
-  import { dedupById, reconcileFirstPage } from "./reconcile";
+  import { dedupById, reconcileFirstPage, rowKey } from "./reconcile";
   import { activeDirection, direction, directionParam } from "$lib/direction";
+  import { inboxIds, isUnifiedMailbox, sentIds } from "$lib/unified";
   import { _error } from "$lib/Notify/notify";
 
   const dedup = dedupById;
@@ -171,18 +188,18 @@
     let timer: any;
     let timer2: any;
     let timer3: any;
-    let rids: number[] = []
+    let rids: string[] = []
     
     const removeIds = () => {
-      if(messages.results.some(item => rids.includes(item.id))) {
-        const results = messages.results.filter(item => !rids.includes(item.id));
+      if(messages.results.some(item => rids.includes(rowKey(item)))) {
+        const results = messages.results.filter(item => !rids.includes(rowKey(item)));
         messages = {
           ...messages,
           results,
           total: Math.max(0, messages.total - (messages.results.length - results.length)),
         };
 
-        selection = selection.filter(item => !rids.includes(item.id))
+        selection = selection.filter(item => !rids.includes(rowKey(item)))
       } else if(active) {
         // The expunged message was not among the loaded rows, so nothing local can
         // account for it — and while a filter is on, the folder counter the SSE event
@@ -202,15 +219,15 @@
     const off = [
       
       Exists.on(event => {
-        if(event.mailbox === mailbox.id) {
+        if(event.mailbox === mailbox.id || liveSet?.has(event.mailbox)) {
           clearTimeout(timer);
           timer = setTimeout(prev, 500);
         } 
       }),
 
       Expunge.on(event => {
-        if(event.mailbox === mailbox.id && event.uid != null) {
-          rids.push(event.uid);
+        if((event.mailbox === mailbox.id || liveSet?.has(event.mailbox)) && event.uid != null) {
+          rids.push(`${event.mailbox}:${event.uid}`);
           clearTimeout(timer2);
           timer2 = setTimeout(removeIds, 250)
         }
@@ -308,7 +325,7 @@ import { locale } from "$lib/locale";
   <div class="content" use:scroll in:fly={{ duration: 150, y: -15 }}>
     {#if messages.results.length || loadingMore}
       <div class="messages" transition:customSlide|local={{ duration: 250 }}>
-        {#each messages.results as message (message.id)}
+        {#each messages.results as message (rowKey(message))}
           <div class="message" transition:customSlide|local={{ duration: 250 }}>
             <!-- `message` is deliberately NOT bound. The each is keyed by
                  `message.id`, i.e. the key is derived from the very value a

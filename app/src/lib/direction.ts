@@ -57,7 +57,9 @@ export const directionParam = (value: Direction | null): string =>
  * stops being obvious from where it sits.
  */
 export const mixesDirections = (mailbox: Mailbox | null | undefined): boolean =>
-  !!mailbox && !isInbox(mailbox) && !isJunk(mailbox) && !isSent(mailbox) && !isDrafts(mailbox);
+  // Unified views are single-direction by construction — no chips there.
+  !!mailbox && !mailbox.path?.startsWith("__unified") &&
+  !isInbox(mailbox) && !isJunk(mailbox) && !isSent(mailbox) && !isDrafts(mailbox);
 
 /** The filter that actually applies in a folder: none at all where the chips are hidden. */
 export const activeDirection = (mailbox: Mailbox | null | undefined, value: Direction | null) =>

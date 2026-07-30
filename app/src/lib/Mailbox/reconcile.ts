@@ -1,16 +1,23 @@
 import type { Message } from "../types";
 
 /**
- * Drop repeats of the same message id, keeping the first occurrence.
- * The list is rendered by a keyed `{#each}`, and Svelte throws on a duplicate
- * key (in production too), so a repeat would take the whole mailbox down.
+ * Drop repeats, keeping the first occurrence — the list is a keyed `{#each}`, and
+ * Svelte throws on a duplicate key (in production too), so a repeat would take the
+ * whole mailbox down.
+ *
+ * The one key that survives several accounts in one list: uids are small per-mailbox
+ * integers and COLLIDE across accounts, so `id` alone must never key a row. In a
+ * single-mailbox list the mailbox half is constant and this degenerates to the id.
  */
+export const rowKey = (m: Pick<Message, "id" | "mailbox">): string => `${m.mailbox}:${m.id}`;
+
 export const dedupById = (messages: Message[]): Message[] => {
-  const seen = new Set<number>();
+  const seen = new Set<string>();
   const out: Message[] = [];
   for (const item of messages) {
-    if (seen.has(item.id)) continue;
-    seen.add(item.id);
+    const key = rowKey(item);
+    if (seen.has(key)) continue;
+    seen.add(key);
     out.push(item);
   }
   return out;

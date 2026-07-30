@@ -1465,18 +1465,20 @@ export const api = (config: Config) => {
     // session gets null — a unified view of one account is just that account.
     const usableAll = sessionAccounts(req).filter(usableAccount);
     let unified: null | {
-      inbox: { mailboxes: string[]; unseen: number; total: number };
-      sent: { mailboxes: string[]; total: number };
+      inbox: Array<{ id: string; unseen: number; total: number }>;
+      sent: Array<{ id: string; total: number }>;
     } = null;
     if (usableAll.length > 1) {
       const metas = await Promise.allSettled(usableAll.map(a => mailboxesFor(a)));
-      const inbox = { mailboxes: [] as string[], unseen: 0, total: 0 };
-      const sent = { mailboxes: [] as string[], total: 0 };
+      // Per mailbox, NOT summed: COUNTERS events arrive per mailbox, and the client
+      // keeps the badges live by updating exactly the entry an event names.
+      const inbox: Array<{ id: string; unseen: number; total: number }> = [];
+      const sent: Array<{ id: string; total: number }> = [];
       for (const meta of metas) {
         if (meta.status !== "fulfilled") continue;
         for (const b of meta.value) {
-          if (b.path === "INBOX") { inbox.mailboxes.push(b.id); inbox.unseen += b.unseen; inbox.total += b.total; }
-          else if (b.specialUse === "\\Sent") { sent.mailboxes.push(b.id); sent.total += b.total; }
+          if (b.path === "INBOX") inbox.push({ id: b.id, unseen: b.unseen, total: b.total });
+          else if (b.specialUse === "\\Sent") sent.push({ id: b.id, total: b.total });
         }
       }
       unified = { inbox, sent };

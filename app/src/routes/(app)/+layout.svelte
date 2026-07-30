@@ -5,6 +5,7 @@
 	import { RAVEN_SIGNATURE_META_KEY, signature } from "$lib/signature";
 	import { addresses } from "$lib/addresses";
 	import { accounts as accountsStore, setTabAccount } from "$lib/account";
+	import { unifiedInfo, type UnifiedInfo } from "$lib/unified";
 
   export let data: {
     user: User;
@@ -33,6 +34,7 @@
   // The server answered as THIS account (it validated ?account=, or picked the
   // fallback); pin the tab to it so every later request is explicit.
   $: accountsStore.set(data.accounts ?? []);
+  $: unifiedInfo.set((data.unified as UnifiedInfo) ?? null);
   $: if (data.user?.id) setTabAccount(data.user.id);
 
   onMount(() => {

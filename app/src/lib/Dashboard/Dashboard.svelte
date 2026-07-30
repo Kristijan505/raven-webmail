@@ -60,6 +60,7 @@
   import Top from "./Top.svelte";
   import { isNarrow, sortMailboxes, watchAuth, _get } from "$lib/util";
   import { accounts as accountList, accountsSignature } from "$lib/account";
+  import { applyCounters } from "$lib/unified";
   import { goto } from "$app/navigation";
   import { Counters, Exists, Expunge } from "$lib/events";
   import { fly } from "svelte/transition";
@@ -91,6 +92,9 @@
 
     const off = [
       Counters.on(data => {
+        // Keep the unified badges live too — the event may name ANOTHER account's
+        // inbox, which this account's $mailboxes knows nothing about.
+        applyCounters(data);
         const mbox = $mailboxes.find(item => item.id === data.mailbox);
         if(mbox) {
           mbox.total = data.total;

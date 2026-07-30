@@ -117,6 +117,9 @@ export type Message = {
     params: Record<string, string>
   }
   metadata?: any  
+  // Present only on unified-view rows: the owning account, for the badge and the
+  // tab hand-off when the row is opened.
+  account?: { id: string; username: string }
 
   html: string[]
   text: string

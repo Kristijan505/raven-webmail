@@ -9,6 +9,14 @@
 
     return message.from?.name || message.from?.address || "";
   }
+
+  // Account badge for unified rows: an initial plus a stable hue from the username.
+  const acctInitial = (u: string): string => (u || "?").trim().charAt(0).toUpperCase() || "?";
+  const acctColor = (u: string): string => {
+    let h = 0;
+    for (const ch of u) h = (h * 31 + ch.charCodeAt(0)) % 360;
+    return `hsl(${h}, 45%, 42%)`;
+  };
 </script>
 
 <script lang="ts">
@@ -25,7 +33,8 @@
   $: if (message) lastRow = message;
   $: row = message || lastRow;
 
-  $: selected = row ? selection.some(m => m.id === row.id) : false
+  // Compared by (mailbox, id): uids collide across accounts in unified views.
+  $: selected = row ? selection.some(m => m.id === row.id && m.mailbox === row.mailbox) : false
 
   // Handlers read `row`, not `message`, for the same reason the template does: during
   // a keyed-each outro `message` can be undefined while the row is still on screen and
@@ -34,7 +43,7 @@
   // (dead toolbar, broken select-all) until a reload.
   const toggleSelection = () => {
     if(!row) return;
-    const v = selection.filter(m => m.id !== row.id);
+    const v = selection.filter(m => !(m.id === row.id && m.mailbox === row.mailbox));
     if(selected) selection = v;
     else selection = [...v, row];
   }
@@ -52,11 +61,12 @@
   import { action, isDrafts, messageDate, _put } from "$lib/util";
   import { locale } from "$lib/locale";
   import { _open } from "$lib/Compose/compose";
+  import { setTabAccount } from "$lib/account";
   const flag = action(async () => {
     if(!row) return;
     const value = !row.flagged;
     row.flagged = value;
-    await _put(`/api/mailboxes/${mailbox.id}/messages/${row.id}/flag`, {
+    await _put(`/api/mailboxes/${row.mailbox ?? mailbox.id}/messages/${row.id}/flag`, {
       value
     }).catch(e => {
       row.flagged = !value;
@@ -66,6 +76,9 @@
 
   const click = action(async (event: MouseEvent) => {
     if(!row) return;
+    // A unified row navigates into ANOTHER account's mailbox: point the tab at the
+    // owner first, so the layout that loads is theirs — sidebar, folders and all.
+    if (row.account?.id) setTabAccount(row.account.id);
     if(isDrafts(mailbox)) {
       event.preventDefault();
       event.stopPropagation();
@@ -220,9 +233,24 @@
     align-items: center;
     flex: 7;
   }
+
+  .acct {
+    flex: none;
+    width: 1.35rem;
+    height: 1.35rem;
+    border-radius: var(--radius-full);
+    color: #fff;
+    font-size: 0.7rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-inline-end: var(--space-3);
+    align-self: center;
+  }
 </style>
 
-<a href="/mailbox/{mailbox.id}/message/{row.id}"
+<a href="/mailbox/{row.mailbox ?? mailbox.id}/message/{row.id}"
   class="na message"
   class:seen={row.seen}
   class:selected
@@ -246,6 +274,10 @@
     {/if}
     <Ripple />
   </div>
+
+  {#if row.account}
+    <span class="acct" style="background: {acctColor(row.account.username)}" title={row.account.username}>{acctInitial(row.account.username)}</span>
+  {/if}
 
   <div class="flex">
     <div class="from">

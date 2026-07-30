@@ -61,6 +61,9 @@
   import { _blank } from '$lib/Compose/compose';
   import { _message } from '$lib/Notify/notify';
   import { locale } from '$lib/locale';
+  import InboxAll from "~icons/mdi/inbox-multiple";
+  import SendAll from "~icons/mdi/send";
+  import { unifiedInfo, unifiedUnseen } from "$lib/unified";
 
   let createOpen = false;
   let createName = "";
@@ -204,6 +207,40 @@
     border-top: var(--border) 1px solid;
   }
 
+  .unified-item {
+    display: flex;
+    align-items: center;
+    position: relative;
+    overflow: hidden;
+    padding: var(--space-3) var(--space-4);
+    color: var(--text);
+  }
+
+  .unified-icon {
+    display: flex;
+    font-size: 1.25rem;
+    margin-inline-end: var(--space-4);
+    color: var(--text-muted);
+  }
+
+  .unified-name {
+    flex: 1;
+  }
+
+  .unified-count {
+    flex: none;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: var(--red);
+    color: #fff;
+    border-radius: var(--radius-full);
+    padding: 0.1rem 0.45rem;
+  }
+
+  .unified-sep {
+    margin: var(--space-2) 0;
+  }
+
   .new {
     display: flex;
     flex-direction: row;
@@ -258,6 +295,24 @@
 
   <div class="scroll thin-scroll" on:scroll={onScroll}>
     <div class="mailboxes">
+      {#if $unifiedInfo}
+        <!-- Gmail-style unified entries: only once a second account exists, above
+             the ACTIVE account's own folders. -->
+        <a class="na unified-item btn-dark" href="/unified/inbox" on:click={() => narrow.set(false)}>
+          <span class="unified-icon"><InboxAll /></span>
+          <span class="unified-name">{$locale.All_inboxes}</span>
+          {#if $unifiedUnseen}
+            <span class="unified-count">{$unifiedUnseen}</span>
+          {/if}
+          <Ripple />
+        </a>
+        <a class="na unified-item btn-dark" href="/unified/sent" on:click={() => narrow.set(false)}>
+          <span class="unified-icon"><SendAll /></span>
+          <span class="unified-name">{$locale.All_sent}</span>
+          <Ripple />
+        </a>
+        <div class="sep unified-sep"></div>
+      {/if}
       {#each $mailboxes as mailbox (mailbox.id)}
         <DrawerMailbox {mailbox} />
       {/each}
