@@ -18,6 +18,8 @@ import { z } from "zod";
 import ipaddr from "ipaddr.js";
 import { accountsOf, evictAccountFromOtherSessions, rotateSession, sessionCookieClearOptions, usableAccount, writeAccounts } from "./session";
 import type { SessionAccount } from "./client";
+import { decodeUnifiedCursor, encodeUnifiedCursor, mergeUnifiedRound } from "./unified";
+import type { UnifiedCursor, UnifiedCursorEntry, UnifiedRoundInput } from "./unified";
 import { logger } from "./logger";
 
 const fromWeb = (Readable as any).fromWeb as ((stream: any) => NodeJS.ReadableStream);
@@ -364,6 +366,36 @@ const ownedMailboxIdsFor = async (account: SessionAccount & { token: string }, f
 
 const ownedMailboxIds = (req: Request, fresh: boolean): Promise<Set<string>> =>
   ownedMailboxIdsFor(activeAccount(req), fresh);
+
+// Full mailbox metadata (path, specialUse, counters) per account, for the unified
+// views and the layout badges. Separate from the id cache above: that one answers
+// "is this id mine" and lives longer; this one carries counters, so it stays
+// short. Fetching it also seeds the id cache — same response, free ownership
+// refresh, with the usual generation guard.
+const MAILBOX_META_TTL_MS = 15_000;
+type MailboxMeta = { id: string; path: string; specialUse: string | null; unseen: number; total: number };
+const mailboxMetaCache = new Map<string, { boxes: MailboxMeta[]; at: number }>();
+
+const mailboxesFor = async (account: SessionAccount & { token: string }): Promise<MailboxMeta[]> => {
+  const hit = mailboxMetaCache.get(account.id);
+  if (hit && Date.now() - hit.at < MAILBOX_META_TTL_MS) return hit.boxes;
+  const generation = mailboxIdsGeneration;
+  const json = await get(`/users/${account.id}/mailboxes?counters=true`, account.token);
+  const boxes: MailboxMeta[] = ((json?.results ?? []) as Array<Record<string, unknown>>).map(b => ({
+    id: String(b.id),
+    path: String(b.path ?? ""),
+    specialUse: (b.specialUse as string | null) ?? null,
+    unseen: Number(b.unseen ?? 0),
+    total: Number(b.total ?? 0),
+  }));
+  if (mailboxMetaCache.size >= MAILBOX_IDS_MAX_ENTRIES) {
+    const oldest = mailboxMetaCache.keys().next().value;
+    if (oldest !== undefined) mailboxMetaCache.delete(oldest);
+  }
+  mailboxMetaCache.set(account.id, { boxes, at: Date.now() });
+  if (generation === mailboxIdsGeneration) cacheMailboxIds(account.id, new Set(boxes.map(b => b.id)));
+  return boxes;
+};
 
 // The account's own From address, for telling outgoing mail from incoming. Read from
 // WildDuck rather than from the session: `authentication.username` is whatever the user
@@ -1175,6 +1207,94 @@ export const api = (config: Config) => {
     res.json(json)
   }))
 
+  // -------------------------------------------------------------- unified views
+  // "All inboxes" / "all sent": one upstream page per account, merged newest
+  // first. VIRTUAL — no message moves anywhere; every row keeps living in its own
+  // account's real mailbox, and the per-message routes keep working through the
+  // mailbox id each row carries. Cursor & merge contract: unified.ts.
+  //
+  // `total` sums the accounts that answered THIS round; page one covers all of
+  // them. The client's badge should prefer the live layout counters in these
+  // views — later rounds legitimately omit accounts that are finished.
+  const unifiedMessages = (view: "inbox" | "sent") => handler(async (req, res) => {
+    const accounts = sessionAccounts(req).filter(usableAccount);
+    if (!accounts.length) throw new ApiError(StatusCodes.FORBIDDEN, "Forbidden", "forbidden");
+    const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? ""), 10) || Number(PAGE_SIZE_LIMIT), 1), 250);
+    let incoming: UnifiedCursor = {};
+    if (typeof req.query.next === "string" && req.query.next) {
+      const decoded = decodeUnifiedCursor(req.query.next);
+      if (!decoded) throw new ApiError(StatusCodes.BAD_REQUEST, "Invalid cursor", "invalid_cursor");
+      incoming = decoded;
+    }
+
+    const rounds: UnifiedRoundInput[] = [];
+    const carried: UnifiedCursor = {};
+    let carriedMore = false;
+
+    const settled = await Promise.allSettled(accounts.map(async account => {
+      const entry: UnifiedCursorEntry = incoming[account.id] ?? { cursor: null, skip: 0 };
+      if (entry.done) return { entry, round: null as UnifiedRoundInput | null };
+      const boxes = await mailboxesFor(account);
+      const box = view === "inbox"
+        ? boxes.find(b => b.path === "INBOX")
+        : boxes.find(b => b.specialUse === "\\Sent");
+      // An account without the folder contributes nothing, permanently.
+      if (!box) return { entry: { cursor: null, skip: 0, done: true as const }, round: null };
+      const params: Record<string, string> = { limit: String(limit) };
+      if (entry.cursor) params.next = entry.cursor;
+      const json = await get(`/users/${account.id}/mailboxes/${box.id}/messages?${qs.stringify(params)}`, account.token);
+      const round: UnifiedRoundInput = {
+        account: account.id,
+        username: account.username,
+        results: (json?.results ?? []) as UnifiedRoundInput["results"],
+        skip: entry.skip,
+        pageCursor: entry.cursor,
+        nextCursor: (json?.nextCursor ?? false) as string | false,
+        total: Number(json?.total ?? 0),
+      };
+      return { entry, round };
+    }));
+
+    settled.forEach((result, i) => {
+      const account = accounts[i];
+      if (result.status === "fulfilled") {
+        if (result.value.round) rounds.push(result.value.round);
+        else carried[account.id] = result.value.entry; // done accounts ride along
+        return;
+      }
+      // One account's upstream failing must not blank the other inboxes: its
+      // cursor entry is carried VERBATIM so the next round picks it back up, and
+      // this page is served from the accounts that answered.
+      logger.warn(
+        { account: account.id, detail: String((result.reason as any)?.message) },
+        "unified view: account fetch failed",
+      );
+      carried[account.id] = incoming[account.id] ?? { cursor: null, skip: 0 };
+      carriedMore = true;
+    });
+
+    // Every account failed: that is an outage, not an empty mailbox.
+    if (!rounds.length && carriedMore) {
+      throw new ApiError(StatusCodes.BAD_GATEWAY, "Upstream error", "upstream_error");
+    }
+
+    const merged = mergeUnifiedRound(rounds, limit);
+    const cursor = { ...merged.cursor, ...carried };
+    const hasMore = merged.hasMore || carriedMore;
+    res.json({
+      success: true,
+      total: merged.total,
+      page: 1,
+      previousCursor: false,
+      nextCursor: hasMore ? encodeUnifiedCursor(cursor) : false,
+      specialUse: null,
+      results: merged.results,
+    });
+  });
+
+  api.get("/unified/inbox/messages", unifiedMessages("inbox"));
+  api.get("/unified/sent/messages", unifiedMessages("sent"));
+
   api.post("/storage", uploadLimiter, handler(async (req, res) => {
     const contentType = String(req.headers["content-type"] || "");
     const contentLength = String(req.headers["content-length"] || "");
@@ -1337,6 +1457,30 @@ export const api = (config: Config) => {
     ])
     rememberMailboxIds(req, boxes, generation);
 
+    // Unified sidebar entries need every account's INBOX and Sent: the id sets
+    // let the client reconcile SSE events (mailbox ids are globally unique), and
+    // the summed counters seed the badges until live COUNTERS events take over.
+    // One bounded, briefly-cached fetch per ADDITIONAL account; a single-account
+    // session gets null — a unified view of one account is just that account.
+    const usableAll = sessionAccounts(req).filter(usableAccount);
+    let unified: null | {
+      inbox: { mailboxes: string[]; unseen: number; total: number };
+      sent: { mailboxes: string[]; total: number };
+    } = null;
+    if (usableAll.length > 1) {
+      const metas = await Promise.allSettled(usableAll.map(a => mailboxesFor(a)));
+      const inbox = { mailboxes: [] as string[], unseen: 0, total: 0 };
+      const sent = { mailboxes: [] as string[], total: 0 };
+      for (const meta of metas) {
+        if (meta.status !== "fulfilled") continue;
+        for (const b of meta.value) {
+          if (b.path === "INBOX") { inbox.mailboxes.push(b.id); inbox.unseen += b.unseen; inbox.total += b.total; }
+          else if (b.specialUse === "\\Sent") { sent.mailboxes.push(b.id); sent.total += b.total; }
+        }
+      }
+      unified = { inbox, sent };
+    }
+
     const props = {
       user,
       mailboxes: boxes.results,
@@ -1345,6 +1489,7 @@ export const api = (config: Config) => {
       // Every account in this session, for the switcher. needsReauth entries are
       // the stubs surgical eviction leaves behind — shown as "sign in again".
       accounts: sessionAccounts(req).map(a => ({ id: a.id, username: a.username, needsReauth: !usableAccount(a) })),
+      unified,
     };
 
     return res.json({
