@@ -1,7 +1,6 @@
 <script lang="ts">
   import Dashboard from "$lib/Dashboard/Dashboard.svelte";
   import type { Mailbox, User } from "$lib/types";
-	import { onMount } from "svelte";
 	import { RAVEN_SIGNATURE_META_KEY, signature } from "$lib/signature";
 	import { addresses } from "$lib/addresses";
 	import { accounts as accountsStore, mailboxAccounts, setTabAccount } from "$lib/account";
@@ -39,9 +38,11 @@
   $: mailboxAccounts.set(data.mailboxAccounts ?? {});
   $: if (data.user?.id) setTabAccount(data.user.id);
 
-  onMount(() => {
-    signature.set(user?.metaData?.[RAVEN_SIGNATURE_META_KEY] || "");
-  })
+  // Reactive, not once at mount: the active account can change UNDER this layout —
+  // a stubbed account falls back to another one on the next load without remounting —
+  // and a signature left from the evicted account would then be inserted into mail
+  // composed as the fallback.
+  $: signature.set(user?.metaData?.[RAVEN_SIGNATURE_META_KEY] || "");
 </script>
 
 <Dashboard bind:user bind:mailboxes>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decodeUnifiedCursor, encodeUnifiedCursor, mergeUnifiedRound } from "./unified";
+import { decodeUnifiedCursor, encodeUnifiedCursor, mergeUnifiedRound, totalOf } from "./unified";
 import type { UnifiedRoundInput } from "./unified";
 
 const ACC_A = "615c1f2e4a3b9c0d7e8f1a2b";
@@ -79,8 +79,8 @@ describe("mergeUnifiedRound", () => {
       round(ACC_B, { results: pageB, pageCursor: null, nextCursor: false }),
     ], 1);
     expect(ids(merged)).toEqual(["615c:3"]);
-    expect(merged.cursor[ACC_A]).toEqual({ cursor: "curA", skip: 1 });
-    expect(merged.cursor[ACC_B]).toEqual({ cursor: null, skip: 0 });
+    expect(merged.cursor[ACC_A]).toEqual({ cursor: "curA", skip: 1, total: 0 });
+    expect(merged.cursor[ACC_B]).toEqual({ cursor: null, skip: 0, total: 0 });
     expect(merged.hasMore).toBe(true);
   });
 
@@ -88,7 +88,7 @@ describe("mergeUnifiedRound", () => {
     const merged = mergeUnifiedRound([
       round(ACC_A, { results: [row(3, "2026-07-30T12:00:00Z")], pageCursor: "curA", nextCursor: "nextA" }),
     ], 10);
-    expect(merged.cursor[ACC_A]).toEqual({ cursor: "nextA", skip: 0 });
+    expect(merged.cursor[ACC_A]).toEqual({ cursor: "nextA", skip: 0, total: 0 });
     expect(merged.hasMore).toBe(true);
   });
 
@@ -101,8 +101,8 @@ describe("mergeUnifiedRound", () => {
       round(ACC_B, { results: [row(2, "2026-07-30T09:00:00Z"), row(3, "2026-07-30T07:00:00Z")], nextCursor: "moreB" }),
     ], 10);
     expect(ids(merged)).toEqual(["715c:2", "615c:1", "715c:3"]);
-    expect(merged.cursor[ACC_A]).toEqual({ cursor: null, skip: 0, done: true });
-    expect(merged.cursor[ACC_B]).toEqual({ cursor: "moreB", skip: 0 });
+    expect(merged.cursor[ACC_A]).toEqual({ cursor: null, skip: 0, done: true, total: 0 });
+    expect(merged.cursor[ACC_B]).toEqual({ cursor: "moreB", skip: 0, total: 0 });
     expect(merged.hasMore).toBe(true);
 
     const finished = mergeUnifiedRound([
@@ -131,7 +131,7 @@ describe("mergeUnifiedRound", () => {
     expect(ids(merged)).toEqual(["615c:2", "715c:9"]);
     expect(merged.total).toBe(42);
     expect(merged.hasMore).toBe(true); // A:1 still unserved via skip
-    expect(merged.cursor[ACC_A]).toEqual({ cursor: null, skip: 1 });
+    expect(merged.cursor[ACC_A]).toEqual({ cursor: null, skip: 1, total: 40 });
   });
 });
 
@@ -147,8 +147,8 @@ describe("mergeUnifiedRound — ordering across page boundaries", () => {
     ], 10);
     expect(ids(merged)).toEqual(["615c:2"]);
     // A is exhausted, so it advances; B keeps its unserved row for the next round.
-    expect(merged.cursor[ACC_A]).toEqual({ cursor: "nextA", skip: 0 });
-    expect(merged.cursor[ACC_B]).toEqual({ cursor: "pB", skip: 0 });
+    expect(merged.cursor[ACC_A]).toEqual({ cursor: "nextA", skip: 0, total: 0 });
+    expect(merged.cursor[ACC_B]).toEqual({ cursor: "pB", skip: 0, total: 0 });
     expect(merged.hasMore).toBe(true);
   });
 
@@ -162,5 +162,55 @@ describe("mergeUnifiedRound — ordering across page boundaries", () => {
     ], 10);
     expect(ids(merged)).toEqual(["615c:2", "715c:8", "715c:7"]);
     expect(merged.hasMore).toBe(false);
+  });
+});
+
+describe("unified total across rounds", () => {
+  // The count above the list must not shrink as the reader pages. An account that
+  // runs out is carried as `done` and stops producing rounds, so the total can only
+  // stay honest if the cursor remembers what each account contributed.
+  it("keeps counting an account that has already finished", () => {
+    // A has more pages behind it; B's single page is its whole mailbox, so B ends
+    // this round `done` and never appears in a round again.
+    const first = mergeUnifiedRound([
+      round(ACC_A, {
+        results: [row(2, "2026-07-30T10:00:00Z"), row(1, "2026-07-30T08:00:00Z")],
+        total: 40, nextCursor: "nextA",
+      }),
+      round(ACC_B, { results: [row(9, "2026-07-30T09:00:00Z")], total: 2 }),
+    ], 10);
+    expect(first.total).toBe(42);
+    expect(first.cursor[ACC_B]).toEqual({ cursor: null, skip: 0, done: true, total: 2 });
+
+    // Round two: B is done, so the route fetches only A and carries B's entry.
+    const carried = { [ACC_B]: first.cursor[ACC_B] };
+    const second = mergeUnifiedRound([
+      round(ACC_A, { results: [row(0, "2026-07-30T07:00:00Z")], total: 40, pageCursor: "nextA" }),
+    ], 10);
+    expect(second.total).toBe(40);                              // the merge alone cannot see B…
+    expect(totalOf({ ...second.cursor, ...carried })).toBe(42); // …the whole cursor can.
+  });
+
+  it("carries the total through the wire format", () => {
+    const cursor = {
+      [ACC_A]: { cursor: "abc", skip: 3, total: 40 },
+      [ACC_B]: { cursor: null, skip: 0, done: true as const, total: 2 },
+    };
+    expect(decodeUnifiedCursor(encodeUnifiedCursor(cursor))).toEqual(cursor);
+    expect(totalOf(decodeUnifiedCursor(encodeUnifiedCursor(cursor))!)).toBe(42);
+  });
+
+  it("still reads a cursor minted before totals existed", () => {
+    const old = encodeUnifiedCursor({ [ACC_A]: { cursor: "abc", skip: 3 } } as any);
+    expect(decodeUnifiedCursor(old)).toEqual({ [ACC_A]: { cursor: "abc", skip: 3 } });
+    expect(totalOf(decodeUnifiedCursor(old)!)).toBe(0);
+  });
+
+  it("rejects a tampered total rather than printing it", () => {
+    const enc = (v: unknown) =>
+      Buffer.from(JSON.stringify({ [ACC_A]: { cursor: null, skip: 0, total: v } }), "utf8").toString("base64url");
+    expect(decodeUnifiedCursor(enc(-1))).toBe(null);
+    expect(decodeUnifiedCursor(enc(1.5))).toBe(null);
+    expect(decodeUnifiedCursor(enc("40"))).toBe(null);
   });
 });

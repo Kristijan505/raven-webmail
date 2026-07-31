@@ -24,7 +24,7 @@
   import { fade } from "svelte/transition";
   import { action, isDrafts, isInbox, isJunk, isSent, isTrash, mailboxName, plural, _delete, _get, _put } from "$lib/util";
   import { activeDirection, direction, mixesDirections, toggleDirection } from "$lib/direction";
-  import { isUnifiedMailbox } from "$lib/unified";
+  import { UNIFIED_IDS, isUnifiedMailbox } from "$lib/unified";
   import Down from "~icons/mdi/tray-arrow-down";
   import Up from "~icons/mdi/tray-arrow-up";
 
@@ -398,7 +398,7 @@ import { locale } from "$lib/locale";
             <UnMarkSpam />
             <Ripple />
           </div>
-        {:else if unified && mailbox.id === "unified-inbox"}
+        {:else if unified && mailbox.id === UNIFIED_IDS.inbox}
           <div class="action btn-dark" use:clickable use:tooltip={$locale.Mark_as_spam} on:click={() => unifiedBulk("spam")}>
             <MarkSpam />
             <Ripple />

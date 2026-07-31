@@ -18,7 +18,7 @@ import { z } from "zod";
 import ipaddr from "ipaddr.js";
 import { accountsOf, evictAccountFromOtherSessions, rotateSession, sessionCookieClearOptions, usableAccount, writeAccounts } from "./session";
 import type { SessionAccount } from "./client";
-import { decodeUnifiedCursor, encodeUnifiedCursor, mergeUnifiedRound } from "./unified";
+import { decodeUnifiedCursor, encodeUnifiedCursor, mergeUnifiedRound, totalOf } from "./unified";
 import type { UnifiedCursor, UnifiedCursorEntry, UnifiedRoundInput } from "./unified";
 import { logger } from "./logger";
 
@@ -268,6 +268,12 @@ export const sseEventSplitter = (onEvent: (event: string) => void) => {
   };
 };
 const liveStreams = new Set<LiveStream>();
+
+// How long a partially-opened /updates response is served before it is closed so the
+// browser reconnects and retries the accounts that failed. Long enough that a flapping
+// upstream cannot turn this into a reconnect storm, short enough that a mailbox is
+// never silently dead for a whole sitting.
+const PARTIAL_STREAM_RETRY_MS = 30_000;
 
 // The last eviction seen for a user: which session survived it, and a counter that
 // only moves forward. A stream opening while an eviction runs would otherwise slip
@@ -806,7 +812,15 @@ export const api = (config: Config) => {
       // Signing into an account already present (including a re-auth stub)
       // REPLACES its entry: that is how a stubbed shared mailbox comes back
       // after its password changed elsewhere.
+      //
+      // The rotation orphans any /updates response opened under the OLD id: it
+      // keeps piping the pre-add account set, and — because closing is matched by
+      // session id — a later per-account logout would look right here and leave
+      // that one running. Cut them, exactly as the password-change path does; the
+      // client reconnects and gets a stream that includes the new account.
+      const preRotateSession = req.sessionID;
       await rotateSession(req);
+      closeSessionLiveStreams(preRotateSession);
       writeAccounts(req.session, [...sessionAccounts(req).filter(a => a.id !== v.id), v]);
       await new Promise<void>((resolve, reject) => {
         req.session.save(err => err ? reject(err) : resolve());
@@ -912,6 +926,11 @@ export const api = (config: Config) => {
       if (wasEvictedSince(accounts[i].id, req.sessionID, openedAt)) destroy(result.value);
       else kept.push({ account: accounts[i], stream: result.value });
     });
+    // Accounts that failed to open (or were evicted mid-flight) are simply missing
+    // from this connection: it would otherwise pipe the others happily for hours
+    // while that one mailbox never reports a single new message. Serve what we have,
+    // then close so the browser's own EventSource retry reopens the full set.
+    const degraded = kept.length < accounts.length;
     if (!kept.length) {
       // Single-account behavior preserved: an expired token surfaces its own
       // error (403 session_expired) rather than a generic one.
@@ -949,7 +968,17 @@ export const api = (config: Config) => {
       item.stream.on("error", gone);
     }
     liveStreams.add(entry);
+    const retry = degraded
+      ? setTimeout(() => { if (!res.writableEnded) res.end(); }, PARTIAL_STREAM_RETRY_MS)
+      : null;
+    if (degraded) {
+      logger.warn(
+        { session: req.sessionID, opened: kept.length, wanted: accounts.length },
+        "updates stream opened without every account; closing for retry",
+      );
+    }
     const drop = () => {
+      if (retry) clearTimeout(retry);
       liveStreams.delete(entry);
       for (const { stream } of live) destroy(stream);
     };
@@ -1244,9 +1273,10 @@ export const api = (config: Config) => {
   // account's real mailbox, and the per-message routes keep working through the
   // mailbox id each row carries. Cursor & merge contract: unified.ts.
   //
-  // `total` sums the accounts that answered THIS round; page one covers all of
-  // them. The client's badge should prefer the live layout counters in these
-  // views — later rounds legitimately omit accounts that are finished.
+  // `total` sums EVERY account named by the outgoing cursor, not just the ones
+  // that answered this round: an account that runs out is carried as `done` and
+  // stops producing rounds, so a round-only sum made the toolbar count shrink as
+  // the reader paged. Each cursor entry remembers its own account's total.
   const unifiedMessages = (view: "inbox" | "sent") => handler(async (req, res) => {
     const accounts = sessionAccounts(req).filter(usableAccount);
     if (!accounts.length) throw new ApiError(StatusCodes.FORBIDDEN, "Forbidden", "forbidden");
@@ -1314,7 +1344,7 @@ export const api = (config: Config) => {
     const hasMore = merged.hasMore || carriedMore;
     res.json({
       success: true,
-      total: merged.total,
+      total: totalOf(cursor),
       page: 1,
       previousCursor: false,
       nextCursor: hasMore ? encodeUnifiedCursor(cursor) : false,

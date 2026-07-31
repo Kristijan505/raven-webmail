@@ -1,7 +1,7 @@
 <svelte:options accessors />
 
 <script lang="ts">
-  import { claimCarried, createMessageBody, crossin, crossout, kSent, kShowBcc, kShowCc } from "./compose";
+  import { claimCarried, createMessageBody, crossin, crossout, kSavedIn, kSent, kShowBcc, kShowCc } from "./compose";
   import type { Draft } from "./compose";
   import s from "html-escape";
 
@@ -321,6 +321,12 @@
         reference: message.reference,
         carried: await carriedAttachments(message),
         files: message.files || [],
+        // Where this draft LIVES right now. Set at open, not left to the first
+        // save: switching From before any save would otherwise leave saveNow
+        // believing the superseded copy sits in the NEW account's Drafts, and
+        // uids are mailbox-local — it would delete whatever happens to carry
+        // that uid there while the real original stayed behind.
+        [kSavedIn]: message.mailbox,
         // Pinned at open: uploads go to THIS account's storage even if the tab
         // switches accounts while the window stays open.
         accountId: get(tabAccount) ?? undefined,

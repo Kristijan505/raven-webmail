@@ -29,6 +29,12 @@ export type UnifiedCursorEntry = {
   // Set once the account has nothing further; kept so a later round neither
   // refetches it nor mistakes the missing entry for a fresh start.
   done?: true
+  // This account's own message total, remembered so later rounds can still count
+  // it. An account that finishes early contributes no round at all, and a total
+  // summed from the live rounds alone SHRANK with every load-more — which is the
+  // number the toolbar shows. Cosmetic and client-supplied: a tampered cursor
+  // only misprints the reader's own count.
+  total?: number
 }
 
 export type UnifiedCursor = Record<string, UnifiedCursorEntry>
@@ -82,16 +88,19 @@ export const decodeUnifiedCursor = (raw: string): UnifiedCursor | null => {
   const out: UnifiedCursor = {};
   for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
     if (!/^[0-9a-f]{24}$/i.test(key)) return null;
-    const entry = value as { cursor?: unknown; skip?: unknown; done?: unknown };
+    const entry = value as { cursor?: unknown; skip?: unknown; done?: unknown; total?: unknown };
+    const rawTotal = entry?.total;
+    if (rawTotal !== undefined && (!Number.isInteger(rawTotal) || (rawTotal as number) < 0)) return null;
+    const total = rawTotal === undefined ? {} : { total: rawTotal as number };
     if (entry?.done === true) {
-      out[key] = { cursor: null, skip: 0, done: true };
+      out[key] = { cursor: null, skip: 0, done: true, ...total };
       continue;
     }
     const cursor = entry?.cursor ?? null;
     const skip = entry?.skip;
     if (cursor !== null && (typeof cursor !== "string" || cursor.length === 0 || cursor.length > 500)) return null;
     if (!Number.isInteger(skip) || (skip as number) < 0 || (skip as number) > 250) return null;
-    out[key] = { cursor: cursor as string | null, skip: skip as number };
+    out[key] = { cursor: cursor as string | null, skip: skip as number, ...total };
   }
   return out;
 };
@@ -109,6 +118,10 @@ const newer = (
   if (a.account !== b.account) return a.account < b.account;
   return a.row.id > b.row.id;
 };
+
+/** Sum of every account named by a cursor — see UnifiedCursorEntry.total. */
+export const totalOf = (cursor: UnifiedCursor): number =>
+  Object.values(cursor).reduce((sum, entry) => sum + (entry.total ?? 0), 0);
 
 export const mergeUnifiedRound = (rounds: UnifiedRoundInput[], limit: number): UnifiedRoundResult => {
   const queues = rounds.map(round => ({
@@ -144,15 +157,17 @@ export const mergeUnifiedRound = (rounds: UnifiedRoundInput[], limit: number): U
   let hasMore = false;
   for (const { round, taken } of queues) {
     const consumed = round.skip + taken;
+    // Every branch records the account's total: once it goes `done` this is the
+    // only place that number survives, and the caller sums the whole cursor.
     if (consumed < round.results.length) {
       // Part of this page is still unserved: same page again, larger skip.
-      cursor[round.account] = { cursor: round.pageCursor, skip: consumed };
+      cursor[round.account] = { cursor: round.pageCursor, skip: consumed, total: round.total };
       hasMore = true;
     } else if (round.nextCursor) {
-      cursor[round.account] = { cursor: round.nextCursor, skip: 0 };
+      cursor[round.account] = { cursor: round.nextCursor, skip: 0, total: round.total };
       hasMore = true;
     } else {
-      cursor[round.account] = { cursor: null, skip: 0, done: true };
+      cursor[round.account] = { cursor: null, skip: 0, done: true, total: round.total };
     }
   }
 
@@ -160,6 +175,6 @@ export const mergeUnifiedRound = (rounds: UnifiedRoundInput[], limit: number): U
     results,
     cursor,
     hasMore,
-    total: rounds.reduce((sum, round) => sum + round.total, 0),
+    total: totalOf(cursor),
   };
 };

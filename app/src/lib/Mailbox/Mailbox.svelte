@@ -64,7 +64,7 @@
   // their real mailbox; SSE events match against the id SET, and refetches
   // replace rather than reconcile (uid-window reasoning is single-mailbox).
   $: unified = isUnifiedMailbox(mailbox);
-  $: liveSet = mailbox.id === "unified-inbox" ? $inboxIds : mailbox.id === "unified-sent" ? $sentIds : null;
+  $: liveSet = mailbox.id === UNIFIED_IDS.inbox ? $inboxIds : mailbox.id === UNIFIED_IDS.sent ? $sentIds : null;
 
   $: active = activeDirection(mailbox, $direction);
   // Starts as null, not as the stored value: the page was loaded unfiltered, so a
@@ -178,7 +178,7 @@
   import CircularProgress from "$lib/CircularProgress.svelte";
   import { dedupById, reconcileFirstPage, rowKey } from "./reconcile";
   import { activeDirection, direction, directionParam } from "$lib/direction";
-  import { inboxIds, isUnifiedMailbox, sentIds } from "$lib/unified";
+  import { UNIFIED_IDS, inboxIds, isUnifiedMailbox, sentIds } from "$lib/unified";
   import { _error } from "$lib/Notify/notify";
 
   const dedup = dedupById;

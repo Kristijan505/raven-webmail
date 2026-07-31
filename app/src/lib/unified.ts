@@ -39,14 +39,22 @@ export const applyCounters = (event: { mailbox: string; unseen?: number; total?:
 };
 
 /**
- * The synthetic mailboxes behind the unified pages carry a path no real folder can
- * have — "/" is an IMAP separator, so "__unified/..." never collides.
+ * The synthetic mailboxes behind the unified pages, recognised by ID.
+ *
+ * Their id is minted by this client (`unified-inbox` / `unified-sent`); every real
+ * mailbox id is a 24-character WildDuck ObjectId, so the two can never collide. The
+ * path was the wrong key: paths are user-controlled — the create-folder route takes
+ * whatever the user types — so a folder literally named `__unified/sent` would have
+ * been treated as the synthetic one, losing its direction chips, move menu and
+ * clear-folder and showing recipients instead of senders.
  */
-export const isUnifiedMailbox = (m: { path?: string } | null | undefined): boolean =>
-  !!m?.path?.startsWith("__unified");
+export const UNIFIED_IDS = { inbox: "unified-inbox", sent: "unified-sent" } as const;
+
+export const isUnifiedMailbox = (m: { id?: string } | null | undefined): boolean =>
+  m?.id === UNIFIED_IDS.inbox || m?.id === UNIFIED_IDS.sent;
 
 /** The synthetic "all sent" mailbox specifically — it has no \Sent specialUse. */
-export const isUnifiedSent = (m: { path?: string } | null | undefined): boolean =>
-  m?.path === "__unified/sent";
+export const isUnifiedSent = (m: { id?: string } | null | undefined): boolean =>
+  m?.id === UNIFIED_IDS.sent;
 
 export const unifiedListBase = (view: "inbox" | "sent"): string => `/api/unified/${view}/messages`;

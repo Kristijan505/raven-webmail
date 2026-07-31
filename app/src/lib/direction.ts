@@ -1,6 +1,7 @@
 import { writable } from "svelte/store";
 import { isDrafts, isInbox, isJunk, isSent } from "./util";
 import type { Mailbox } from "./types";
+import { isUnifiedMailbox } from "./unified";
 
 /**
  * Which direction of mail the list is filtered to, or null for both.
@@ -58,7 +59,7 @@ export const directionParam = (value: Direction | null): string =>
  */
 export const mixesDirections = (mailbox: Mailbox | null | undefined): boolean =>
   // Unified views are single-direction by construction — no chips there.
-  !!mailbox && !mailbox.path?.startsWith("__unified") &&
+  !!mailbox && !isUnifiedMailbox(mailbox) &&
   !isInbox(mailbox) && !isJunk(mailbox) && !isSent(mailbox) && !isDrafts(mailbox);
 
 /** The filter that actually applies in a folder: none at all where the chips are hidden. */

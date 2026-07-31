@@ -252,7 +252,15 @@ const saveNow = async (draft: Draft) => {
   // already points at ANOTHER account's Drafts; the create goes there, but the
   // delete must follow the old copy home — this is what migrates a draft across
   // accounts with the ordinary create-new + delete-old machinery.
-  const savedIn = draft[kSavedIn] ?? mailbox;
+  //
+  // Deliberately NOT `?? mailbox`. `mailbox` is the destination, so falling back to
+  // it aims the delete at the NEW account's Drafts carrying the OLD account's uid —
+  // and uids are mailbox-local, so that erases whatever unrelated draft happens to
+  // hold that uid there while the real original survives untouched in the account
+  // the reader just switched away from. Undefined means "no saved copy to retire"
+  // (a draft opened from a folder records its home at open; a never-yet-saved one
+  // has nothing behind it), and the retire below is skipped rather than guessed.
+  const savedIn = draft[kSavedIn];
 
   const { message } = await _post(`/api/mailboxes/${draft.mailbox}/messages`, createMessageBody({
     ...json,
@@ -275,6 +283,11 @@ const saveNow = async (draft: Draft) => {
   // the console instead of pretending it worked.
   const retire = () => _delete(`/api/mailboxes/${savedIn}/messages/${id}`);
   const goneAlready = (e: any) => e instanceof HttpError && e.status === 404;
+  if (!savedIn) {
+    draft.id = message.id;
+    draft[kSavedIn] = mailbox;
+    return message.id;
+  }
   retire()
     .catch(e => goneAlready(e) ? undefined : retire())
     .then(() => Expunge.dispatch({ command: "EXPUNGE", mailbox: savedIn, uid: id }))

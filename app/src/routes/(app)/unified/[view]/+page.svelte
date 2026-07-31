@@ -4,7 +4,7 @@
 
   import Mailbox from "$lib/Mailbox/Mailbox.svelte";
   import { locale } from "$lib/locale";
-  import { unifiedListBase } from "$lib/unified";
+  import { UNIFIED_IDS, unifiedListBase } from "$lib/unified";
 
   // Same guard as the mailbox page: re-sync only on a real navigation, never on a
   // child-driven mutation (see the comment there).
@@ -17,11 +17,11 @@
 
   $: name = data.view === "inbox" ? $locale.All_inboxes : $locale.All_sent;
 
-  // A synthetic mailbox: enough shape for <Mailbox>/<Top> to render, a path no real
-  // folder can have (isUnifiedMailbox keys off it), and a total that mirrors the
-  // list so the toolbar count is honest.
+  // A synthetic mailbox: enough shape for <Mailbox>/<Top> to render, an id no real
+  // mailbox can have (isUnifiedMailbox keys off THAT, not the path — paths are
+  // user-controlled), and a total mirroring the list so the toolbar count is honest.
   $: mailbox = ({
-    id: `unified-${data.view}`,
+    id: UNIFIED_IDS[data.view],
     name,
     path: `__unified/${data.view}`,
     specialUse: null,

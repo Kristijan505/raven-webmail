@@ -65,7 +65,9 @@
   import { action, isDrafts, messageDate, _put } from "$lib/util";
   import { locale } from "$lib/locale";
   import { _open } from "$lib/Compose/compose";
-  import { setTabAccount } from "$lib/account";
+  import { setTabAccount, tabAccount } from "$lib/account";
+  import { get as getStore } from "svelte/store";
+  const getTabAccount = () => getStore(tabAccount);
   const flag = action(async () => {
     if(!row) return;
     const value = !row.flagged;
@@ -80,9 +82,26 @@
 
   const click = action(async (event: MouseEvent) => {
     if(!row) return;
-    // A unified row navigates into ANOTHER account's mailbox: point the tab at the
-    // owner first, so the layout that loads is theirs — sidebar, folders and all.
-    if (row.account?.id) setTabAccount(row.account.id);
+    // A unified row can belong to ANOTHER account. Pinning the tab and letting
+    // SvelteKit navigate client-side is not enough: the (app) layout load does not
+    // depend on the route, so it stays mounted with the previous account's user and
+    // mailboxes — and the destination's own owner guard then sees the tab ALREADY
+    // pointing at the owner and skips its reload. The message would open under the
+    // wrong sidebar, and reply/forward would aim at the previous account's Drafts
+    // with a reference in this one, which the server refuses.
+    if (row.account?.id && row.account.id !== getTabAccount()) {
+      setTabAccount(row.account.id);
+      // A modified click (cmd/ctrl/middle/shift) opens the href in its own tab, and
+      // that IS a full document load which seeds its account from the value just
+      // written — so leave the browser to it rather than hijacking it into this tab.
+      if (event.button === 0 && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) {
+        event.preventDefault();
+        event.stopPropagation();
+        // Force a real document load, so the layout is rebuilt as the owner.
+        location.assign(`/mailbox/${row.mailbox ?? mailbox.id}/message/${row.id}`);
+      }
+      return;
+    }
     if(isDrafts(mailbox)) {
       event.preventDefault();
       event.stopPropagation();
