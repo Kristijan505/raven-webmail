@@ -57,4 +57,38 @@ export const isUnifiedMailbox = (m: { id?: string } | null | undefined): boolean
 export const isUnifiedSent = (m: { id?: string } | null | undefined): boolean =>
   m?.id === UNIFIED_IDS.sent;
 
+/**
+ * Live message total per unified view, summed from the same per-mailbox counters the
+ * badges use. The synthetic mailbox's own `total` is a snapshot taken when the page
+ * loaded: it survives load-more, new mail and an EXPUNGE of a row that was never on
+ * screen, all of which move the real figure. These entries are updated by every
+ * COUNTERS event (applyCounters), so the sum stays honest without a refetch.
+ */
+export const unifiedTotals = derived(unifiedInfo, info => ({
+  [UNIFIED_IDS.inbox]: info ? info.inbox.reduce((sum, b) => sum + b.total, 0) : null,
+  [UNIFIED_IDS.sent]: info ? info.sent.reduce((sum, b) => sum + b.total, 0) : null,
+} as Record<string, number | null>));
+
+/**
+ * Newest first, ties broken by account then id — the same order server/src/unified.ts
+ * merges in.
+ *
+ * Applied when a unified page is APPENDED, because the server cannot always keep the
+ * promise on its own: when one account's upstream fails mid-walk its cursor is carried
+ * and the page is served from the accounts that answered, so a row that outranks what
+ * was just shown can arrive a round late. Re-sorting on append puts it where it
+ * belongs instead of leaving it stranded at the bottom of the list. A page the server
+ * merged correctly is already in this order, so this is a no-op for it.
+ */
+export const sortUnified = <T extends { id: number; idate?: string | null; account?: { id: string } }>(
+  rows: T[],
+): T[] =>
+  [...rows].sort((a, b) => {
+    const ai = a.idate ?? "", bi = b.idate ?? "";
+    if (ai !== bi) return ai < bi ? 1 : -1;
+    const aa = a.account?.id ?? "", ba = b.account?.id ?? "";
+    if (aa !== ba) return aa < ba ? -1 : 1;
+    return b.id - a.id;
+  });
+
 export const unifiedListBase = (view: "inbox" | "sent"): string => `/api/unified/${view}/messages`;

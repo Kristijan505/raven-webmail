@@ -45,9 +45,12 @@
     try {
       const json: Messages = await _get(listUrl([`next=${messages.nextCursor}`, "limit=50"]))
       if(generation !== listGeneration) return;
+      const grown = dedup([ ...messages.results, ...json.results ]);
       messages = {
         ...messages,
-        results: dedup([ ...messages.results, ...json.results ]),
+        // Unified pages re-sort on append: the server serves what answered when one
+        // account's upstream fails, so a newer row can arrive a round late.
+        results: unified ? sortUnified(grown) : grown,
         nextCursor: json.nextCursor,
         total: json.total ?? messages.total,
       }
@@ -178,7 +181,7 @@
   import CircularProgress from "$lib/CircularProgress.svelte";
   import { dedupById, reconcileFirstPage, rowKey } from "./reconcile";
   import { activeDirection, direction, directionParam } from "$lib/direction";
-  import { UNIFIED_IDS, inboxIds, isUnifiedMailbox, sentIds } from "$lib/unified";
+  import { UNIFIED_IDS, inboxIds, isUnifiedMailbox, sentIds, sortUnified } from "$lib/unified";
   import { _error } from "$lib/Notify/notify";
 
   const dedup = dedupById;

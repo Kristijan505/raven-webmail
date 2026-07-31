@@ -90,16 +90,19 @@
     // wrong sidebar, and reply/forward would aim at the previous account's Drafts
     // with a reference in this one, which the server refuses.
     if (row.account?.id && row.account.id !== getTabAccount()) {
+      // Only a PLAIN left click is ours to take over. A modified click
+      // (cmd/ctrl/shift/middle) opens the href in its own tab and leaves THIS one
+      // standing — so re-pinning here would leave this tab rendering the old
+      // account's sidebar while stamping every later ?account= with the new one, and
+      // a visit to /me would then load and edit the OTHER account's profile under
+      // the wrong chrome. The new tab is a full document load, and the message
+      // page's own owner guard re-pins it there, exactly as it does for a bookmark.
+      if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+      event.preventDefault();
+      event.stopPropagation();
       setTabAccount(row.account.id);
-      // A modified click (cmd/ctrl/middle/shift) opens the href in its own tab, and
-      // that IS a full document load which seeds its account from the value just
-      // written — so leave the browser to it rather than hijacking it into this tab.
-      if (event.button === 0 && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) {
-        event.preventDefault();
-        event.stopPropagation();
-        // Force a real document load, so the layout is rebuilt as the owner.
-        location.assign(`/mailbox/${row.mailbox ?? mailbox.id}/message/${row.id}`);
-      }
+      // Force a real document load, so the layout is rebuilt as the owner.
+      location.assign(`/mailbox/${row.mailbox ?? mailbox.id}/message/${row.id}`);
       return;
     }
     if(isDrafts(mailbox)) {

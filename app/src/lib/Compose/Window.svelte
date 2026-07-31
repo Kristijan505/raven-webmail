@@ -17,11 +17,13 @@
   import type { Draft } from "./compose";
   
   import { onMount } from "svelte";
-  import { add } from "$lib/actions";
+  import { add, proxyRemoteImages } from "$lib/actions";
   import Editor from "$lib/Editor/Editor.svelte";
   import AddrInput from "./AddrInput.svelte";
   import { accounts, tabAccount } from "$lib/account";
   import { _get } from "$lib/util";
+  import { RAVEN_SIGNATURE_META_KEY } from "$lib/signature";
+  import { swapSignature } from "./sanitize";
  
   // From = the account whose Drafts this draft lives in. Switching retargets
   // draft.mailbox to the chosen account's Drafts and lets the immutable-save
@@ -35,11 +37,26 @@
 
   const switchFrom = async (accId: string) => {
     if (!current || fromLocked || accId === fromId) return;
-    const boxes = await _get(`/api/mailboxes?account=${encodeURIComponent(accId)}`).catch(() => null);
+    // The signature comes along in the same breath as the Drafts folder: a body still
+    // carrying the previous account's signature would otherwise go out under this one,
+    // showing the recipient a name and title belonging to a different mailbox. Nothing
+    // else reloads it — this draft never remounts, and the layout is still the old
+    // account's.
+    const [boxes, me] = await Promise.all([
+      _get(`/api/mailboxes?account=${encodeURIComponent(accId)}`).catch(() => null),
+      _get(`/api/pages/me?account=${encodeURIComponent(accId)}`).catch(() => null),
+    ]);
     const drafts = boxes?.results?.find((b: { specialUse?: string }) => b.specialUse === "\\Drafts");
     if (!drafts) return;
     current.accountId = accId;
     current.mailbox = drafts.id;
+    // Checked, not assumed: the page route falls back to another account rather than
+    // 403 when the one asked for is unusable, and signing THAT signature here would be
+    // the very swap this exists to prevent.
+    const user = me?.props?.user;
+    if (user?.id === accId) {
+      swapSignature(iframe?.contentDocument, proxyRemoteImages(user?.metaData?.[RAVEN_SIGNATURE_META_KEY] || ""));
+    }
     current = current; // the autosave sees the change and migrates the draft
   };
 

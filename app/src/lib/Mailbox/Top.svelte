@@ -24,7 +24,7 @@
   import { fade } from "svelte/transition";
   import { action, isDrafts, isInbox, isJunk, isSent, isTrash, mailboxName, plural, _delete, _get, _put } from "$lib/util";
   import { activeDirection, direction, mixesDirections, toggleDirection } from "$lib/direction";
-  import { UNIFIED_IDS, isUnifiedMailbox } from "$lib/unified";
+  import { UNIFIED_IDS, isUnifiedMailbox, unifiedTotals } from "$lib/unified";
   import Down from "~icons/mdi/tray-arrow-down";
   import Up from "~icons/mdi/tray-arrow-up";
 
@@ -206,7 +206,13 @@ import { locale } from "$lib/locale";
   // being shown — a folder of 100 with 10 outgoing would read "100 messages" above a
   // list of 10. The filtered listing reports its own total, so use that one; unfiltered,
   // mailbox.total is the live figure the SSE counters keep up to date.
-  $: shownTotal = activeDirection(mailbox, $direction) ? messages.total : mailbox.total;
+  // A unified view has no direction filter, and its synthetic mailbox.total was a
+  // snapshot from page load — stale after load-more, after new mail, and after an
+  // EXPUNGE of a row that was never on screen (nothing on the list matches, so nothing
+  // refetches). The live per-mailbox counters know all three.
+  $: shownTotal = activeDirection(mailbox, $direction) ? messages.total
+    : isUnifiedMailbox(mailbox) ? ($unifiedTotals[mailbox.id] ?? mailbox.total)
+    : mailbox.total;
 
   const move = action(async (to: Mailbox) => {
     if(mailbox.id === to.id) return;

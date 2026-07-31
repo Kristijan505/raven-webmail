@@ -584,14 +584,29 @@ const bindMailboxAccount = async (req: Request, rawMailbox: string | string[] | 
   // Cached pass over every account first, only then the fresh (refetching) pass,
   // so one account's stale cache cannot 403 a mailbox created seconds ago while a
   // refetch for a DIFFERENT account still lies ahead.
+  // Failures are collected, not thrown: one account's mailbox list erroring used to
+  // abort the whole resolution, so a folder owned by a perfectly healthy account got a
+  // 403 it did not deserve — permanently, whenever the failing account happened to sort
+  // first and its cache stayed empty.
+  let unreachable = false;
   for (const fresh of [false, true] as const) {
     for (const account of accounts) {
-      if ((await ownedMailboxIdsFor(account, fresh)).has(id)) {
+      const owned = await ownedMailboxIdsFor(account, fresh).catch(e => {
+        unreachable = true;
+        logger.warn(
+          { account: account.id, detail: String((e as any)?.message) },
+          "mailbox owner lookup failed for one account",
+        );
+        return null;
+      });
+      if (owned?.has(id)) {
         (req as any)[kAccount] = account;
         return;
       }
     }
   }
+  // "Not yours" is only an honest answer if we managed to ask every account.
+  if (unreachable) throw new ApiError(StatusCodes.BAD_GATEWAY, "Upstream error", "upstream_error");
   throw new ApiError(StatusCodes.FORBIDDEN, "Invalid mailbox", "forbidden");
 };
 
@@ -960,9 +975,13 @@ export const api = (config: Config) => {
       const gone = () => {
         live.delete(item);
         destroy(item.stream);
-        // The last upstream dying ends the response, so the client reconnects
-        // instead of listening to a stream that can never speak again.
-        if (!live.size && !res.writableEnded) res.end();
+        // ANY upstream dying ends the whole response, not just the last one. The
+        // others keep working, so nothing would ever prompt a reconnect — and this
+        // account would go silent for the life of the tab: no EXISTS, no EXPUNGE, no
+        // COUNTERS, with the list quietly out of date and no error to show for it.
+        // Ending it lets EventSource reopen and rebuild the merge over every account,
+        // which is the same recovery a partially-opened stream gets above.
+        if (!res.writableEnded) res.end();
       };
       item.stream.on("end", gone);
       item.stream.on("error", gone);
