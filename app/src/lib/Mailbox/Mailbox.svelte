@@ -135,13 +135,20 @@
     const json: Messages = await _get(listUrl());
     if(generation !== listGeneration) return;
     if (unified) {
-      // Replace, don't reconcile: reconcileFirstPage reasons in ONE mailbox's uid
-      // space, and rows here come from many. A page missing an account would blank
-      // every row it had; silent here, unlike reloadNow, because this runs off an SSE
-      // event and nobody asked for it.
+      // A page missing an account would blank every row it had; silent here, unlike
+      // reloadNow, because this runs off an SSE event and nobody asked for it.
       if(json.partial) return;
-      selection = [];
-      messages = json;
+      // reconcileFirstPage reasons in ONE mailbox's uid space and rows here come from
+      // many, so the unified variant does the same job in the merge order instead.
+      // Replacing outright — which is what this did — threw away every page the reader
+      // had loaded below the first, on any new message in any of the mailboxes.
+      const merged = reconcileUnifiedFirstPage(messages, json);
+      // Keyed by (mailbox, uid): uids collide across accounts. Same reasoning as the
+      // single-mailbox path below — rebuild FROM the fresh objects, or the toolbar's
+      // optimistic writes land on rows nobody renders.
+      const selectedKeys = new Set(selection.map(rowKey));
+      selection = merged.results.filter(m => selectedKeys.has(rowKey(m)));
+      messages = { ...messages, results: merged.results, nextCursor: merged.nextCursor, total: json.total ?? messages.total };
       return;
     }
     // See reconcile.ts for why the next cursor decides the fate of rows below the
@@ -187,7 +194,7 @@
   import Ripple from "$lib/Ripple.svelte";
   import { action, _get } from "$lib/util";
   import CircularProgress from "$lib/CircularProgress.svelte";
-  import { dedupById, reconcileFirstPage, rowKey } from "./reconcile";
+  import { dedupById, reconcileFirstPage, reconcileUnifiedFirstPage, rowKey } from "./reconcile";
   import { activeDirection, direction, directionParam } from "$lib/direction";
   import { UNIFIED_IDS, inboxIds, isUnifiedMailbox, sentIds, sortUnified } from "$lib/unified";
   import { _error } from "$lib/Notify/notify";

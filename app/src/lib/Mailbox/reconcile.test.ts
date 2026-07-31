@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dedupById, reconcileFirstPage } from "./reconcile";
+import { dedupById, reconcileFirstPage, reconcileUnifiedFirstPage } from "./reconcile";
 import type { Message } from "../types";
 
 const msg = (id: number): Message => ({ id, subject: `msg-${id}` } as Message);
@@ -129,5 +129,70 @@ describe("reconcileFirstPage", () => {
     );
     expect(out.results).toEqual([]);
     expect(out.nextCursor).toBe(false);
+  });
+});
+
+// ── unified ────────────────────────────────────────────────────────────────────
+const A = "615c1f2e4a3b9c0d7e8f1a2b";
+const B = "715c1f2e4a3b9c0d7e8f1a2b";
+const u = (id: number, idate: string, account: string, mailbox = account): Message =>
+  ({ id, idate, mailbox, account: { id: account } } as unknown as Message);
+const keys = (r: { results: Message[] }) =>
+  r.results.map(m => `${(m as any).account.id.slice(0, 4)}:${m.id}`);
+const page = (results: Message[], nextCursor: string | false = false, total = results.length) =>
+  ({ results, nextCursor, total } as any);
+
+describe("reconcileUnifiedFirstPage", () => {
+  // The finding: any EXISTS event refetches page one, and replacing outright threw
+  // away every page the reader had already loaded below it.
+  it("keeps the pages already loaded below the refetched one", () => {
+    const current = page([
+      u(9, "2026-07-30T12:00:00Z", A), u(4, "2026-07-30T11:00:00Z", B),
+      u(8, "2026-07-30T10:00:00Z", A), u(3, "2026-07-30T09:00:00Z", B),
+    ], "cursor-page-3");
+    // A new message arrived; the fresh first page covers only the top.
+    const fresh = page([
+      u(11, "2026-07-30T13:00:00Z", B), u(9, "2026-07-30T12:00:00Z", A),
+    ], "cursor-page-2");
+
+    const out = reconcileUnifiedFirstPage(current, fresh);
+    expect(keys(out)).toEqual(["715c:11", "615c:9", "715c:4", "615c:8", "715c:3"]);
+    // The old cursor still points past the LAST page held; the fresh one points past
+    // page one, and adopting it would refetch what is already on screen.
+    expect(out.nextCursor).toBe("cursor-page-3");
+  });
+
+  it("drops a row the refetched window no longer returns", () => {
+    // 8 was inside the window and did not come back: read elsewhere, moved, deleted.
+    const current = page([
+      u(9, "2026-07-30T12:00:00Z", A), u(8, "2026-07-30T11:00:00Z", A),
+      u(3, "2026-07-30T09:00:00Z", B),
+    ], "more");
+    const fresh = page([
+      u(9, "2026-07-30T12:00:00Z", A), u(4, "2026-07-30T10:00:00Z", B),
+    ], "next");
+    expect(keys(reconcileUnifiedFirstPage(current, fresh))).toEqual(["615c:9", "715c:4", "715c:3"]);
+  });
+
+  it("adopts the fresh cursor when nothing older was retained", () => {
+    const current = page([u(9, "2026-07-30T12:00:00Z", A)], "stale");
+    const fresh = page([u(11, "2026-07-30T13:00:00Z", B), u(9, "2026-07-30T12:00:00Z", A)], "next");
+    const out = reconcileUnifiedFirstPage(current, fresh);
+    expect(keys(out)).toEqual(["715c:11", "615c:9"]);
+    expect(out.nextCursor).toBe("next");
+  });
+
+  it("empties the list only when the refetch says the list is empty", () => {
+    const current = page([u(9, "2026-07-30T12:00:00Z", A)], "more");
+    expect(reconcileUnifiedFirstPage(current, page([], false, 0)).results).toEqual([]);
+    // A page that came back empty but reports messages is a blip, not an empty mailbox.
+    expect(keys(reconcileUnifiedFirstPage(current, page([], false, 7)))).toEqual(["615c:9"]);
+  });
+
+  it("does not confuse uids that collide across accounts", () => {
+    // Same uid 5 in both accounts — the row key is (mailbox, uid).
+    const current = page([u(5, "2026-07-30T12:00:00Z", A), u(5, "2026-07-30T09:00:00Z", B)], "more");
+    const fresh = page([u(5, "2026-07-30T12:00:00Z", A)], "next");
+    expect(keys(reconcileUnifiedFirstPage(current, fresh))).toEqual(["615c:5", "715c:5"]);
   });
 });

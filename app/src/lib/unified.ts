@@ -80,15 +80,18 @@ export const unifiedTotals = derived(unifiedInfo, info => ({
  * belongs instead of leaving it stranded at the bottom of the list. A page the server
  * merged correctly is already in this order, so this is a no-op for it.
  */
-export const sortUnified = <T extends { id: number; idate?: string | null; account?: { id: string } }>(
-  rows: T[],
-): T[] =>
-  [...rows].sort((a, b) => {
-    const ai = a.idate ?? "", bi = b.idate ?? "";
-    if (ai !== bi) return ai < bi ? 1 : -1;
-    const aa = a.account?.id ?? "", ba = b.account?.id ?? "";
-    if (aa !== ba) return aa < ba ? -1 : 1;
-    return b.id - a.id;
-  });
+export type UnifiedOrdered = { id: number; idate?: string | null; account?: { id: string } };
+
+/** Negative when `a` belongs above `b`. Newest idate first, ties by account then id. */
+export const compareUnified = (a: UnifiedOrdered, b: UnifiedOrdered): number => {
+  const ai = a.idate ?? "", bi = b.idate ?? "";
+  if (ai !== bi) return ai < bi ? 1 : -1;
+  const aa = a.account?.id ?? "", ba = b.account?.id ?? "";
+  if (aa !== ba) return aa < ba ? -1 : 1;
+  return b.id - a.id;
+};
+
+export const sortUnified = <T extends UnifiedOrdered>(rows: T[]): T[] =>
+  [...rows].sort(compareUnified);
 
 export const unifiedListBase = (view: "inbox" | "sent"): string => `/api/unified/${view}/messages`;

@@ -942,7 +942,15 @@ export const api = (config: Config) => {
     // remains; the whole session otherwise (also the pre-multi-account path).
     const one = typeof req.body?.account === "string" && req.body.account ? String(req.body.account) : null;
     const accounts = sessionAccounts(req);
-    if (one && accounts.some(a => a.id === one) && accounts.some(a => a.id !== one && usableAccount(a))) {
+    // Named an account this session no longer holds — another tab signed it out and
+    // this one had not caught up yet. That is done, not a request to sign out
+    // everything else: falling through to the destroy below took every remaining
+    // healthy account with it.
+    if (one && !accounts.some(a => a.id === one)) {
+      res.json({});
+      return;
+    }
+    if (one && accounts.some(a => a.id !== one && usableAccount(a))) {
       writeAccounts(req.session, accounts.filter(a => a.id !== one));
       await new Promise<void>((resolve, reject) => {
         req.session.save(err => err ? reject(err) : resolve());

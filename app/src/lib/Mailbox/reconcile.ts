@@ -1,4 +1,5 @@
 import type { Message } from "../types";
+import { compareUnified, sortUnified } from "$lib/unified";
 
 /**
  * Drop repeats, keeping the first occurrence — the list is a keyed `{#each}`, and
@@ -53,6 +54,41 @@ export const dedupById = (messages: Message[]): Message[] => {
  * exactly the transient blip the branch above exists to survive.
  */
 export type Page = { results: Message[]; nextCursor: string | false; total?: number };
+
+/**
+ * reconcileFirstPage for a unified list.
+ *
+ * Same job — a refetched FIRST page must not throw away the pages already below it —
+ * and the same cursor reasoning, which is spelled out there and applies here verbatim.
+ * What differs is how "below" is decided: uids only order within one mailbox, and these
+ * rows come from several, so the window boundary is the oldest row the fresh page
+ * reached, in the merge order the server sorts by.
+ *
+ * Without this an EXISTS event on any constituent mailbox — one new message — replaced
+ * the whole accumulated list with page one, so every older row a reader had paged to
+ * vanished under them.
+ */
+export const reconcileUnifiedFirstPage = (
+  current: Page,
+  fresh: Page,
+): { results: Message[]; nextCursor: string | false } => {
+  if (!fresh.results.length) {
+    return fresh.total === 0
+      ? { results: [], nextCursor: false }
+      : { results: dedupById(current.results), nextCursor: current.nextCursor };
+  }
+
+  // The fresh page arrives sorted, so its last row is the boundary. Rows we hold that
+  // are strictly older survive; anything inside the refetched window that did not come
+  // back is gone — read elsewhere, moved, deleted.
+  const oldest = fresh.results[fresh.results.length - 1];
+  const below = (m: Message) => compareUnified(m, oldest) > 0;
+  const older = fresh.nextCursor ? current.results.filter(below) : [];
+  const results = sortUnified(dedupById([...fresh.results, ...older]));
+  const continuous = current.results.some(m => !below(m));
+
+  return { results, nextCursor: older.length && continuous ? current.nextCursor : fresh.nextCursor };
+};
 
 export const reconcileFirstPage = (
   current: Page,

@@ -74,11 +74,18 @@ import { locale } from "$lib/locale";
     ? unifiedFolders.find(b => b.id === (selection[0]?.mailbox ?? "")) ?? null
     : null;
 
+  // The endpoint takes at most 1000 items per request, and select-all in a unified
+  // view has no such ceiling — past 1000 loaded rows the action failed validation every
+  // time, with every item in it perfectly valid. Sent in batches instead, sequentially:
+  // each request is planned and validated whole on the server, and stopping at the
+  // first refusal beats firing the rest at a server that has already refused one.
+  const UNIFIED_BULK_BATCH = 500;
+
   const unifiedBulk = action(async (act: "trash" | "spam") => {
-    await _put("/api/unified/messages", {
-      action: act,
-      items: selection.map(m => ({ mailbox: m.mailbox ?? mailbox.id, message: m.id })),
-    });
+    const items = selection.map(m => ({ mailbox: m.mailbox ?? mailbox.id, message: m.id }));
+    for(let i = 0; i < items.length; i += UNIFIED_BULK_BATCH) {
+      await _put("/api/unified/messages", { action: act, items: items.slice(i, i + UNIFIED_BULK_BATCH) });
+    }
     removeSelection();
   });
 
@@ -108,15 +115,26 @@ import { locale } from "$lib/locale";
       const box = item.mailbox ?? mailbox.id;
       groups.set(box, [...(groups.get(box) ?? []), item.id]);
     }
-    await Promise.all([...groups].map(([box, ids]) =>
-      _put(`/api/mailboxes/${box}/messages`, { message: ids.join(","), seen: v })));
-  
+    // Settled per group, not all-or-nothing. These run concurrently, so one account
+    // failing after another had already succeeded used to skip EVERY optimistic
+    // update — the rows that DID change upstream stayed looking unread, and nothing
+    // corrects them, because a seen flag rides no COUNTERS event of its own.
+    const settled = await Promise.allSettled([...groups].map(async ([box, ids]) => {
+      await _put(`/api/mailboxes/${box}/messages`, { message: ids.join(","), seen: v });
+      return box;
+    }));
+    const changed = new Set(settled.flatMap(r => r.status === "fulfilled" ? [r.value] : []));
+
     for(const item of selection) {
-      item.seen = v;
+      if(changed.has(item.mailbox ?? mailbox.id)) item.seen = v;
     }
 
     messages = {...messages};
-    selection = [...selection]; 
+    selection = [...selection];
+
+    // Whatever went through is on screen; now say that the rest did not.
+    const failed = settled.find(r => r.status === "rejected");
+    if(failed) throw (failed as PromiseRejectedResult).reason; 
   })
 
   // These lookups used to assert non-null. They are the ONLY route to spam and delete
