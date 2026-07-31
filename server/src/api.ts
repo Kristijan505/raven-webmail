@@ -313,10 +313,33 @@ const closeOtherLiveStreams = (user: string, keepSession: string): number => {
   return closed;
 };
 
+// When a session was last told to drop its live streams, on the same monotonic
+// counter so a captured value can be compared without touching clocks.
+//
+// closeSessionLiveStreams can only close what is already IN liveStreams, and an
+// /updates response joins that set only after its watch() calls resolve. A change that
+// lands inside that window — an account added or signed out, a password rotated with
+// eviction unchecked — is therefore invisible to the close meant for it, and the
+// response registers afterwards carrying the account set from before the change: no
+// events for an account just added, live events for one just removed. None of those
+// paths touch the eviction counter, so wasEvictedSince does not cover them.
+let streamCloseCounter = 0;
+const lastStreamClose = new Map<string, { at: number; ts: number }>();
+
+const streamsClosedSince = (session: string, since: number): boolean =>
+  (lastStreamClose.get(session)?.at ?? 0) > since;
+
 // Close THIS session's own merged stream (per-account logout): the client's
 // EventSource reconnects on its own and comes back subscribed only to the
 // accounts that remain in the session.
 const closeSessionLiveStreams = (session: string): void => {
+  // Recorded BEFORE the sweep, so a response still resolving its watch() calls sees it
+  // when it re-checks. Swept on write, like lastEviction and for the same reason.
+  const now = Date.now();
+  for (const [key, entry] of lastStreamClose) {
+    if (now - entry.ts > EVICTION_MEMORY_MS) lastStreamClose.delete(key);
+  }
+  lastStreamClose.set(session, { at: ++streamCloseCounter, ts: now });
   for (const entry of [...liveStreams]) {
     if (entry.session !== session) continue;
     liveStreams.delete(entry);
@@ -958,6 +981,7 @@ export const api = (config: Config) => {
     // flight, and this connection must not come up afterwards still carrying an
     // evicted token.
     const openedAt = evictionCounter;
+    const closedAt = streamCloseCounter;
     // One upstream stream per account, multiplexed into this one response. The
     // events need no tagging: they carry mailbox ids, which are globally unique.
     const settled = await Promise.allSettled(accounts.map(a => watch(a.id, a.token as string)));
@@ -971,6 +995,18 @@ export const api = (config: Config) => {
       if (wasEvictedSince(accounts[i].id, req.sessionID, openedAt)) destroy(result.value);
       else kept.push({ account: accounts[i], stream: result.value });
     });
+    // A change to this session landed while watch() was in flight, and the close it
+    // triggered could not reach a response that had not registered yet. Hand the
+    // client a stream that ends immediately rather than one built on the account set
+    // it is no longer entitled to; EventSource reconnects and gets the current one.
+    if (streamsClosedSince(req.sessionID, closedAt)) {
+      for (const item of kept) destroy(item.stream);
+      logger.info({ session: req.sessionID }, "updates stream superseded before it registered");
+      res.type("text/event-stream");
+      res.end();
+      return;
+    }
+
     // Accounts that failed to open (or were evicted mid-flight) are simply missing
     // from this connection: it would otherwise pipe the others happily for hours
     // while that one mailbox never reports a single new message. Serve what we have,

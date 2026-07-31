@@ -35,8 +35,20 @@
   $: fromId = current?.accountId ?? $tabAccount;
   $: fromChoices = $accounts.filter(a => !a.needsReauth);
 
-  const switchFrom = async (accId: string) => {
-    if (!current || fromLocked || accId === fromId) return;
+  // Which switch is the live one. Every selection takes a new number, including one
+  // that picks the account the draft already has — that is the user cancelling, and it
+  // has to supersede a lookup still in flight just as any other choice would.
+  let fromToken = 0;
+
+  const switchFrom = async (accId: string, el?: HTMLSelectElement) => {
+    const token = ++fromToken;
+    // The <select> shows what was clicked, not what was committed. Put it back when a
+    // switch does not happen — but only from the newest attempt, or a stale one would
+    // undo the choice the user has since made.
+    const revert = () => { if(el && token === fromToken) el.value = fromId ?? ""; };
+    if (!current || fromLocked || accId === fromId) return revert();
+    const draft = current;
+
     // The signature comes along in the same breath as the Drafts folder: a body still
     // carrying the previous account's signature would otherwise go out under this one,
     // showing the recipient a name and title belonging to a different mailbox. Nothing
@@ -47,21 +59,23 @@
       _get(`/api/pages/me?account=${encodeURIComponent(accId)}`).catch(() => null),
     ]);
     const drafts = boxes?.results?.find((b: { specialUse?: string }) => b.specialUse === "\\Drafts");
-    if (!drafts) return;
-    // Checked AGAIN, after the awaits. An upload started while those were in flight
-    // locks From — the file went to storage under the OLD account — and carrying on
-    // here would migrate the draft anyway, leaving it naming a storage id that belongs
-    // to someone else. The next save is then refused and the draft cannot be sent.
-    if (!current || fromLocked || accId === fromId) return;
+    // Both halves or neither. The identity is checked rather than assumed — the page
+    // route falls back to another account rather than 403 when the one asked for is
+    // unusable — and a switch that moved the draft while the profile lookup merely
+    // blinked would send account B's mail over account A's signature, which is the one
+    // thing this whole path exists to prevent.
+    const user = me?.props?.user;
+    if (!drafts || user?.id !== accId) return revert();
+
+    // Still the latest choice, still the same draft, still unlocked. An upload started
+    // while those lookups were in flight locks From — the file went to storage under
+    // the OLD account — and committing anyway would leave the draft naming a storage
+    // id belonging to someone else, so the next save is refused and it cannot be sent.
+    if (token !== fromToken || current !== draft || fromLocked) return;
+
     current.accountId = accId;
     current.mailbox = drafts.id;
-    // Checked, not assumed: the page route falls back to another account rather than
-    // 403 when the one asked for is unusable, and signing THAT signature here would be
-    // the very swap this exists to prevent.
-    const user = me?.props?.user;
-    if (user?.id === accId) {
-      swapSignature(iframe?.contentDocument, proxyRemoteImages(user?.metaData?.[RAVEN_SIGNATURE_META_KEY] || ""));
-    }
+    swapSignature(iframe?.contentDocument, proxyRemoteImages(user?.metaData?.[RAVEN_SIGNATURE_META_KEY] || ""));
     current = current; // the autosave sees the change and migrates the draft
   };
 
@@ -387,7 +401,7 @@ import { locale } from "$lib/locale";
         <label class="label-input from-row">
           <x-label>{$locale["From:"]}</x-label>
           <select class="from-select" disabled={fromLocked} title={fromLocked ? $locale.From_locked : null}
-            value={fromId} on:change={(e) => switchFrom(e.currentTarget.value)}>
+            value={fromId} on:change={(e) => switchFrom(e.currentTarget.value, e.currentTarget)}>
             {#each fromChoices as acc (acc.id)}
               <option value={acc.id}>{acc.username}</option>
             {/each}
