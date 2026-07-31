@@ -45,4 +45,8 @@ export const applyCounters = (event: { mailbox: string; unseen?: number; total?:
 export const isUnifiedMailbox = (m: { path?: string } | null | undefined): boolean =>
   !!m?.path?.startsWith("__unified");
 
+/** The synthetic "all sent" mailbox specifically — it has no \Sent specialUse. */
+export const isUnifiedSent = (m: { path?: string } | null | undefined): boolean =>
+  m?.path === "__unified/sent";
+
 export const unifiedListBase = (view: "inbox" | "sent"): string => `/api/unified/${view}/messages`;

@@ -3,7 +3,10 @@
   // back without it — and this runs for every row in Drafts/Sent. Indexing it directly
   // threw there, and a throw in a row render freezes the whole list.
   const from = (mailbox: Mailbox, message: Message, l: any): string => {
-    if(mailbox.specialUse === "\\Drafts" || mailbox.specialUse === "\\Sent") {
+    // The unified sent view is a SYNTHETIC mailbox with no specialUse, so it needs
+    // naming here or every row shows the account that sent it — which in "all sent"
+    // is the one thing the reader already knows.
+    if(mailbox.specialUse === "\\Drafts" || mailbox.specialUse === "\\Sent" || isUnifiedSent(mailbox)) {
       return `${l["To:"]} ${message.to?.[0]?.name || message.to?.[0]?.address || ""}`;
     }
 
@@ -51,6 +54,7 @@
   import Ripple from "$lib/Ripple.svelte";
   import { clickable } from "$lib/actions";
   import type { Message, Mailbox } from "$lib/types";
+  import { isUnifiedSent } from "$lib/unified";
 
   import NotSelected from "~icons/mdi/checkbox-blank-outline";
   import Selected from "~icons/mdi/checkbox-marked";

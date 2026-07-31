@@ -41,6 +41,9 @@ export const setTabAccount = (id: string | null): void => {
       localStorage.setItem(SEED_KEY, id);
     } else {
       sessionStorage.removeItem(TAB_KEY);
+      // The seed goes as well: leaving it lets the next tab revive an account this
+      // one has just signed out of or been evicted from.
+      localStorage.removeItem(SEED_KEY);
     }
   } catch { /* the choice still holds for this tab's lifetime */ }
 };

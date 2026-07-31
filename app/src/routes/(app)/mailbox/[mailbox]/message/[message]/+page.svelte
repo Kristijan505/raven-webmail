@@ -7,6 +7,17 @@
   $: ({ mailbox, message } = data);
   
   import { action, isDrafts, isInbox, isJunk, isSent, isTrash, mailboxName, _delete, _put } from "$lib/util";
+  import { mailboxAccounts, setTabAccount, tabAccount } from "$lib/account";
+
+  // Same re-pin as the mailbox list page. Without it a bookmark or middle-click into
+  // another account's message renders under the wrong sidebar, and reply/forward then
+  // aim at the ACTIVE account's Drafts with a reference in the other — which the
+  // server refuses (assertOwnsMailbox), so the button just fails.
+  $: owner = $mailboxAccounts[mailbox.id];
+  $: if (owner && $tabAccount && owner !== $tabAccount) {
+    setTabAccount(owner);
+    location.reload();
+  }
   
   import { messageHTML, tooltip, clickable } from "$lib/actions";
   import TabTop from "$lib/Tab/TabTop.svelte";
