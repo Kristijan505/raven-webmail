@@ -277,7 +277,7 @@ export const plural = (count: number, forms: { one: string; few: string; other: 
 import { intertab } from "./intertab";
 // Every /api request carries the tab's account (see account.ts) — the one funnel
 // that keeps multi-account tabs honest without touching call sites.
-import { withAccount } from "./account";
+import { setTabAccount, tabAccount, withAccount } from "./account";
 
 /*
 export const watchAuth = (username: string | null) => {
@@ -298,16 +298,39 @@ export const watchAuth = (username: string | null) => {
 }
 */
 
+/** Is this tab's pinned account still in the signature another tab just published? */
+const stillSignedIn = (signature: string, pinned: string | null): boolean =>
+  !pinned || signature.split(",").some(entry => entry.replace(/!$/, "") === pinned);
+
+/**
+ * Resync this tab when the set of signed-in accounts changes in another one.
+ *
+ * Dropping the pin first is the part that matters. It is stamped onto every request as
+ * ?account=, and when it names an account that was just signed out elsewhere the tab
+ * cannot heal itself: the layout route is lenient and answers 200 as some other
+ * account, but the mailbox page under it 404s, and that error renders ABOVE the (app)
+ * layout — so the component whose job is to re-pin the tab to whoever answered never
+ * mounts. The tab sits on an error screen, still holding a dead account id, through
+ * any number of reloads. Only a pin that is genuinely gone is cleared: a tab
+ * deliberately looking at one mailbox must not be dragged to another because a third
+ * account was added in some other tab.
+ *
+ * The reload itself is a full document load rather than goto() because the (app)
+ * layout's load declares no dependency on the route, so what a client-side navigation
+ * rebuilds is not something to rely on.
+ */
 export const watchAuth = (userId: string | null) => {
   const watcher = intertab<string | null>("intertab.auth.watch");
   watcher.set(userId);
   const unwatch = watcher.watch(value => {
     if(value === userId) return;
     if(value == null) {
-      goto("/login")
-    } else {
-      goto("/")
+      setTabAccount(null);
+      location.assign("/login");
+      return;
     }
+    if(!stillSignedIn(value, get(tabAccount))) setTabAccount(null);
+    location.assign("/");
   });
   return unwatch;
 }

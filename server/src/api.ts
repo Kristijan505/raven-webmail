@@ -567,6 +567,48 @@ const bindPageAccount = (req: Request): void => {
   // the browser to the login page, which is the right answer for a dead session.
 };
 
+/**
+ * Which signed-in account owns this mailbox — or null, with `unreachable` saying
+ * whether that is an answer or merely an unanswered question.
+ *
+ * Cached pass over every account first, only then the fresh (refetching) pass, so one
+ * account's stale cache cannot 403 a mailbox created seconds ago while a refetch for a
+ * DIFFERENT account still lies ahead.
+ *
+ * Failures are collected rather than thrown. One account's mailbox list erroring used
+ * to abort the whole search, so a folder owned by a perfectly healthy account was
+ * refused — permanently, whenever the failing account happened to sort first and its
+ * cache stayed empty. Shared by every caller precisely so that fix cannot hold in one
+ * route and not the other, which is how it stood: the same loop was written out again
+ * for unified bulk actions, and trashing a selection failed there for an account that
+ * was never the problem.
+ */
+const resolveMailboxOwner = async (
+  accounts: Array<SessionAccount & { token: string }>,
+  id: string,
+): Promise<{ owner: (SessionAccount & { token: string }) | null; unreachable: boolean }> => {
+  let unreachable = false;
+  for (const fresh of [false, true] as const) {
+    for (const account of accounts) {
+      const owned = await ownedMailboxIdsFor(account, fresh).catch(e => {
+        unreachable = true;
+        logger.warn(
+          { account: account.id, detail: String((e as any)?.message) },
+          "mailbox owner lookup failed for one account",
+        );
+        return null;
+      });
+      if (owned?.has(id)) return { owner: account, unreachable };
+    }
+  }
+  return { owner: null, unreachable };
+};
+
+// "Not yours" is only an honest answer if every account was actually asked.
+const noOwner = (unreachable: boolean): ApiError => unreachable
+  ? new ApiError(StatusCodes.BAD_GATEWAY, "Upstream error", "upstream_error")
+  : new ApiError(StatusCodes.FORBIDDEN, "Invalid mailbox", "forbidden");
+
 // Pin the owning account of a path mailbox to the request. 403 when no account
 // in the session owns it — a foreign id must not get an arbitrary token to
 // travel with. Single-account sessions skip the pre-flight entirely and keep
@@ -581,33 +623,9 @@ const bindMailboxAccount = async (req: Request, rawMailbox: string | string[] | 
     (req as any)[kAccount] = accounts[0];
     return;
   }
-  // Cached pass over every account first, only then the fresh (refetching) pass,
-  // so one account's stale cache cannot 403 a mailbox created seconds ago while a
-  // refetch for a DIFFERENT account still lies ahead.
-  // Failures are collected, not thrown: one account's mailbox list erroring used to
-  // abort the whole resolution, so a folder owned by a perfectly healthy account got a
-  // 403 it did not deserve — permanently, whenever the failing account happened to sort
-  // first and its cache stayed empty.
-  let unreachable = false;
-  for (const fresh of [false, true] as const) {
-    for (const account of accounts) {
-      const owned = await ownedMailboxIdsFor(account, fresh).catch(e => {
-        unreachable = true;
-        logger.warn(
-          { account: account.id, detail: String((e as any)?.message) },
-          "mailbox owner lookup failed for one account",
-        );
-        return null;
-      });
-      if (owned?.has(id)) {
-        (req as any)[kAccount] = account;
-        return;
-      }
-    }
-  }
-  // "Not yours" is only an honest answer if we managed to ask every account.
-  if (unreachable) throw new ApiError(StatusCodes.BAD_GATEWAY, "Upstream error", "upstream_error");
-  throw new ApiError(StatusCodes.FORBIDDEN, "Invalid mailbox", "forbidden");
+  const { owner, unreachable } = await resolveMailboxOwner(accounts, id);
+  if (!owner) throw noOwner(unreachable);
+  (req as any)[kAccount] = owner;
 };
 
 // Defense-in-depth CSRF guard for state-changing requests. SameSite=lax is the
@@ -1396,23 +1414,30 @@ export const api = (config: Config) => {
     const groups = new Map<string, number[]>();
     for (const item of items) groups.set(item.mailbox, [...(groups.get(item.mailbox) ?? []), item.message]);
 
+    // Plan first, move second. Issuing each PUT as its group resolved meant a later
+    // group with no Trash folder — or a mailbox no account owns — failed the request
+    // AFTER earlier groups had already moved: the client shows an error and keeps the
+    // whole selection, while part of the action quietly stands. Every predictable
+    // refusal is now raised before the first message moves. The move pass can still
+    // break midway on a transport failure, which nothing can prevent, but it no longer
+    // does so over a folder we knew about all along.
+    const plan: Array<{ owner: SessionAccount & { token: string }; mailboxId: string; ids: number[]; target: string }> = [];
     for (const [mailboxId, ids] of groups) {
-      let owner: (SessionAccount & { token: string }) | null = null;
-      outer: for (const fresh of [false, true] as const) {
-        for (const account of accounts) {
-          if ((await ownedMailboxIdsFor(account, fresh)).has(mailboxId)) { owner = account; break outer; }
-        }
-      }
       // A mailbox no account owns must not pick an arbitrary token to travel with.
-      if (!owner) throw new ApiError(StatusCodes.FORBIDDEN, "Invalid mailbox", "forbidden");
+      const { owner, unreachable } = await resolveMailboxOwner(accounts, mailboxId);
+      if (!owner) throw noOwner(unreachable);
       const boxes = await mailboxesFor(owner);
       const target = action === "trash"
         ? boxes.find(b => b.specialUse === "\\Trash")
         : boxes.find(b => b.specialUse === "\\Junk");
       if (!target) throw new ApiError(StatusCodes.CONFLICT, "Folder not available", "folder_not_available");
-      await put(`/users/${owner.id}/mailboxes/${seg(mailboxId)}/messages`, owner.token, {
-        message: ids.join(","),
-        moveTo: target.id,
+      plan.push({ owner, mailboxId, ids, target: target.id });
+    }
+
+    for (const step of plan) {
+      await put(`/users/${step.owner.id}/mailboxes/${seg(step.mailboxId)}/messages`, step.owner.token, {
+        message: step.ids.join(","),
+        moveTo: step.target,
       });
     }
     res.json({ success: true });
