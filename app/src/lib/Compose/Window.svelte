@@ -48,6 +48,11 @@
     ]);
     const drafts = boxes?.results?.find((b: { specialUse?: string }) => b.specialUse === "\\Drafts");
     if (!drafts) return;
+    // Checked AGAIN, after the awaits. An upload started while those were in flight
+    // locks From — the file went to storage under the OLD account — and carrying on
+    // here would migrate the draft anyway, leaving it naming a storage id that belongs
+    // to someone else. The next save is then refused and the draft cannot be sent.
+    if (!current || fromLocked || accId === fromId) return;
     current.accountId = accId;
     current.mailbox = drafts.id;
     // Checked, not assumed: the page route falls back to another account rather than

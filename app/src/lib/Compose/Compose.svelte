@@ -271,7 +271,11 @@
   }
 
   export const open = async (mailbox: Mailbox, id: number) => {
-    const tab = tabs.find(tab => tab.id === id);
+    // (mailbox, uid), not uid alone. Uids are mailbox-local, so once drafts from two
+    // accounts can be open at once — switch one draft's From, then start another in the
+    // account the tab still points at — the two can share a uid, and matching on it
+    // focused the wrong window while the draft just created was never opened at all.
+    const tab = tabs.find(tab => tab.id === id && tab.mailbox === mailbox.id);
     if(tab) {
       current = tab
     } else {

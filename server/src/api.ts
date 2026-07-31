@@ -382,9 +382,21 @@ const MAILBOX_META_TTL_MS = 15_000;
 type MailboxMeta = { id: string; path: string; specialUse: string | null; unseen: number; total: number };
 const mailboxMetaCache = new Map<string, { boxes: MailboxMeta[]; at: number }>();
 
-const mailboxesFor = async (account: SessionAccount & { token: string }): Promise<MailboxMeta[]> => {
+/**
+ * `fresh` skips the cache. The cache holds COUNTERS — unseen and total — and those
+ * move with every arrival, read and delete. Serving them to a layout load is not the
+ * same as serving them to an ownership check: the layout SEEDS the client's unified
+ * badges, and nothing refetches that seed afterwards. A tab opened within the TTL of
+ * some other tab's fetch would take counters that were already wrong and keep them
+ * until an event happened to name the same mailbox — which, for a quiet mailbox, is
+ * never. Ownership lookups are welcome to the cached copy; badge seeds are not.
+ */
+const mailboxesFor = async (
+  account: SessionAccount & { token: string },
+  fresh = false,
+): Promise<MailboxMeta[]> => {
   const hit = mailboxMetaCache.get(account.id);
-  if (hit && Date.now() - hit.at < MAILBOX_META_TTL_MS) return hit.boxes;
+  if (!fresh && hit && Date.now() - hit.at < MAILBOX_META_TTL_MS) return hit.boxes;
   const generation = mailboxIdsGeneration;
   const json = await get(`/users/${account.id}/mailboxes?counters=true`, account.token);
   const boxes: MailboxMeta[] = ((json?.results ?? []) as Array<Record<string, unknown>>).map(b => ({
@@ -1623,23 +1635,43 @@ export const api = (config: Config) => {
     // correctly either way — this only keeps the chrome honest.
     const mailboxAccounts: Record<string, string> = {};
     if (usableAll.length > 1) {
-      const metas = await Promise.allSettled(usableAll.map(a => mailboxesFor(a)));
+      // Uncached: these counters seed the client's badges — see mailboxesFor.
+      const read = () => Promise.allSettled(usableAll.map(a => mailboxesFor(a, true)));
+      let metas = await read();
+      // One retry, because most of these failures are a blink rather than a state.
+      if (metas.some(m => m.status !== "fulfilled")) metas = await read();
+
       metas.forEach((meta, i) => {
         if (meta.status !== "fulfilled") return;
         for (const b of meta.value) mailboxAccounts[b.id] = usableAll[i].id;
       });
-      // Per mailbox, NOT summed: COUNTERS events arrive per mailbox, and the client
-      // keeps the badges live by updating exactly the entry an event names.
-      const inbox: Array<{ id: string; unseen: number; total: number }> = [];
-      const sent: Array<{ id: string; total: number }> = [];
-      for (const meta of metas) {
-        if (meta.status !== "fulfilled") continue;
-        for (const b of meta.value) {
-          if (b.path === "INBOX") inbox.push({ id: b.id, unseen: b.unseen, total: b.total });
-          else if (b.specialUse === "\\Sent") sent.push({ id: b.id, total: b.total });
+
+      // All accounts or none. A missing account still leaves a perfectly usable-looking
+      // unified view — but its mailbox ids never enter the client's id sets, so every
+      // EXISTS, EXPUNGE and COUNTERS event that account sends is dropped for as long as
+      // the layout lives: rows that never move, badges frozen at whatever they were.
+      // Withholding the unified entries is visible and rights itself on the next load;
+      // a silently deaf account does neither.
+      const missing = metas.filter(m => m.status !== "fulfilled").length;
+      if (missing) {
+        logger.warn(
+          { accounts: usableAll.length, missing },
+          "layout: unified entries withheld, one or more accounts unreadable",
+        );
+      } else {
+        // Per mailbox, NOT summed: COUNTERS events arrive per mailbox, and the client
+        // keeps the badges live by updating exactly the entry an event names.
+        const inbox: Array<{ id: string; unseen: number; total: number }> = [];
+        const sent: Array<{ id: string; total: number }> = [];
+        for (const meta of metas) {
+          if (meta.status !== "fulfilled") continue;
+          for (const b of meta.value) {
+            if (b.path === "INBOX") inbox.push({ id: b.id, unseen: b.unseen, total: b.total });
+            else if (b.specialUse === "\\Sent") sent.push({ id: b.id, total: b.total });
+          }
         }
+        unified = { inbox, sent };
       }
-      unified = { inbox, sent };
     }
 
     const props = {
