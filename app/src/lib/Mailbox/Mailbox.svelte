@@ -120,6 +120,11 @@
     const requested = active;
     const json: Messages = await _get(listUrl(["limit=50"]));
     if(generation !== listGeneration) return;
+    // A unified page missing an account is not a shorter list, and installing it as one
+    // erases every row that account had on screen — plus every older page already
+    // loaded, since this path REPLACES rather than reconciles. Keep what is there and
+    // say so: an explicit refresh must not look like a silent no-op.
+    if(unified && json.partial) throw new Error($locale.errors?.request_failed ?? "Request failed");
     selection = [];
     messages = json;
     renderedDirection = requested;
@@ -131,7 +136,10 @@
     if(generation !== listGeneration) return;
     if (unified) {
       // Replace, don't reconcile: reconcileFirstPage reasons in ONE mailbox's uid
-      // space, and rows here come from many.
+      // space, and rows here come from many. A page missing an account would blank
+      // every row it had; silent here, unlike reloadNow, because this runs off an SSE
+      // event and nobody asked for it.
+      if(json.partial) return;
       selection = [];
       messages = json;
       return;

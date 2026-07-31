@@ -85,6 +85,8 @@ export type Messages = {
   previousCursor: false | string
   nextCursor: false | string
   specialUse: string | null
+  /** Unified listings only: an account is missing from these rows. See api.ts. */
+  partial?: boolean
   results: Message[] 
 }
 

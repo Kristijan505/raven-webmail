@@ -275,6 +275,35 @@ const liveStreams = new Set<LiveStream>();
 // never silently dead for a whole sitting.
 const PARTIAL_STREAM_RETRY_MS = 30_000;
 
+// How long one account's update stream may take to produce HEADERS before this
+// connection gives up on it. watch() has no deadline of its own and the merged response
+// waits for every account to settle — so a single upstream stalling before it answers
+// left EVERY account without live updates for as long as it hung, with the
+// partial-stream retry above not even armed yet. Giving up puts that one account in the
+// degraded path, which is exactly what that retry is for.
+const WATCH_OPEN_TIMEOUT_MS = 10_000;
+
+const destroyStream = (stream: NodeJS.ReadableStream): void =>
+  (stream as NodeJS.ReadableStream & { destroy?: () => void }).destroy?.();
+
+const watchWithDeadline = (userId: string, accessToken: string): Promise<NodeJS.ReadableStream> => {
+  const opened = watch(userId, accessToken);
+  let gaveUp = false;
+  // A stream that turns up after the deadline still holds an upstream connection, and
+  // there is no longer anyone here to read it.
+  opened.then(stream => { if (gaveUp) destroyStream(stream); }).catch(() => {});
+  return new Promise<NodeJS.ReadableStream>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      gaveUp = true;
+      reject(new ApiError(StatusCodes.GATEWAY_TIMEOUT, "Upstream timeout", "upstream_timeout"));
+    }, WATCH_OPEN_TIMEOUT_MS);
+    opened.then(
+      stream => { clearTimeout(timer); if (!gaveUp) resolve(stream); },
+      (e: unknown) => { clearTimeout(timer); if (!gaveUp) reject(e); },
+    );
+  });
+};
+
 // The last eviction seen for a user: which session survived it, and a counter that
 // only moves forward. A stream opening while an eviction runs would otherwise slip
 // through — watch() is awaited before the stream can be registered, so an eviction
@@ -984,9 +1013,8 @@ export const api = (config: Config) => {
     const closedAt = streamCloseCounter;
     // One upstream stream per account, multiplexed into this one response. The
     // events need no tagging: they carry mailbox ids, which are globally unique.
-    const settled = await Promise.allSettled(accounts.map(a => watch(a.id, a.token as string)));
-    const destroy = (stream: NodeJS.ReadableStream) =>
-      (stream as NodeJS.ReadableStream & { destroy?: () => void }).destroy?.();
+    const settled = await Promise.allSettled(accounts.map(a => watchWithDeadline(a.id, a.token as string)));
+    const destroy = destroyStream;
     const kept: Array<{ account: SessionAccount; stream: NodeJS.ReadableStream }> = [];
     settled.forEach((result, i) => {
       if (result.status !== "fulfilled") return;
@@ -1434,6 +1462,11 @@ export const api = (config: Config) => {
       previousCursor: false,
       nextCursor: hasMore ? encodeUnifiedCursor(cursor) : false,
       specialUse: null,
+      // Says out loud that an account is missing from these rows. Serving what answered
+      // keeps the view alive, but the client cannot tell that from a genuinely shorter
+      // list — and it REPLACES its rows on a first-page refresh, so an unmarked partial
+      // page would erase every row of the failed account, and every older page with it.
+      partial: carriedMore,
       results: merged.results,
     });
   });

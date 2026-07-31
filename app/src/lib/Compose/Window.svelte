@@ -40,13 +40,28 @@
   // has to supersede a lookup still in flight just as any other choice would.
   let fromToken = 0;
 
+  /**
+    * May this switch still be committed?
+    *
+    * One predicate rather than a condition that grows a term per review round, because
+    * that is exactly how it has gone: newest choice, same draft, still editable, and
+    * NOT already claimed for sending. That last one is the rule compose.ts already
+    * lives by — dosave() refuses a draft carrying kSent — and it belongs here for a
+    * sharper reason. send() saves and then reads draft.mailbox AGAIN to submit; a
+    * switch landing between those two would hand it the uid save() just wrote in the
+    * old account together with the NEW account's Drafts. Uids are mailbox-local, so
+    * that submits nothing, or somebody else's draft.
+    */
+  const mayCommit = (token: number, draft: Draft): boolean =>
+    token === fromToken && current === draft && !fromLocked && !draft[kSent];
+
   const switchFrom = async (accId: string, el?: HTMLSelectElement) => {
     const token = ++fromToken;
     // The <select> shows what was clicked, not what was committed. Put it back when a
     // switch does not happen — but only from the newest attempt, or a stale one would
     // undo the choice the user has since made.
     const revert = () => { if(el && token === fromToken) el.value = fromId ?? ""; };
-    if (!current || fromLocked || accId === fromId) return revert();
+    if (!current || fromLocked || current[kSent] || accId === fromId) return revert();
     const draft = current;
 
     // The signature comes along in the same breath as the Drafts folder: a body still
@@ -67,11 +82,10 @@
     const user = me?.props?.user;
     if (!drafts || user?.id !== accId) return revert();
 
-    // Still the latest choice, still the same draft, still unlocked. An upload started
-    // while those lookups were in flight locks From — the file went to storage under
-    // the OLD account — and committing anyway would leave the draft naming a storage
-    // id belonging to someone else, so the next save is refused and it cannot be sent.
-    if (token !== fromToken || current !== draft || fromLocked) return;
+    // An upload started while those lookups were in flight locks From — the file went
+    // to storage under the OLD account — and committing anyway would leave the draft
+    // naming a storage id belonging to someone else. Send does worse; see mayCommit.
+    if (!mayCommit(token, draft)) return;
 
     current.accountId = accId;
     current.mailbox = drafts.id;
