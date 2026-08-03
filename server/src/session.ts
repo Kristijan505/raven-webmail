@@ -19,6 +19,11 @@ let activeStore: any = null;
 export const usableAccount = (a: SessionAccount): a is SessionAccount & { token: string } =>
   typeof a.token === "string" && a.token.length > 0 && a.needsReauth !== true;
 
+// NB: this predicate exists TWICE, in two languages — here, and as the $filter condition
+// inside MIRROR_STAGE, which Mongo evaluates server-side. They cannot share code, so they
+// have to be changed together: a mirror derived by a laxer or stricter rule than this one
+// would name an account the rest of the code does not consider usable.
+
 /**
  * Every account in this session, whatever its vintage. Sessions written before the
  * multi-account model hold a single `authentication`; reading through this shim is
@@ -76,11 +81,27 @@ export const throttleKey = (session: SessionData): string => {
  * completely would need the whole login to hold a lock, which is not worth what it
  * costs on a path this hot.
  */
-export const readStoredAccounts = async (sessionId: string): Promise<SessionAccount[] | null> => {
+/**
+ * The session collection and the field its ids live under.
+ *
+ * Four functions used to open with the same three lines and their own wording for the
+ * same two failures; this is that, once. `required` is what tells a caller that cannot
+ * proceed without the store (an eviction) from one that can shrug (a best-effort read).
+ */
+const storeHandle = (required = true): { collection: any; idField: string } | null => {
   const store = activeStore;
   const collection = store?.collection;
-  if(!collection || !sessionId) return null;
-  const idField: string = store.options?.idField ?? "_id";
+  if(!collection) {
+    if(required) throw new Error("session store is not initialized");
+    return null;
+  }
+  return { collection, idField: store.options?.idField ?? "_id" };
+};
+
+export const readStoredAccounts = async (sessionId: string): Promise<SessionAccount[] | null> => {
+  const handle = sessionId ? storeHandle(false) : null;
+  if(!handle) return null;
+  const { collection, idField } = handle;
   const doc = await collection.findOne({ [idField]: sessionId }).catch(() => null);
   const accounts = doc?.session?.accounts;
   return Array.isArray(accounts) ? accounts as SessionAccount[] : null;
@@ -126,6 +147,44 @@ export const rotateSession = async (req: Request): Promise<void> => {
     });
   });
 }
+
+/**
+ * Create or re-establish this browser's session for `account`.
+ *
+ * The ONE place that writes a whole session document, because that is what creating a
+ * session is. Everything the login paths have to get right lives here rather than in
+ * each route: the privilege-boundary rotation, the account bag, the legacy mirror, and
+ * the throttle identity — which has to exist from the first request, since minting it
+ * later let concurrent guesses each mint their own and multiply the limit.
+ *
+ * Returns the id the browser held BEFORE, which the caller needs: the rotation orphans
+ * any /updates response opened under it, and those close by session id.
+ */
+export const establishSession = async (
+  req: Request,
+  mode: "fresh" | "add",
+  account: SessionAccount,
+): Promise<{ previousId: string }> => {
+  const previousId = req.sessionID;
+  if(mode === "add") {
+    await rotateSession(req);
+    // Signing into an account already present (including a re-auth stub) REPLACES its
+    // entry: that is how a stubbed shared mailbox comes back after its password changed
+    // elsewhere.
+    writeAccounts(req.session, [...accountsOf(req.session).filter(a => a.id !== account.id), account]);
+  } else {
+    // Rotate the session id at the privilege boundary to defeat session fixation.
+    await new Promise<void>((resolve, reject) => {
+      req.session.regenerate(err => err ? reject(err) : resolve());
+    });
+    writeAccounts(req.session, [account]);
+  }
+  throttleKey(req.session);
+  await new Promise<void>((resolve, reject) => {
+    req.session.save(err => err ? reject(err) : resolve());
+  });
+  return { previousId };
+};
 
 /**
  * Destroy every stored session belonging to `userId` except `keepSessionId`.
@@ -274,56 +333,93 @@ const MIRROR_STAGE = {
   },
 };
 
-export const pullAccountFromSession = async (sessionId: string, accountId: string): Promise<void> => {
-  const store = activeStore;
-  const collection = store?.collection;
-  if(!collection) throw new Error("session store is not initialized");
-  if(!sessionId) throw new Error("pullAccountFromSession requires a session id");
-  if(!accountId) throw new Error("pullAccountFromSession requires an account id");
-  const idField: string = store.options?.idField ?? "_id";
-  // An aggregation-pipeline update so the mirror is derived from what the array ACTUALLY
-  // becomes. Passing a value computed by the caller reintroduced the race one level
-  // down: two tabs removing A and B each computed the mirror from the same snapshot, so
-  // the survivor could end up as {C} with `authentication` still naming A or B — and the
-  // whole point of that mirror is that a rollback build reads it, which would then
-  // resurrect an account the user signed out.
-  const kept = {
-    $filter: {
-      input: { $ifNull: ["$session.accounts", []] },
-      as: "a",
-      cond: { $ne: ["$$a.id", accountId] },
-    },
-  };
-  await collection.updateOne({ [idField]: sessionId }, [
-    { $set: { "session.accounts": kept } },
-    MIRROR_STAGE,
-  ]);
+/**
+ * ═══ The one write path for an EXISTING session's account bag. ═══
+ *
+ * Three rules, in one place, because keeping them in three places is what cost this
+ * branch four review rounds:
+ *
+ * 1. Describe the CHANGE, never write the result. express-session persists the whole
+ *    document, so two tabs each saving their own filtered copy silently undo each
+ *    other — one signs out A, the other B, and whichever lands last brings the other's
+ *    account back with its token.
+ * 2. Derive the legacy mirror from what the array BECOMES, not from a snapshot the
+ *    caller was holding. Computing it caller-side put the same race one level down.
+ * 3. Bring the request's copy in line and then seal it, so nothing writes the whole
+ *    document back afterwards. Not mutating it covers the default; session_resave is
+ *    a supported option and under it express-session saves the stale copy regardless.
+ *
+ * Every account-bag edit goes through here. Creating or rotating a session is the one
+ * thing that legitimately writes the whole document — that is establishSession, below.
+ */
+const editAccounts = async (
+  req: Request,
+  update: object | object[],
+  options?: object,
+): Promise<void> => {
+  // FIRST, and synchronously — before any await. A caller that does not wait for this
+  // (the reauth stub fires and forgets, mid-response) would otherwise have its response
+  // end while this is still in flight, and express-session would write the stale copy
+  // back after the atomic update rather than before it. Sealing on the way in is the
+  // difference between the seal covering this response and missing it entirely.
+  sealSession(req);
+  const { collection, idField } = storeHandle()!;
+  if(!req.sessionID) throw new Error("editAccounts requires a session id");
+  const key = { [idField]: req.sessionID };
+  await collection.updateOne(key, update, options);
+  // Separately, because Mongo refuses arrayFilters together with a pipeline. Idempotent
+  // and derived from the current array, so concurrent edits still leave it right.
+  await collection.updateOne(key, [MIRROR_STAGE]);
+  const stored = await readStoredAccounts(req.sessionID);
+  if(stored) writeAccounts(req.session, stored);
 };
 
 /**
- * Mark one account in a stored session as needing re-authentication, atomically.
+ * Stop express-session writing this session at the end of the response.
  *
- * The counterpart to the surgical eviction, for the case where WildDuck itself rejects
- * the token: without it the entry keeps a token, stays `usableAccount`, and the browser
- * retries a credential that will never work again — every reconnect, forever — while the
- * switcher never offers "sign in again" and unified views stay quietly short.
+ * Its automatic save persists the whole document whenever the in-memory copy differs
+ * from what was loaded — and with session_resave on, even when it does not. Either way
+ * that is the read-modify-write the atomic edits above exist to avoid.
  */
-export const markAccountNeedsReauth = async (sessionId: string, accountId: string): Promise<void> => {
-  const store = activeStore;
-  const collection = store?.collection;
-  if(!collection || !sessionId || !accountId) return;
-  const idField: string = store.options?.idField ?? "_id";
-  await collection.updateOne(
-    { [idField]: sessionId },
+const sealSession = (req: Request): void => {
+  (req.session as unknown as { save: (cb?: (e?: unknown) => void) => unknown }).save =
+    (cb) => { cb?.(); return req.session; };
+};
+
+/** Sign one account out of THIS session. */
+export const removeAccountFromSession = (req: Request, accountId: string): Promise<void> => {
+  if(!accountId) throw new Error("removeAccountFromSession requires an account id");
+  return editAccounts(req, [{
+    $set: {
+      "session.accounts": {
+        $filter: {
+          input: { $ifNull: ["$session.accounts", []] },
+          as: "a",
+          cond: { $ne: ["$$a.id", accountId] },
+        },
+      },
+    },
+  }]);
+};
+
+/**
+ * Mark one account in THIS session as needing re-authentication.
+ *
+ * The counterpart to the surgical eviction, for when WildDuck itself refuses the token:
+ * without it the entry keeps a token, stays `usableAccount`, and the browser retries a
+ * credential that will never work again on every reconnect — while the switcher shows
+ * the account as healthy and the unified views stay quietly short.
+ */
+export const stubAccountInSession = (req: Request, accountId: string): Promise<void> => {
+  if(!accountId) throw new Error("stubAccountInSession requires an account id");
+  return editAccounts(
+    req,
     {
       $set: { "session.accounts.$[entry].needsReauth": true },
       $unset: { "session.accounts.$[entry].token": "" },
     },
     { arrayFilters: [{ "entry.id": accountId }] },
   );
-  // Recomputed separately: an update cannot mix arrayFilters with a pipeline, and the
-  // mirror must not be left naming the account just stubbed.
-  await collection.updateOne({ [idField]: sessionId }, [MIRROR_STAGE]);
 };
 
 // Only a real trusted-proxy value counts. An explicit trust_proxy=false means

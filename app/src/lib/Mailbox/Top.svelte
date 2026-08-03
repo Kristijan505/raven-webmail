@@ -25,6 +25,7 @@
   import { action, isDrafts, isInbox, isJunk, isSent, isTrash, mailboxName, plural, _delete, _get, _put } from "$lib/util";
   import { activeDirection, direction, mixesDirections, toggleDirection } from "$lib/direction";
   import { UNIFIED_IDS, isUnifiedMailbox, unifiedTotals } from "$lib/unified";
+  import { rowKey } from "./reconcile";
   import Down from "~icons/mdi/tray-arrow-down";
   import Up from "~icons/mdi/tray-arrow-up";
 
@@ -208,13 +209,17 @@ import { locale } from "$lib/locale";
   }
 
   const removeSelection = () => {
-    // Keyed by (mailbox, id): uids collide across accounts in the unified views,
-    // and a plain id filter would take innocent rows down with the selected ones.
-    const keys = new Set(selection.map(item => `${item.mailbox ?? mailbox.id}:${item.id}`));
-    
+    // Keyed by (mailbox, id) through rowKey, not by hand: uids collide across accounts
+    // in the unified views, and a plain id filter would take innocent rows down with the
+    // selected ones. Spelling the key out here is how a future change to its shape gets
+    // missed at one site and silently removes the wrong rows — it has already been
+    // widened once, from the bare id.
+    const keyed = (item: Message) => rowKey({ id: item.id, mailbox: item.mailbox ?? mailbox.id });
+    const keys = new Set(selection.map(keyed));
+
     // The count follows the rows. Under a direction filter it is the count on display,
     // and the SSE counters only ever refresh the folder's own total.
-    const results = messages.results.filter(item => !keys.has(`${item.mailbox ?? mailbox.id}:${item.id}`));
+    const results = messages.results.filter(item => !keys.has(keyed(item)));
     messages = {
       ...messages,
       results,

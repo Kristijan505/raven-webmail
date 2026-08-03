@@ -16,7 +16,7 @@ import * as https from "https";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import ipaddr from "ipaddr.js";
-import { accountsOf, evictAccountFromOtherSessions, markAccountNeedsReauth, pullAccountFromSession, rotateSession, sessionCookieClearOptions, throttleKey, usableAccount, writeAccounts } from "./session";
+import { accountsOf, establishSession, evictAccountFromOtherSessions, removeAccountFromSession, rotateSession, sessionCookieClearOptions, stubAccountInSession, usableAccount } from "./session";
 import type { SessionAccount } from "./client";
 import { decodeUnifiedCursor, encodeUnifiedCursor, mergeUnifiedRound, totalOf } from "./unified";
 import type { UnifiedCursor, UnifiedCursorEntry, UnifiedRoundInput } from "./unified";
@@ -918,38 +918,15 @@ export const api = (config: Config) => {
   api.post("/login", loginLimiter, handler(async (req, res) => {
     const { username, password, add } = validate(() => LoginSchema.parse(req.body));
     const v = await authenticate(username, password);
-    if (add && sessionAccounts(req).length) {
-      // "Add account": the same privilege boundary as a fresh login, so the id
-      // still rotates — but the bag is carried across and this account appended.
-      // Signing into an account already present (including a re-auth stub)
-      // REPLACES its entry: that is how a stubbed shared mailbox comes back
-      // after its password changed elsewhere.
-      //
-      // The rotation orphans any /updates response opened under the OLD id: it
-      // keeps piping the pre-add account set, and — because closing is matched by
-      // session id — a later per-account logout would look right here and leave
-      // that one running. Cut them, exactly as the password-change path does; the
-      // client reconnects and gets a stream that includes the new account.
-      const preRotateSession = req.sessionID;
-      await rotateSession(req);
-      closeSessionLiveStreams(preRotateSession);
-      writeAccounts(req.session, [...sessionAccounts(req).filter(a => a.id !== v.id), v]);
-      throttleKey(req.session); // established here, never minted lazily — see session.ts
-      await new Promise<void>((resolve, reject) => {
-        req.session.save(err => err ? reject(err) : resolve());
-      });
-      res.json({ id: v.id });
-      return;
-    }
-    // Rotate the session id at the privilege boundary to defeat session fixation.
-    await new Promise<void>((resolve, reject) => {
-      req.session.regenerate(err => err ? reject(err) : resolve());
-    });
-    writeAccounts(req.session, [v]);
-    throttleKey(req.session);
-    await new Promise<void>((resolve, reject) => {
-      req.session.save(err => err ? reject(err) : resolve());
-    });
+    // Both branches go through establishSession — rotation, account bag, legacy mirror
+    // and throttle identity are its business, not this route's.
+    const mode = add && sessionAccounts(req).length ? "add" : "fresh";
+    const { previousId } = await establishSession(req, mode, v);
+    // The rotation orphans any /updates response opened under the OLD id: it keeps
+    // piping the pre-add account set, and — because closing is matched by session id —
+    // a later per-account logout would look right here and leave that one running. Cut
+    // them; the client reconnects onto a stream that includes the new account.
+    if (mode === "add") closeSessionLiveStreams(previousId);
     // Name the account so the client tab can point at it immediately.
     res.json({ id: v.id });
   }))
@@ -968,19 +945,7 @@ export const api = (config: Config) => {
       return;
     }
     if (one && accounts.some(a => a.id !== one && usableAccount(a))) {
-      // Described as a change, not written as a result — see pullAccountFromSession.
-      // Two tabs signing out two different accounts used to overwrite each other, and
-      // the loser's account came back with its token intact.
-      await pullAccountFromSession(req.sessionID, one);
-      // Nothing may write the whole document back after that pull, or the read-modify-
-      // write returns and a concurrent removal is undone. Leaving req.session untouched
-      // covers the default (resave:false, saved only when modified) — but session_resave
-      // is a supported option, and under it express-session saves the stale copy at
-      // response end regardless. So the save is disarmed for this response, and the
-      // in-memory copy is brought in line for anything that still reads it.
-      writeAccounts(req.session, accounts.filter(a => a.id !== one));
-      (req.session as unknown as { save: (cb?: (e?: unknown) => void) => unknown }).save =
-        (cb) => { cb?.(); return req.session; };
+      await removeAccountFromSession(req, one);
       // The merged update stream still carries the removed account's events;
       // close it and the EventSource reconnects with what remains.
       closeSessionLiveStreams(req.sessionID);
@@ -1061,18 +1026,10 @@ export const api = (config: Config) => {
         const reason = result.reason as unknown;
         if (reason instanceof ApiError && reason.status === StatusCodes.FORBIDDEN) {
           const stubbed = accounts[i].id;
-          void markAccountNeedsReauth(req.sessionID, stubbed).catch(e => {
+          void stubAccountInSession(req, stubbed).catch((e: unknown) => {
             logger.warn({ account: stubbed, detail: String((e as any)?.message) },
               "could not stub an account whose update stream was refused");
           });
-          // And the copy on this request, which under session_resave=true is written
-          // back at response end and would otherwise undo the stub above. Same shape as
-          // the targeted logout: bring the in-memory copy in line, then disarm the save
-          // so nothing writes the whole document over an atomic change.
-          writeAccounts(req.session, accountsOf(req.session).map(a =>
-            a.id === stubbed ? { ...a, token: undefined as unknown as string, needsReauth: true } : a));
-          (req.session as unknown as { save: (cb?: (e?: unknown) => void) => unknown }).save =
-            (cb) => { cb?.(); return req.session; };
         }
         return;
       }
