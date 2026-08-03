@@ -16,7 +16,7 @@ import * as https from "https";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import ipaddr from "ipaddr.js";
-import { accountsOf, evictAccountFromOtherSessions, pullAccountFromSession, rotateSession, sessionCookieClearOptions, throttleKey, usableAccount, writeAccounts } from "./session";
+import { accountsOf, evictAccountFromOtherSessions, markAccountNeedsReauth, pullAccountFromSession, rotateSession, sessionCookieClearOptions, throttleKey, usableAccount, writeAccounts } from "./session";
 import type { SessionAccount } from "./client";
 import { decodeUnifiedCursor, encodeUnifiedCursor, mergeUnifiedRound, totalOf } from "./unified";
 import type { UnifiedCursor, UnifiedCursorEntry, UnifiedRoundInput } from "./unified";
@@ -287,7 +287,8 @@ const destroyStream = (stream: NodeJS.ReadableStream): void =>
   (stream as NodeJS.ReadableStream & { destroy?: () => void }).destroy?.();
 
 const watchWithDeadline = (userId: string, accessToken: string): Promise<NodeJS.ReadableStream> => {
-  const opened = watch(userId, accessToken);
+  const ac = new AbortController();
+  const opened = watch(userId, accessToken, ac.signal);
   let gaveUp = false;
   // A stream that turns up after the deadline still holds an upstream connection, and
   // there is no longer anyone here to read it.
@@ -295,6 +296,9 @@ const watchWithDeadline = (userId: string, accessToken: string): Promise<NodeJS.
   return new Promise<NodeJS.ReadableStream>((resolve, reject) => {
     const timer = setTimeout(() => {
       gaveUp = true;
+      // Cancel it. Without this the request stays pending upstream for as long as that
+      // server keeps the socket, and the 30-second reconnect adds another every time.
+      ac.abort();
       reject(new ApiError(StatusCodes.GATEWAY_TIMEOUT, "Upstream timeout", "upstream_timeout"));
     }, WATCH_OPEN_TIMEOUT_MS);
     opened.then(
@@ -965,15 +969,16 @@ export const api = (config: Config) => {
       // Described as a change, not written as a result — see pullAccountFromSession.
       // Two tabs signing out two different accounts used to overwrite each other, and
       // the loser's account came back with its token intact.
-      const remaining = accounts.filter(a => a.id !== one);
-      await pullAccountFromSession(req.sessionID, one, remaining.find(usableAccount) ?? null);
-      // req.session is deliberately left ALONE from here — not mutated, not saved, not
-      // even reloaded. express-session writes the whole document whenever the in-memory
-      // copy differs from what it loaded, so any of those three puts the read-modify-
-      // write back and undoes the atomic pull above. (Reloading looked safe and was not:
-      // it still left the copy differing from the load, and the automatic save at
-      // response end clobbered a concurrent removal roughly one time in twelve.) This
-      // request has nothing left to read off the session, and the client reloads.
+      await pullAccountFromSession(req.sessionID, one);
+      // Nothing may write the whole document back after that pull, or the read-modify-
+      // write returns and a concurrent removal is undone. Leaving req.session untouched
+      // covers the default (resave:false, saved only when modified) — but session_resave
+      // is a supported option, and under it express-session saves the stale copy at
+      // response end regardless. So the save is disarmed for this response, and the
+      // in-memory copy is brought in line for anything that still reads it.
+      writeAccounts(req.session, accounts.filter(a => a.id !== one));
+      (req.session as unknown as { save: (cb?: (e?: unknown) => void) => unknown }).save =
+        (cb) => { cb?.(); return req.session; };
       // The merged update stream still carries the removed account's events;
       // close it and the EventSource reconnects with what remains.
       closeSessionLiveStreams(req.sessionID);
@@ -1044,7 +1049,22 @@ export const api = (config: Config) => {
     const destroy = destroyStream;
     const kept: Array<{ account: SessionAccount; stream: NodeJS.ReadableStream }> = [];
     settled.forEach((result, i) => {
-      if (result.status !== "fulfilled") return;
+      if (result.status !== "fulfilled") {
+        // A 403 here is WildDuck refusing the token, not the network having a bad
+        // moment — the password changed elsewhere, or the token was revoked. Left
+        // alone the entry keeps its token, stays usable, and the browser retries a
+        // credential that can never work again on every reconnect, while the switcher
+        // shows the account as fine and the unified views stay quietly short. Stub it
+        // so it reads "sign in again"; anything else is genuinely worth retrying.
+        const reason = result.reason as unknown;
+        if (reason instanceof ApiError && reason.status === StatusCodes.FORBIDDEN) {
+          void markAccountNeedsReauth(req.sessionID, accounts[i].id).catch(e => {
+            logger.warn({ account: accounts[i].id, detail: String((e as any)?.message) },
+              "could not stub an account whose update stream was refused");
+          });
+        }
+        return;
+      }
       // The pre-registration window: an account evicted while its watch() was in
       // flight must not come up at all.
       if (wasEvictedSince(accounts[i].id, req.sessionID, openedAt)) destroy(result.value);
@@ -1725,11 +1745,9 @@ export const api = (config: Config) => {
       inbox: Array<{ id: string; unseen: number; total: number }>;
       sent: Array<{ id: string; total: number }>;
     } = null;
-    // Which account owns which mailbox, so a deep link into ANOTHER account's folder
-    // (a bookmark, a link from a unified row) can switch the tab instead of rendering
-    // that folder's mail under this account's sidebar. The server resolves the data
-    // correctly either way — this only keeps the chrome honest.
-    const mailboxAccounts: Record<string, string> = {};
+    // No owner map any more. Deep links re-pin from the `account` each mailbox and
+    // message page now states — the server bound it for that very request, so it is
+    // never partial, where a map missing an account read exactly like "yours".
     if (usableAll.length > 1) {
       // Uncached: these counters seed the client's badges — see mailboxesFor.
       const read = () => Promise.allSettled(usableAll.map(a => mailboxesFor(a, true)));
@@ -1737,10 +1755,6 @@ export const api = (config: Config) => {
       // One retry, because most of these failures are a blink rather than a state.
       if (metas.some(m => m.status !== "fulfilled")) metas = await read();
 
-      metas.forEach((meta, i) => {
-        if (meta.status !== "fulfilled") return;
-        for (const b of meta.value) mailboxAccounts[b.id] = usableAll[i].id;
-      });
 
       // All accounts or none. A missing account still leaves a perfectly usable-looking
       // unified view — but its mailbox ids never enter the client's id sets, so every
@@ -1779,7 +1793,6 @@ export const api = (config: Config) => {
       // the stubs surgical eviction leaves behind — shown as "sign in again".
       accounts: sessionAccounts(req).map(a => ({ id: a.id, username: a.username, needsReauth: !usableAccount(a) })),
       unified,
-      mailboxAccounts,
     };
 
     return res.json({
@@ -1816,7 +1829,12 @@ export const api = (config: Config) => {
       get(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages?${qs.stringify({limit})}`, token(req))
     ])
 
-    res.json({ props: { mailbox, messages }})
+    // Which account this request was BOUND to. The client used to get an owner map in
+    // the layout instead, and a map with an account missing from it — one whose
+    // metadata could not be read — was indistinguishable from "this mailbox is yours",
+    // so the tab silently kept the wrong chrome. Here it is per request and never
+    // partial: bindMailboxAccount above resolved it or the request did not get this far.
+    res.json({ props: { mailbox, messages, account: userId(req) }})
   }))
 
   pages.get("/mailbox/:mailbox/message/:message", pageHandler(async (req, res) => {
@@ -1827,7 +1845,8 @@ export const api = (config: Config) => {
       get(`/users/${userId(req)}/mailboxes/${seg(req.params.mailbox)}/messages/${seg(req.params.message)}?markAsSeen=true`, token(req)) 
     ]);
 
-    res.json({ props: { message, mailbox }})
+    // See the mailbox page above: the bound account, stated rather than inferred.
+    res.json({ props: { message, mailbox, account: userId(req) }})
   }))
 
   return api;

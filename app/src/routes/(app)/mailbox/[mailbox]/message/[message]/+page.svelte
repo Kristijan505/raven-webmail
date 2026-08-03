@@ -1,20 +1,24 @@
 <script lang="ts">
   import type { FullMessage, Mailbox } from "$lib/types";
-  export let data: { mailbox: Mailbox; message: FullMessage };
+  export let data: { mailbox: Mailbox; message: FullMessage; account?: string };
   let mailbox: Mailbox;
   let message: FullMessage;
 
   $: ({ mailbox, message } = data);
   
   import { action, isDrafts, isInbox, isJunk, isSent, isTrash, mailboxName, _delete, _put } from "$lib/util";
-  import { mailboxAccounts, setTabAccount, tabAccount } from "$lib/account";
+  import { setTabAccount, tabAccount } from "$lib/account";
   import { invalidateAll } from "$app/navigation";
 
   // Same re-pin as the mailbox list page. Without it a bookmark or middle-click into
   // another account's message renders under the wrong sidebar, and reply/forward then
   // aim at the ACTIVE account's Drafts with a reference in the other — which the
   // server refuses (assertOwnsMailbox), so the button just fails.
-  $: owner = $mailboxAccounts[mailbox.id];
+  // Stated by the server for THIS request — see the page route. The owner map it
+  // replaced could be missing an account whose metadata failed to load, and absence
+  // there was indistinguishable from "this mailbox is yours", so the tab kept the
+  // wrong sidebar with no way to tell.
+  $: owner = data.account;
   $: if (owner && $tabAccount && owner !== $tabAccount) repin(owner);
 
   // A full reload rebuilds the layout as the owner — but only if the pin survives it.

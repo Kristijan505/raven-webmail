@@ -3,7 +3,7 @@
   import type { Mailbox, User } from "$lib/types";
 	import { RAVEN_SIGNATURE_META_KEY, signature } from "$lib/signature";
 	import { addresses } from "$lib/addresses";
-	import { accounts as accountsStore, mailboxAccounts, setTabAccount } from "$lib/account";
+	import { accounts as accountsStore, setTabAccount } from "$lib/account";
 	import { unifiedInfo, type UnifiedInfo } from "$lib/unified";
 
   export let data: {
@@ -13,7 +13,6 @@
     addresses?: string[];
     accounts?: { id: string; username: string; needsReauth: boolean }[];
     unified?: unknown;
-    mailboxAccounts?: Record<string, string>;
   };
 
   let user: User = data.user;
@@ -35,7 +34,6 @@
   // fallback); pin the tab to it so every later request is explicit.
   $: accountsStore.set(data.accounts ?? []);
   $: unifiedInfo.set((data.unified as UnifiedInfo) ?? null);
-  $: mailboxAccounts.set(data.mailboxAccounts ?? {});
   $: if (data.user?.id) setTabAccount(data.user.id);
 
   // Reactive, not once at mount: the active account can change UNDER this layout —

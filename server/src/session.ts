@@ -216,21 +216,85 @@ export const evictAccountFromOtherSessions = async (userId: string, keepSessionI
  * the first usable entry, and leaving it pointing at the account just removed would
  * hand a rollback build a session speaking for someone who signed out.
  */
-export const pullAccountFromSession = async (
-  sessionId: string,
-  accountId: string,
-  mirror: Authentication | null,
-): Promise<void> => {
+/**
+ * Recompute the legacy `authentication` mirror from whatever `accounts` now holds.
+ *
+ * A pipeline stage rather than a value, so it is derived from the array as it ends up
+ * — computing it from a snapshot in the caller put the concurrency race back one level
+ * down, leaving the mirror naming an account that had just been removed.
+ */
+const MIRROR_STAGE = {
+  $set: {
+    "session.authentication": {
+      $ifNull: [{
+        $first: {
+          $filter: {
+            input: { $ifNull: ["$session.accounts", []] },
+            as: "a",
+            cond: {
+              $and: [
+                { $eq: [{ $type: "$$a.token" }, "string"] },
+                { $gt: [{ $strLenCP: { $ifNull: ["$$a.token", ""] } }, 0] },
+                { $ne: ["$$a.needsReauth", true] },
+              ],
+            },
+          },
+        },
+      }, null],
+    },
+  },
+};
+
+export const pullAccountFromSession = async (sessionId: string, accountId: string): Promise<void> => {
   const store = activeStore;
   const collection = store?.collection;
   if(!collection) throw new Error("session store is not initialized");
   if(!sessionId) throw new Error("pullAccountFromSession requires a session id");
   if(!accountId) throw new Error("pullAccountFromSession requires an account id");
   const idField: string = store.options?.idField ?? "_id";
+  // An aggregation-pipeline update so the mirror is derived from what the array ACTUALLY
+  // becomes. Passing a value computed by the caller reintroduced the race one level
+  // down: two tabs removing A and B each computed the mirror from the same snapshot, so
+  // the survivor could end up as {C} with `authentication` still naming A or B — and the
+  // whole point of that mirror is that a rollback build reads it, which would then
+  // resurrect an account the user signed out.
+  const kept = {
+    $filter: {
+      input: { $ifNull: ["$session.accounts", []] },
+      as: "a",
+      cond: { $ne: ["$$a.id", accountId] },
+    },
+  };
+  await collection.updateOne({ [idField]: sessionId }, [
+    { $set: { "session.accounts": kept } },
+    MIRROR_STAGE,
+  ]);
+};
+
+/**
+ * Mark one account in a stored session as needing re-authentication, atomically.
+ *
+ * The counterpart to the surgical eviction, for the case where WildDuck itself rejects
+ * the token: without it the entry keeps a token, stays `usableAccount`, and the browser
+ * retries a credential that will never work again — every reconnect, forever — while the
+ * switcher never offers "sign in again" and unified views stay quietly short.
+ */
+export const markAccountNeedsReauth = async (sessionId: string, accountId: string): Promise<void> => {
+  const store = activeStore;
+  const collection = store?.collection;
+  if(!collection || !sessionId || !accountId) return;
+  const idField: string = store.options?.idField ?? "_id";
   await collection.updateOne(
     { [idField]: sessionId },
-    { $pull: { "session.accounts": { id: accountId } }, $set: { "session.authentication": mirror } },
+    {
+      $set: { "session.accounts.$[entry].needsReauth": true },
+      $unset: { "session.accounts.$[entry].token": "" },
+    },
+    { arrayFilters: [{ "entry.id": accountId }] },
   );
+  // Recomputed separately: an update cannot mix arrayFilters with a pipeline, and the
+  // mirror must not be left naming the account just stubbed.
+  await collection.updateOne({ [idField]: sessionId }, [MIRROR_STAGE]);
 };
 
 // Only a real trusted-proxy value counts. An explicit trust_proxy=false means

@@ -6,14 +6,6 @@ export type AccountEntry = { id: string; username: string; needsReauth: boolean 
 export const accounts = writable<AccountEntry[]>([]);
 
 /**
- * Which account owns which mailbox, from the layout payload. Only populated once a
- * second account exists — with one account there is nothing to disambiguate. Lets a
- * deep link into another account's folder switch the tab rather than render that
- * folder under the wrong sidebar.
- */
-export const mailboxAccounts = writable<Record<string, string>>({});
-
-/**
  * The account THIS TAB is looking at.
  *
  * Deliberately tab state, not session state: requests carry it explicitly

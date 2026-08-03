@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { goto } from "$app/navigation";
+  import { goto, invalidateAll } from "$app/navigation";
   import type { User } from "$lib/types";
   export let user: User;
   export let open = false;
@@ -39,10 +39,14 @@
       return;
     }
     if (acc.id === $tabAccount) return;
-    setTabAccount(acc.id);
     // Full reload on purpose: the layout, sidebar and every cache on screen belong
-    // to the previous account; a clean slate beats chasing stale state.
-    location.assign("/");
+    // to the previous account; a clean slate beats chasing stale state. But only when
+    // the pin survives the reload — with Web Storage disabled it lives in this document
+    // alone, so a reload would drop it, the layout would pick the first account back,
+    // and switching accounts would be impossible in that environment. Invalidate in
+    // place instead: same fresh data, and the pin stays.
+    if (setTabAccount(acc.id)) location.assign("/");
+    else void goto("/").then(() => invalidateAll());
   };
 
   const addAccount = () => {

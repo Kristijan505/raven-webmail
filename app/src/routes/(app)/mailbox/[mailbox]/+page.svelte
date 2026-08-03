@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Mailbox as MBox, Messages } from "$lib/types";
-  export let data: { mailbox: MBox; messages: Messages };
+  export let data: { mailbox: MBox; messages: Messages; account?: string };
 
   // Local, mutable copy of the loaded data. Child components (Top / Message)
   // mutate `messages` and `mailbox` through `bind:` for optimistic updates
@@ -24,7 +24,7 @@
   import { mailboxName } from "$lib/util";
   import { locale } from "$lib/locale";
   import Mailbox from "$lib/Mailbox/Mailbox.svelte";
-  import { mailboxAccounts, setTabAccount, tabAccount } from "$lib/account";
+  import { setTabAccount, tabAccount } from "$lib/account";
   import { invalidateAll } from "$app/navigation";
 
   // A deep link into ANOTHER account's folder — a bookmark, or a link followed from a
@@ -33,7 +33,11 @@
   // tab points at. Re-pin and reload so the sidebar, folder list and compose all
   // belong to the owner. Guarded on the map being populated, which only happens with
   // more than one account signed in.
-  $: owner = $mailboxAccounts[mailbox.id];
+  // Stated by the server for THIS request — see the page route. The owner map it
+  // replaced could be missing an account whose metadata failed to load, and absence
+  // there was indistinguishable from "this mailbox is yours", so the tab kept the
+  // wrong sidebar with no way to tell.
+  $: owner = data.account;
   $: if (owner && $tabAccount && owner !== $tabAccount) repin(owner);
 
   // A full reload rebuilds the layout as the owner — but only if the pin survives it.

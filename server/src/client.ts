@@ -108,9 +108,17 @@ export const authenticate = async (username: string, password: string): Promise<
   return json;
 }
 
-export const watch = async (userId: string, accessToken: string): Promise<NodeJS.ReadableStream> => {
+export const watch = async (
+  userId: string,
+  accessToken: string,
+  signal?: AbortSignal,
+): Promise<NodeJS.ReadableStream> => {
+  // The caller's deadline needs a way to CANCEL this, not merely to stop awaiting it:
+  // an upstream that never sends headers otherwise leaves the request pending forever,
+  // and the merged stream reconnects every 30 seconds, stacking one more each time.
   const res = await fetch(url(`/users/${userId}/updates`), {
     headers: { "x-access-token": accessToken },
+    signal,
   }).catch(e => {
     throw new ApiError(502, DISPLAY_ERRORS ? String(e?.message) : "Bad Gateway", "bad_gateway");
   })
