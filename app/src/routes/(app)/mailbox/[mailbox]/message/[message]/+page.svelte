@@ -8,16 +8,25 @@
   
   import { action, isDrafts, isInbox, isJunk, isSent, isTrash, mailboxName, _delete, _put } from "$lib/util";
   import { mailboxAccounts, setTabAccount, tabAccount } from "$lib/account";
+  import { invalidateAll } from "$app/navigation";
 
   // Same re-pin as the mailbox list page. Without it a bookmark or middle-click into
   // another account's message renders under the wrong sidebar, and reply/forward then
   // aim at the ACTIVE account's Drafts with a reference in the other — which the
   // server refuses (assertOwnsMailbox), so the button just fails.
   $: owner = $mailboxAccounts[mailbox.id];
-  $: if (owner && $tabAccount && owner !== $tabAccount) {
-    setTabAccount(owner);
-    location.reload();
-  }
+  $: if (owner && $tabAccount && owner !== $tabAccount) repin(owner);
+
+  // A full reload rebuilds the layout as the owner — but only if the pin survives it.
+  // With Web Storage disabled or throwing (a case account.ts supports on purpose) the
+  // pin lives in this document alone, the reload throws it away, the layout falls back
+  // to the first account, and this very guard fires again: a reload loop on a deep link
+  // into somebody else's folder. Invalidating instead re-runs the loads in place, which
+  // is exactly what was wanted and keeps the in-memory pin.
+  const repin = (id: string) => {
+    if (setTabAccount(id)) location.reload();
+    else void invalidateAll();
+  };
   
   import { messageHTML, tooltip, clickable } from "$lib/actions";
   import TabTop from "$lib/Tab/TabTop.svelte";

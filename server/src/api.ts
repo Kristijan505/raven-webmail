@@ -16,7 +16,7 @@ import * as https from "https";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import ipaddr from "ipaddr.js";
-import { accountsOf, evictAccountFromOtherSessions, rotateSession, sessionCookieClearOptions, usableAccount, writeAccounts } from "./session";
+import { accountsOf, evictAccountFromOtherSessions, pullAccountFromSession, rotateSession, sessionCookieClearOptions, throttleKey, usableAccount, writeAccounts } from "./session";
 import type { SessionAccount } from "./client";
 import { decodeUnifiedCursor, encodeUnifiedCursor, mergeUnifiedRound, totalOf } from "./unified";
 import type { UnifiedCursor, UnifiedCursorEntry, UnifiedRoundInput } from "./unified";
@@ -823,6 +823,13 @@ const pinnedGet = async (url: URL, ips: string[], signal: AbortSignal): Promise<
   throw lastErr ?? new Error("No reachable address for image host");
 };
 
+// The rate-limit identity for a request. Anonymous callers key off the session id and
+// nothing is minted for them; an authenticated one gets the durable key that survives
+// rotation (session.ts). Every route these limiters guard is authenticated, so the mint
+// happens on a session that is already being written anyway.
+const throttleId = (req: Request): string =>
+  req.session && accountsOf(req.session).length ? throttleKey(req.session) : (req.sessionID ?? "unauthenticated");
+
 // Brute-force / credential-stuffing protection for the login endpoint. Only
 // failed attempts count (skipSuccessfulRequests), so legitimate users are never
 // locked out; keyed by client IP (honors trust proxy).
@@ -849,9 +856,11 @@ const passwordChangeLimiter = rateLimit({
   limit: LOGIN_RATE_MAX,
   skipSuccessfulRequests: true,
   skip: (req) => req.body?.password == null,
-  // Keyed per SESSION (one browser = one human): with several accounts signed
-  // in, switching accounts must not hand out a fresh bucket.
-  keyGenerator: (req) => req.sessionID ?? "unauthenticated",
+  // Keyed per BROWSER (one browser = one human): with several accounts signed in,
+  // switching accounts must not hand out a fresh bucket — and neither must ROTATING
+  // the session, which is what the session id alone amounted to. throttleKey() spells
+  // out the brute force that opened up.
+  keyGenerator: (req) => throttleId(req),
   standardHeaders: true,
   legacyHeaders: false,
   message: (req: Request) => ({ error: { status: 429, message: errMsg(req, "too_many_attempts", "Too many attempts, please try again later") } }),
@@ -866,7 +875,9 @@ const passwordChangeLimiter = rateLimit({
 const sessionLimiter = (name: string, limit: number) => rateLimit({
   windowMs: LOGIN_RATE_WINDOW_MS,
   limit,
-  keyGenerator: (req: Request) => `${name}:${req.sessionID ?? "unauthenticated"}`,
+  // Same rotation-proof identity as the password throttle: a budget one can refill by
+  // signing an account in is not a budget.
+  keyGenerator: (req: Request) => `${name}:${throttleId(req)}`,
   standardHeaders: true,
   legacyHeaders: false,
   message: (req: Request) => ({ error: { status: 429, message: errMsg(req, "too_many_attempts", "Too many attempts, please try again later") } }),
@@ -951,10 +962,18 @@ export const api = (config: Config) => {
       return;
     }
     if (one && accounts.some(a => a.id !== one && usableAccount(a))) {
-      writeAccounts(req.session, accounts.filter(a => a.id !== one));
-      await new Promise<void>((resolve, reject) => {
-        req.session.save(err => err ? reject(err) : resolve());
-      });
+      // Described as a change, not written as a result — see pullAccountFromSession.
+      // Two tabs signing out two different accounts used to overwrite each other, and
+      // the loser's account came back with its token intact.
+      const remaining = accounts.filter(a => a.id !== one);
+      await pullAccountFromSession(req.sessionID, one, remaining.find(usableAccount) ?? null);
+      // req.session is deliberately left ALONE from here — not mutated, not saved, not
+      // even reloaded. express-session writes the whole document whenever the in-memory
+      // copy differs from what it loaded, so any of those three puts the read-modify-
+      // write back and undoes the atomic pull above. (Reloading looked safe and was not:
+      // it still left the copy differing from the load, and the automatic save at
+      // response end clobbered a concurrent removal roughly one time in twelve.) This
+      // request has nothing left to read off the session, and the client reloads.
       // The merged update stream still carries the removed account's events;
       // close it and the EventSource reconnects with what remains.
       closeSessionLiveStreams(req.sessionID);

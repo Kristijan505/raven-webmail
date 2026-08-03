@@ -82,11 +82,20 @@ import { locale } from "$lib/locale";
   const UNIFIED_BULK_BATCH = 500;
 
   const unifiedBulk = action(async (act: "trash" | "spam") => {
-    const items = selection.map(m => ({ mailbox: m.mailbox ?? mailbox.id, message: m.id }));
-    for(let i = 0; i < items.length; i += UNIFIED_BULK_BATCH) {
-      await _put("/api/unified/messages", { action: act, items: items.slice(i, i + UNIFIED_BULK_BATCH) });
+    const all = [...selection];
+    for(let i = 0; i < all.length; i += UNIFIED_BULK_BATCH) {
+      const batch = all.slice(i, i + UNIFIED_BULK_BATCH);
+      await _put("/api/unified/messages", {
+        action: act,
+        items: batch.map(m => ({ mailbox: m.mailbox ?? mailbox.id, message: m.id })),
+      });
+      // Each batch is its own committed request, so the screen has to follow it batch by
+      // batch. Clearing only at the end meant a later failure left the earlier messages
+      // already moved while every row stayed listed and selected — and a retry then
+      // aimed at ids that had moved out from under it.
+      selection = batch;
+      removeSelection();
     }
-    removeSelection();
   });
 
   const moveUnified = action(async (to: Mailbox) => {

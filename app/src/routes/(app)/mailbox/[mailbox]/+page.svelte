@@ -25,6 +25,7 @@
   import { locale } from "$lib/locale";
   import Mailbox from "$lib/Mailbox/Mailbox.svelte";
   import { mailboxAccounts, setTabAccount, tabAccount } from "$lib/account";
+  import { invalidateAll } from "$app/navigation";
 
   // A deep link into ANOTHER account's folder — a bookmark, or a link followed from a
   // unified row. The server already resolved the mail correctly (the path mailbox
@@ -33,10 +34,18 @@
   // belong to the owner. Guarded on the map being populated, which only happens with
   // more than one account signed in.
   $: owner = $mailboxAccounts[mailbox.id];
-  $: if (owner && $tabAccount && owner !== $tabAccount) {
-    setTabAccount(owner);
-    location.reload();
-  }
+  $: if (owner && $tabAccount && owner !== $tabAccount) repin(owner);
+
+  // A full reload rebuilds the layout as the owner — but only if the pin survives it.
+  // With Web Storage disabled or throwing (a case account.ts supports on purpose) the
+  // pin lives in this document alone, the reload throws it away, the layout falls back
+  // to the first account, and this very guard fires again: a reload loop on a deep link
+  // into somebody else's folder. Invalidating instead re-runs the loads in place, which
+  // is exactly what was wanted and keeps the in-memory pin.
+  const repin = (id: string) => {
+    if (setTabAccount(id)) location.reload();
+    else void invalidateAll();
+  };
 </script>
 
 <svelte:head>

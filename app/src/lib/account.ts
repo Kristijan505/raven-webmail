@@ -33,7 +33,13 @@ const stored = (): string | null => {
 
 export const tabAccount = writable<string | null>(stored());
 
-export const setTabAccount = (id: string | null): void => {
+/**
+ * Returns whether the choice actually PERSISTED. Storage can be disabled or throw, and
+ * then the pin lives only in this document — so a caller that was about to reload has
+ * to know, or the reload discards it and the guard that triggered the reload sees the
+ * same mismatch again, forever.
+ */
+export const setTabAccount = (id: string | null): boolean => {
   tabAccount.set(id);
   try {
     if (id) {
@@ -45,7 +51,11 @@ export const setTabAccount = (id: string | null): void => {
       // one has just signed out of or been evicted from.
       localStorage.removeItem(SEED_KEY);
     }
-  } catch { /* the choice still holds for this tab's lifetime */ }
+    return true;
+  } catch {
+    // The choice still holds for this document's lifetime — but not past a reload.
+    return false;
+  }
 };
 
 /**

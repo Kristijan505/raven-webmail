@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import ExpressSession from "express-session";
 import MongoSession from "connect-mongodb-session";
 import type { CookieOptions, Request } from "express";
@@ -37,6 +38,28 @@ export const writeAccounts = (session: SessionData, accounts: SessionAccount[]):
 };
 
 /**
+ * A rate-limit identity for this browser that survives session rotation.
+ *
+ * The password-attempt throttle is per browser rather than per account on purpose —
+ * switching accounts must not hand out a fresh bucket. Keying it on the session ID
+ * looked like the way to say that, and it handed out a fresh bucket anyway: adding an
+ * account rotates the ID, and a SUCCESSFUL login is not counted by the login throttle
+ * either. So a stolen multi-account session could burn its allowance of current-password
+ * guesses against the victim, add an account the attacker controls, come back with a new
+ * ID and an empty bucket, and repeat without limit — an offline-speed brute force
+ * against the one credential that gates account takeover.
+ *
+ * Minted once and carried by rotateSession, so the bucket follows the browser and not
+ * the cookie value. A genuinely fresh login (regenerate, not rotate) does mint a new one
+ * — correctly: that path replaces the account bag outright, so the session it produces
+ * can no longer reach the victim's account at all.
+ */
+export const throttleKey = (session: SessionData): string => {
+  if(!session.throttleKey) session.throttleKey = randomUUID();
+  return session.throttleKey;
+};
+
+/**
  * Give this browser a NEW session id, carrying its authentication across.
  *
  * Without this, evicting "every session except the current one" cannot remediate the
@@ -61,11 +84,15 @@ export const rotateSession = (req: Request): Promise<void> => {
   // that holds several signed-in accounts must not quietly drop all but one of them.
   const carried = req.session.authentication;
   const carriedAccounts = req.session.accounts;
+  // The throttle bucket rides along too — see throttleKey. Rotating away from it is
+  // what made the password-attempt limit resettable on demand.
+  const carriedThrottle = req.session.throttleKey;
   return new Promise<void>((resolve, reject) => {
     req.session.regenerate(err => {
       if(err) return reject(err);
       req.session.authentication = carried;
       if(carriedAccounts) req.session.accounts = carriedAccounts;
+      if(carriedThrottle) req.session.throttleKey = carriedThrottle;
       req.session.save(saveErr => saveErr ? reject(saveErr) : resolve());
     });
   });
@@ -174,6 +201,37 @@ export const evictAccountFromOtherSessions = async (userId: string, keepSessionI
   await collection.updateMany(ops.clearMirror.filter, ops.clearMirror.update);
   return (del?.deletedCount ?? 0) + (stub?.modifiedCount ?? 0);
 }
+
+/**
+ * Remove ONE account from a stored session, atomically.
+ *
+ * Deliberately a targeted $pull rather than read-modify-write. express-session saves the
+ * whole document, so two tabs signing out two different accounts each read {A,B,C} and
+ * each write their own complete copy — {B,C} and {A,C} — and whichever lands last
+ * resurrects the account the other just removed, token and all, which the reconnecting
+ * update stream then happily subscribes to again. A $pull describes the change instead
+ * of the result, so both survive in either order.
+ *
+ * The legacy `authentication` mirror is rewritten in the same update: it is only ever
+ * the first usable entry, and leaving it pointing at the account just removed would
+ * hand a rollback build a session speaking for someone who signed out.
+ */
+export const pullAccountFromSession = async (
+  sessionId: string,
+  accountId: string,
+  mirror: Authentication | null,
+): Promise<void> => {
+  const store = activeStore;
+  const collection = store?.collection;
+  if(!collection) throw new Error("session store is not initialized");
+  if(!sessionId) throw new Error("pullAccountFromSession requires a session id");
+  if(!accountId) throw new Error("pullAccountFromSession requires an account id");
+  const idField: string = store.options?.idField ?? "_id";
+  await collection.updateOne(
+    { [idField]: sessionId },
+    { $pull: { "session.accounts": { id: accountId } }, $set: { "session.authentication": mirror } },
+  );
+};
 
 // Only a real trusted-proxy value counts. An explicit trust_proxy=false means
 // "not behind a proxy", so it must NOT enable proxy-derived cookie handling

@@ -12,6 +12,9 @@ declare module "express-session" {
     // Every account signed into this browser session. Read through accountsOf()
     // (session.ts), which shims sessions created before this field existed.
     accounts?: SessionAccount[] | null
+    // Rate-limit identity for this BROWSER, carried across session rotation.
+    // See throttleKey() in session.ts for why the session id could not be it.
+    throttleKey?: string
   }
 }
 

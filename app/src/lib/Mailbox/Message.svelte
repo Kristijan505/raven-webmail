@@ -66,6 +66,7 @@
   import { locale } from "$lib/locale";
   import { _open } from "$lib/Compose/compose";
   import { setTabAccount, tabAccount } from "$lib/account";
+  import { goto } from "$app/navigation";
   import { get as getStore } from "svelte/store";
   const getTabAccount = () => getStore(tabAccount);
   const flag = action(async () => {
@@ -100,9 +101,13 @@
       if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
       event.preventDefault();
       event.stopPropagation();
-      setTabAccount(row.account.id);
-      // Force a real document load, so the layout is rebuilt as the owner.
-      location.assign(`/mailbox/${row.mailbox ?? mailbox.id}/message/${row.id}`);
+      const to = `/mailbox/${row.mailbox ?? mailbox.id}/message/${row.id}`;
+      // A real document load rebuilds the layout as the owner — but only when the pin
+      // survives it. With Web Storage disabled the pin lives in this document alone, so
+      // a document load would drop it and land on the wrong account; a client-side
+      // navigation keeps it, and the destination's own guard invalidates from there.
+      if (setTabAccount(row.account.id)) location.assign(to);
+      else void goto(to);
       return;
     }
     if(isDrafts(mailbox)) {
