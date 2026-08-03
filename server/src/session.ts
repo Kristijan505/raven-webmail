@@ -53,10 +53,37 @@ export const writeAccounts = (session: SessionData, accounts: SessionAccount[]):
  * the cookie value. A genuinely fresh login (regenerate, not rotate) does mint a new one
  * — correctly: that path replaces the account bag outright, so the session it produces
  * can no longer reach the victim's account at all.
+ *
+ * Called at LOGIN, where the session is written anyway, and nowhere else. Minting it
+ * lazily on first use was its own bypass: concurrent requests on a session that has no
+ * key yet each load the same keyless copy, each mint a DIFFERENT id, and each therefore
+ * get their own ten guesses. The reader (throttleId in api.ts) never mints — a session
+ * without a key falls back to its id, which is at least shared.
  */
 export const throttleKey = (session: SessionData): string => {
   if(!session.throttleKey) session.throttleKey = randomUUID();
   return session.throttleKey;
+};
+
+/**
+ * The account bag as the STORE holds it right now.
+ *
+ * rotateSession carries the bag forward, and the copy on the request can be older than
+ * the record: a tab signing an account out lands its atomic $pull while another tab is
+ * midway through adding one, and carrying that stale snapshot into the new session
+ * resurrects the account that was just removed, token and all. Re-reading immediately
+ * before the rotation narrows that to the microseconds inside regenerate(); closing it
+ * completely would need the whole login to hold a lock, which is not worth what it
+ * costs on a path this hot.
+ */
+export const readStoredAccounts = async (sessionId: string): Promise<SessionAccount[] | null> => {
+  const store = activeStore;
+  const collection = store?.collection;
+  if(!collection || !sessionId) return null;
+  const idField: string = store.options?.idField ?? "_id";
+  const doc = await collection.findOne({ [idField]: sessionId }).catch(() => null);
+  const accounts = doc?.session?.accounts;
+  return Array.isArray(accounts) ? accounts as SessionAccount[] : null;
 };
 
 /**
@@ -79,11 +106,13 @@ export const throttleKey = (session: SessionData): string => {
  * before the caller deletes anything, so a crash between the two cannot leave the user
  * holding a session id with no authentication on it.
  */
-export const rotateSession = (req: Request): Promise<void> => {
+export const rotateSession = async (req: Request): Promise<void> => {
   // Carry the WHOLE account bag, not just the legacy mirror — rotating away a session
   // that holds several signed-in accounts must not quietly drop all but one of them.
+  // Read from the STORE rather than from this request: see readStoredAccounts.
   const carried = req.session.authentication;
-  const carriedAccounts = req.session.accounts;
+  const stored = await readStoredAccounts(req.sessionID);
+  const carriedAccounts = stored ?? req.session.accounts;
   // The throttle bucket rides along too — see throttleKey. Rotating away from it is
   // what made the password-attempt limit resettable on demand.
   const carriedThrottle = req.session.throttleKey;

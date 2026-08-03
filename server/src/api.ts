@@ -832,7 +832,7 @@ const pinnedGet = async (url: URL, ips: string[], signal: AbortSignal): Promise<
 // rotation (session.ts). Every route these limiters guard is authenticated, so the mint
 // happens on a session that is already being written anyway.
 const throttleId = (req: Request): string =>
-  req.session && accountsOf(req.session).length ? throttleKey(req.session) : (req.sessionID ?? "unauthenticated");
+  req.session?.throttleKey ?? req.sessionID ?? "unauthenticated";
 
 // Brute-force / credential-stuffing protection for the login endpoint. Only
 // failed attempts count (skipSuccessfulRequests), so legitimate users are never
@@ -934,6 +934,7 @@ export const api = (config: Config) => {
       await rotateSession(req);
       closeSessionLiveStreams(preRotateSession);
       writeAccounts(req.session, [...sessionAccounts(req).filter(a => a.id !== v.id), v]);
+      throttleKey(req.session); // established here, never minted lazily — see session.ts
       await new Promise<void>((resolve, reject) => {
         req.session.save(err => err ? reject(err) : resolve());
       });
@@ -945,6 +946,7 @@ export const api = (config: Config) => {
       req.session.regenerate(err => err ? reject(err) : resolve());
     });
     writeAccounts(req.session, [v]);
+    throttleKey(req.session);
     await new Promise<void>((resolve, reject) => {
       req.session.save(err => err ? reject(err) : resolve());
     });
@@ -1058,10 +1060,19 @@ export const api = (config: Config) => {
         // so it reads "sign in again"; anything else is genuinely worth retrying.
         const reason = result.reason as unknown;
         if (reason instanceof ApiError && reason.status === StatusCodes.FORBIDDEN) {
-          void markAccountNeedsReauth(req.sessionID, accounts[i].id).catch(e => {
-            logger.warn({ account: accounts[i].id, detail: String((e as any)?.message) },
+          const stubbed = accounts[i].id;
+          void markAccountNeedsReauth(req.sessionID, stubbed).catch(e => {
+            logger.warn({ account: stubbed, detail: String((e as any)?.message) },
               "could not stub an account whose update stream was refused");
           });
+          // And the copy on this request, which under session_resave=true is written
+          // back at response end and would otherwise undo the stub above. Same shape as
+          // the targeted logout: bring the in-memory copy in line, then disarm the save
+          // so nothing writes the whole document over an atomic change.
+          writeAccounts(req.session, accountsOf(req.session).map(a =>
+            a.id === stubbed ? { ...a, token: undefined as unknown as string, needsReauth: true } : a));
+          (req.session as unknown as { save: (cb?: (e?: unknown) => void) => unknown }).save =
+            (cb) => { cb?.(); return req.session; };
         }
         return;
       }
