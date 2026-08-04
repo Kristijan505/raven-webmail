@@ -224,8 +224,20 @@ const miniMongo = (docs: any[]) => {
             fn(parent, parts[parts.length - 1]);
           }
         };
+        // Refuse what this fake cannot honour. It used to apply $set and $unset and walk
+        // past everything else in silence, so the version bump the eviction now depends
+        // on was simply not there — and the test still passed, still claiming to pin the
+        // update end to end. A fake that shrugs at an operator it does not implement
+        // reports success for code it never ran.
+        const known = new Set(["$set", "$unset", "$inc"]);
+        for (const op of Object.keys(update)) {
+          if (!known.has(op)) throw new Error(`miniMongo does not implement ${op}`);
+        }
         for (const [path, v] of Object.entries(update.$set ?? {})) applyPath(path, (parent, key) => { parent[key] = v; });
         for (const path of Object.keys(update.$unset ?? {})) applyPath(path, (parent, key) => { delete parent[key]; });
+        for (const [path, v] of Object.entries(update.$inc ?? {})) {
+          applyPath(path, (parent, key) => { parent[key] = (parent[key] ?? 0) + (v as number); });
+        }
       }
       return { modifiedCount };
     },
@@ -276,5 +288,28 @@ describe("buildEvictionOps — surgical eviction, pinned end to end", () => {
     // assert, was wrong whenever the session still held an account of its own.
     expect((ops.mirrorFilter as any)["session.accounts"]).toEqual({ $elemMatch: { id: "u1" } });
     expect((keep.session.accounts as any[])[0].token).toBe("t-keep"); // keep untouched
+  });
+
+  it("bumps the document version in the same update as the stub", () => {
+    // Without this the eviction is undone by any peer request that loaded the session
+    // moments earlier: its base version still matches, so the compare-and-swap lets its
+    // whole pre-eviction snapshot through and the stripped token comes back. Measured on
+    // the repro under session_resave: 10 of 10 rounds restored it.
+    const colleague = { _id: "s2", session: {
+      rev: 7,
+      accounts: [{ id: "u1", username: "shared@x", token: "t1" }, { id: "u2", token: "t2" }],
+    } };
+    const untouched = { _id: "s9", session: { rev: 3, accounts: [{ id: "u3", token: "t3" }] } };
+    const db = miniMongo([colleague, untouched]);
+    db.updateMany(ops.stubAccounts.filter, ops.stubAccounts.update, ops.stubAccounts.options);
+    expect(colleague.session.rev).toBe(8);
+    expect(untouched.session.rev).toBe(3);   // a session that holds nothing of u1's stays put
+  });
+
+  it("versions a session that predates versioning", () => {
+    // Upgrade, not migration: the field simply appears on the first write.
+    const legacyDoc = { _id: "s5", session: { accounts: [{ id: "u1", token: "t1" }] } } as any;
+    miniMongo([legacyDoc]).updateMany(ops.stubAccounts.filter, ops.stubAccounts.update, ops.stubAccounts.options);
+    expect(legacyDoc.session.rev).toBe(1);
   });
 });

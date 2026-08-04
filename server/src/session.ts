@@ -331,6 +331,10 @@ export const buildEvictionOps = (userId: string, keepSessionId: string, idField:
     update: {
       $set: { "session.accounts.$[entry].needsReauth": true },
       $unset: { "session.accounts.$[entry].token": "" },
+      // Same reason as editAccounts: without the bump a peer request that loaded this
+      // session a moment ago still writes its whole pre-eviction snapshot back at the
+      // end of its response, and the stub is undone.
+      $inc: { "session.rev": 1 },
     },
     options: { arrayFilters: [{ "entry.id": userId }] },
   },
@@ -396,6 +400,98 @@ export const evictAccountFromOtherSessions = async (userId: string, keepSessionI
  * — computing it from a snapshot in the caller put the concurrency race back one level
  * down, leaving the mirror naming an account that had just been removed.
  */
+/**
+ * ═══ Compare-and-swap on a session document version. ═══
+ *
+ * express-session persists the WHOLE session at the end of a response. Every surgical
+ * write in this file exists because of that, but they only cover writes THIS request
+ * makes; a peer request that loaded the document a moment earlier still ends by writing
+ * its own complete, now-stale snapshot. Under session_resave it does so even when it
+ * changed nothing. That undoes a surgical eviction outright: the evicted account's
+ * WildDuck token comes back and needsReauth is cleared, while the password change has
+ * already reported sessionsEvicted: true — a sign-out the user was told happened, and
+ * did not. Measured on the repro: 10 of 10 rounds restored the token.
+ *
+ * So a write now has to state which version it is replacing. `session.rev` is bumped by
+ * every write — express-session's and the surgical ones below — and a write whose base
+ * version is no longer the stored one is DROPPED rather than applied. The stale peer
+ * loses its snapshot instead of the eviction losing its effect.
+ *
+ * Three details worth keeping:
+ *
+ *   * The base version is tracked in a WeakMap keyed by the in-memory session, NOT by
+ *     mutating it. express-session hashes the session to decide whether to save, and it
+ *     takes that hash BEFORE calling the store — so bumping a field on the object during
+ *     a save makes it look modified again and provokes a second, pointless write on
+ *     every login. The map also keeps a request that saves twice (add-account rotates,
+ *     then writes the bag) from refusing its own second write.
+ *   * No upsert once a session has a version. The library upserts unconditionally, which
+ *     silently RESURRECTS a session another request destroyed or claimed away. Only a
+ *     session that has never been stored — regenerate() hands back exactly that — is
+ *     allowed to create its document.
+ *   * A refusal is not an error. It is the correct outcome for a stale write, and
+ *     failing the response would turn one lost race into a 500 on an unrelated request.
+ *     They are counted so the repro can assert the mechanism actually fired.
+ */
+let casRefused = 0;
+/** How many stale session writes have been dropped — see withCas. */
+export const sessionWritesRefused = (): number => casRefused;
+
+const sessionBaseRev = new WeakMap<object, number>();
+
+const withCas = (store: any): any => {
+  const idField: string = store.options?.idField ?? "_id";
+  const expiresKey: string = store.options?.expiresKey ?? "expires";
+  const defaultExpires: number = store.options?.expires ?? 0;
+
+  store.set = function(id: string, session: any, callback?: (e?: unknown) => void) {
+    const sess: Record<string, unknown> = {};
+    for(const key in session) {
+      sess[key] = (key === "cookie" && session[key]?.toJSON) ? session[key].toJSON() : session[key];
+    }
+    // What this request believes it is replacing: what it already wrote in this same
+    // request, else what it loaded. Anything else means it never saw a stored document.
+    const tracked = sessionBaseRev.get(session);
+    const loaded = typeof session?.rev === "number" ? session.rev : null;
+    const base = tracked ?? loaded;
+    const next = (base ?? 0) + 1;
+    sess.rev = next;
+    const expires = session?.cookie?.expires
+      ? new Date(session.cookie.expires)
+      : new Date(Date.now() + defaultExpires);
+    const filter = base === null
+      // Never stored — or stored by a build from before versions existed, which is what
+      // makes this an upgrade rather than a migration: the first write adds the field.
+      ? { [idField]: id, "session.rev": { $exists: false } }
+      : { [idField]: id, "session.rev": base };
+    Promise.resolve(store.collection.updateOne(
+      filter,
+      { $set: { session: sess, [expiresKey]: expires } },
+      base === null ? { upsert: true } : {},
+    )).then((res: any) => {
+      if((res?.matchedCount ?? 0) > 0 || (res?.upsertedCount ?? 0) > 0) sessionBaseRev.set(session, next);
+      else casRefused++;
+      process.nextTick(() => callback?.());
+    }).catch((e: any) => {
+      // A racing upsert lost the insert: the document appeared between the filter and
+      // the write, so this snapshot is stale by definition. Same outcome, not an error.
+      if(e?.code === 11000) { casRefused++; process.nextTick(() => callback?.()); return; }
+      process.nextTick(() => callback?.(e));
+    });
+  };
+  return store;
+};
+
+/**
+ * Bump the document version from within a surgical update.
+ *
+ * Paired with every direct write, or the CAS above would let a peer's stale snapshot
+ * through unchallenged — its base version would still match.
+ */
+const REV_STAGE = {
+  $set: { "session.rev": { $add: [{ $ifNull: ["$session.rev", 0] }, 1] } },
+};
+
 const MIRROR_STAGE = {
   $set: {
     "session.authentication": {
@@ -456,7 +552,13 @@ const editAccounts = async (
   const { collection, idField } = storeHandle()!;
   if(!req.sessionID) throw new Error("editAccounts requires a session id");
   const key = { [idField]: req.sessionID };
-  const res = await collection.updateOne(key, update, options);
+  // The version rides along with the change itself, in the same update, so there is no
+  // instant where the bag has moved on but the version says otherwise. A pipeline takes
+  // a stage; an arrayFilters update takes $inc (no caller passes one of its own).
+  const versioned = Array.isArray(update)
+    ? [...update, REV_STAGE]
+    : { ...update, $inc: { "session.rev": 1 } };
+  const res = await collection.updateOne(key, versioned, options);
   // Matched nothing: a rotation (add-account, password change) claimed this session away
   // while we were on our way here. Reporting success would be a lie with consequences —
   // the rotation rebuilds its bag from the copy it claimed, which still holds the
@@ -571,10 +673,10 @@ export const session = (config: Config) => {
       sameSite: config.session_cookie_same_site || "lax",
       domain: config.session_cookie_domain || undefined,
     },
-    store: activeStore = new MongoStore({
+    store: activeStore = withCas(new MongoStore({
       uri: config.mongodb_url,
       collection: "sessions-v2",
       expires: maxAge,
-    })
+    }))
   })
 }
