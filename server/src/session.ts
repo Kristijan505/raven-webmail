@@ -98,6 +98,31 @@ const storeHandle = (required = true): { collection: any; idField: string } | nu
   return { collection, idField: store.options?.idField ?? "_id" };
 };
 
+/**
+ * Take this session out of the store and return the bag it held — atomically, so that
+ * exactly ONE caller can succeed.
+ *
+ * Merely checking that the session still exists is not enough: two tabs adding two
+ * different accounts both see it, both rotate, and each mints its own replacement from
+ * the same starting bag. One addition is lost, one orphan session is left behind, and
+ * whichever Set-Cookie the browser sees last decides which. A delete is the claim: the
+ * loser gets null and is told to reload onto the session that won.
+ *
+ * The window this opens is narrow and its failure is recoverable — if the regenerate
+ * that follows fails, the browser is logged out rather than left holding two truths.
+ */
+const claimStoredSession = async (sessionId: string): Promise<SessionAccount[] | null> => {
+  const handle = sessionId ? storeHandle(false) : null;
+  if(!handle) return null;
+  const { collection, idField } = handle;
+  const res = await collection.findOneAndDelete({ [idField]: sessionId }).catch(() => null);
+  // Driver versions differ on whether the document comes back wrapped in `value`.
+  const doc = (res && typeof res === "object" && "value" in res) ? (res as any).value : res;
+  if(!doc) return null;
+  const accounts = doc?.session?.accounts;
+  return Array.isArray(accounts) ? accounts as SessionAccount[] : [];
+};
+
 export const readStoredAccounts = async (sessionId: string): Promise<SessionAccount[] | null> => {
   const handle = sessionId ? storeHandle(false) : null;
   if(!handle) return null;
@@ -131,17 +156,21 @@ export const rotateSession = async (req: Request): Promise<void> => {
   // Carry the WHOLE account bag, not just the legacy mirror — rotating away a session
   // that holds several signed-in accounts must not quietly drop all but one of them.
   // Read from the STORE rather than from this request: see readStoredAccounts.
-  const carried = req.session.authentication;
+  // The bag from the STORE, falling back to this request's view — accountsOf shims a
+  // pre-multi-account session, whose only record is the legacy mirror.
   const stored = await readStoredAccounts(req.sessionID);
-  const carriedAccounts = stored ?? req.session.accounts;
+  const carriedAccounts = stored ?? accountsOf(req.session);
   // The throttle bucket rides along too — see throttleKey. Rotating away from it is
   // what made the password-attempt limit resettable on demand.
   const carriedThrottle = req.session.throttleKey;
   return new Promise<void>((resolve, reject) => {
     req.session.regenerate(err => {
       if(err) return reject(err);
-      req.session.authentication = carried;
-      if(carriedAccounts) req.session.accounts = carriedAccounts;
+      // writeAccounts, not two assignments: the mirror is DERIVED from the bag being
+      // carried. Carrying `authentication` separately meant the refreshed bag could say
+      // {B} while the mirror still held A's token — an account another tab had just
+      // signed out, resurrected for any rollback build that reads the mirror.
+      writeAccounts(req.session, carriedAccounts);
       if(carriedThrottle) req.session.throttleKey = carriedThrottle;
       req.session.save(saveErr => saveErr ? reject(saveErr) : resolve());
     });
@@ -164,10 +193,21 @@ export const establishSession = async (
   req: Request,
   mode: "fresh" | "add",
   account: SessionAccount,
-): Promise<{ previousId: string }> => {
+): Promise<{ previousId: string } | null> => {
   const previousId = req.sessionID;
   if(mode === "add") {
-    await rotateSession(req);
+    // Claim the session before rotating — see claimStoredSession. Only one concurrent
+    // add can win it; the other is told to reload.
+    const claimed = await claimStoredSession(previousId);
+    if(!claimed) return null;
+    const carriedThrottle = req.session.throttleKey;
+    await new Promise<void>((resolve, reject) => {
+      req.session.regenerate(err => err ? reject(err) : resolve());
+    });
+    // The bag as the store held it at the moment of the claim, not as this request
+    // remembers it: a sign-out that landed in between is already reflected in it.
+    writeAccounts(req.session, claimed);
+    if(carriedThrottle) req.session.throttleKey = carriedThrottle;
     // Signing into an account already present (including a re-auth stub) REPLACES its
     // entry: that is how a stubbed shared mailbox comes back after its password changed
     // elsewhere.

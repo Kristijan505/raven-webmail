@@ -85,11 +85,20 @@
     // Re-read the layout on reconnect and the switcher shows the re-auth stub at
     // once, instead of keeping a dead account on screen until the next navigation.
     // Debounced because EventSource also errors on ordinary network blips.
+    // Once per OUTAGE, not once per failed reconnect. EventSource re-errors on every
+    // retry while the backend is down, and re-arming the timer each time had every open
+    // tab reloading its layout — and fanning out fresh user and mailbox calls — on a
+    // loop, against a backend that is already failing. The flag clears when the stream
+    // actually speaks again, so the next genuine drop still resyncs.
     let resync: any;
+    let resynced = false;
     stream.onerror = () => {
+      if(resynced) return;
+      resynced = true;
       clearTimeout(resync);
       resync = setTimeout(() => { void invalidateAll().catch(() => {}); }, 1500);
     };
+    stream.onopen = () => { resynced = false; };
     stream.onmessage = (event) => {
       const data = JSON.parse(event.data);
       if(data.command === "COUNTERS") {

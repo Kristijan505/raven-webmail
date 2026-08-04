@@ -54,7 +54,7 @@
   import { FETCHABLE_ATTRS, stripSelfProxyRefs } from "$lib/actions";
   // sanitize/PURIFY_OPTS live in their own module because the From selector needs
   // them too, to swap a draft's signature when the sending account changes.
-  import { PURIFY_OPTS, sanitize, signatureBlock } from "./sanitize";
+  import { PURIFY_OPTS, SIGNATURE_MARK, sanitize, signatureBlock } from "./sanitize";
   import { tabAccount } from "$lib/account";
   import { onMount } from "svelte";
   import { add } from "$lib/actions";
@@ -79,7 +79,11 @@
   // so a remote <img>/srcset/CSS url() would fetch (tracking) on open. Inline refs
   // stay. Applied to quoted HTML only — never to the user's signature.
   const stripRemote = (html: string): string => {
-    const div = DOMPurify.sanitize(html || "", PURIFY_OPTS) as HTMLElement;
+    // The signature marker goes too. Quoted content is a message WE may have sent, so
+    // it can carry a marked signature block of its own — and the From selector's swap
+    // looks for that attribute. With the composer's own signature deleted, the swap
+    // would find the quoted sender's and rewrite part of the quote.
+    const div = DOMPurify.sanitize(html || "", { ...PURIFY_OPTS, FORBID_ATTR: [...PURIFY_OPTS.FORBID_ATTR, SIGNATURE_MARK] }) as HTMLElement;
     // Our own proxy first: a same-origin /api/proxy-image URL is allowed by the CSP the
     // compose iframe inherits (img-src 'self'), so naming it turns an authenticated
     // endpoint into the attacker's fetcher — no opt-in, no click. Mail never points at

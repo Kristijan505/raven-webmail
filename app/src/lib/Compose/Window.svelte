@@ -411,7 +411,11 @@ import { locale } from "$lib/locale";
   </div>
   <div class="window-contents">
     <x-metadata>
-      {#if fromChoices.length > 1}
+      <!-- Also shown when the draft's own account is no longer among the choices: it
+           was stubbed while this window stayed open, so every save and Send now fails,
+           and hiding the control would leave the writing stranded with no way to move
+           it. One remaining account is exactly when that matters most. -->
+      {#if fromChoices.length > 1 || (fromId && !fromChoices.some(a => a.id === fromId))}
         <label class="label-input from-row">
           <x-label>{$locale["From:"]}</x-label>
           <select class="from-select" disabled={fromLocked} title={fromLocked ? $locale.From_locked : null}

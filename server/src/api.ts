@@ -283,6 +283,26 @@ const PARTIAL_STREAM_RETRY_MS = 30_000;
 // degraded path, which is exactly what that retry is for.
 const WATCH_OPEN_TIMEOUT_MS = 10_000;
 
+// The same problem one layer down: resolveMailboxOwner asks each account in turn, and
+// client.ts's get() has no deadline either — so an account whose mailbox list stalls
+// without ever rejecting held up every mailbox page and action for the OTHER accounts
+// indefinitely. Short, because this sits in front of ordinary navigation: a probe that
+// slow is already a failure, and failing it just means asking the next account.
+const OWNER_PROBE_TIMEOUT_MS = 5_000;
+
+/** Reject with `error` if `work` has not settled in `ms`. The work itself runs on. */
+const withDeadline = <T>(work: Promise<T>, ms: number): Promise<T> =>
+  new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new ApiError(StatusCodes.GATEWAY_TIMEOUT, "Upstream timeout", "upstream_timeout")),
+      ms,
+    );
+    work.then(
+      value => { clearTimeout(timer); resolve(value); },
+      (e: unknown) => { clearTimeout(timer); reject(e); },
+    );
+  });
+
 const destroyStream = (stream: NodeJS.ReadableStream): void =>
   (stream as NodeJS.ReadableStream & { destroy?: () => void }).destroy?.();
 
@@ -658,7 +678,10 @@ const resolveMailboxOwner = async (
   let unreachable = false;
   for (const fresh of [false, true] as const) {
     for (const account of accounts) {
-      const owned = await ownedMailboxIdsFor(account, fresh).catch(e => {
+      const owned = await withDeadline(
+        ownedMailboxIdsFor(account, fresh),
+        OWNER_PROBE_TIMEOUT_MS,
+      ).catch(e => {
         unreachable = true;
         logger.warn(
           { account: account.id, detail: String((e as any)?.message) },
@@ -673,9 +696,15 @@ const resolveMailboxOwner = async (
 };
 
 // "Not yours" is only an honest answer if every account was actually asked.
+// NOT_FOUND, deliberately, and not FORBIDDEN. pageHandler turns a 403 into a redirect
+// to /login, and mounting that layout publishes a logout to every other tab — so a stale
+// bookmark, a mistyped id or a folder deleted on another device made the whole browser
+// look signed out while the session was perfectly valid. 403-to-login belongs to
+// sessions with no usable account, which is a different thing. It also says less: a
+// mailbox this session cannot see is indistinguishable from one that does not exist.
 const noOwner = (unreachable: boolean): ApiError => unreachable
   ? new ApiError(StatusCodes.BAD_GATEWAY, "Upstream error", "upstream_error")
-  : new ApiError(StatusCodes.FORBIDDEN, "Invalid mailbox", "forbidden");
+  : new ApiError(StatusCodes.NOT_FOUND, "Mailbox not found", "not_found");
 
 // Pin the owning account of a path mailbox to the request. 403 when no account
 // in the session owns it — a foreign id must not get an arbitrary token to
@@ -921,7 +950,12 @@ export const api = (config: Config) => {
     // Both branches go through establishSession — rotation, account bag, legacy mirror
     // and throttle identity are its business, not this route's.
     const mode = add && sessionAccounts(req).length ? "add" : "fresh";
-    const { previousId } = await establishSession(req, mode, v);
+    const established = await establishSession(req, mode, v);
+    // The session was rotated away by a concurrent add — see establishSession. The
+    // account IS signed in upstream; the browser just has to come back on the session
+    // that survived, and the switcher will show it.
+    if (!established) throw new ApiError(StatusCodes.CONFLICT, "Session changed, reload", "session_changed");
+    const { previousId } = established;
     // The rotation orphans any /updates response opened under the OLD id: it keeps
     // piping the pre-add account set, and — because closing is matched by session id —
     // a later per-account logout would look right here and leave that one running. Cut
@@ -1079,7 +1113,20 @@ export const api = (config: Config) => {
     for (const item of kept) {
       // Whole events only: raw chunks from parallel upstreams interleave partial
       // frames (see sseEventSplitter).
-      const push = sseEventSplitter(event => { if (!res.writableEnded) res.write(event); });
+      // Backpressure. res.write() returning false means the socket is full — a reader
+      // that has stalled, or simply is slower than several busy accounts together — and
+      // ignoring it lets Node buffer without bound until the connection closes. The
+      // upstreams are paused until it drains, which is what pipe() used to do for us
+      // before these streams were merged by hand.
+      const push = sseEventSplitter(event => {
+        if (res.writableEnded) return;
+        if (!res.write(event)) {
+          for (const { stream } of live) (stream as NodeJS.ReadableStream & { pause?: () => void }).pause?.();
+          res.once("drain", () => {
+            for (const { stream } of live) (stream as NodeJS.ReadableStream & { resume?: () => void }).resume?.();
+          });
+        }
+      });
       item.stream.on("data", push);
       const gone = () => {
         live.delete(item);
