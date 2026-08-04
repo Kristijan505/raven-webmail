@@ -66,7 +66,7 @@
   import { locale } from "$lib/locale";
   import { _open, flushDrafts } from "$lib/Compose/compose";
   import { setTabAccount, tabAccount } from "$lib/account";
-  import { goto } from "$app/navigation";
+  import { goto, invalidateAll } from "$app/navigation";
   import { get as getStore } from "svelte/store";
   const getTabAccount = () => getStore(tabAccount);
   const flag = action(async () => {
@@ -112,7 +112,12 @@
       // a document load would drop it and land on the wrong account; a client-side
       // navigation keeps it, and the destination's own guard invalidates from there.
       if (setTabAccount(row.account.id)) location.assign(to);
-      else void goto(to);
+      // Storage disabled: the pin lives in this document, so a client-side navigation is
+      // the only way to keep it — but the (app) layout does not rerun on its own, and the
+      // destination's guard sees the tab ALREADY pointing at the owner and stays quiet.
+      // The message would open under the previous account's sidebar, folders and
+      // signature. Invalidating is what rebuilds them.
+      else void goto(to).then(() => invalidateAll());
       return;
     }
     if(isDrafts(mailbox)) {

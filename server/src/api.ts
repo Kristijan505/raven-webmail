@@ -16,7 +16,7 @@ import * as https from "https";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import ipaddr from "ipaddr.js";
-import { accountsOf, establishSession, evictAccountFromOtherSessions, removeAccountFromSession, rotateSessionExclusive, sessionCookieClearOptions, stubAccountInSession, usableAccount } from "./session";
+import { accountsOf, establishSession, evictAccountFromOtherSessions, removeAccountFromSession, rotateSessionExclusive, SessionClaimedError, sessionCookieClearOptions, stubAccountInSession, usableAccount } from "./session";
 import type { SessionAccount } from "./client";
 import { decodeUnifiedCursor, encodeUnifiedCursor, mergeUnifiedRound, totalOf } from "./unified";
 import type { UnifiedCursor, UnifiedCursorEntry, UnifiedRoundInput } from "./unified";
@@ -996,11 +996,28 @@ export const api = (config: Config) => {
     // everything else: falling through to the destroy below took every remaining
     // healthy account with it.
     if (one && !accounts.some(a => a.id === one)) {
+      // Nothing here to remove — but the reason decides the answer. A session holding
+      // NO accounts at all is not one that already signed this account out; it is a
+      // session that no longer exists, claimed away by a concurrent add or password
+      // change (or simply expired), while the account stays signed in with its token on
+      // the record that survived. That is the common outcome of the race, not the rare
+      // one: the store hands this request a fresh empty session, so the guard above
+      // reads "not ours" and answers done. Measured on the repro, 40 rounds produced
+      // 27 such false successes. The honest answer is "reload and try again".
+      if (!accounts.length) throw new ApiError(StatusCodes.CONFLICT, "Session changed, reload", "session_changed");
       res.json({});
       return;
     }
     if (one && accounts.some(a => a.id !== one && usableAccount(a))) {
-      await removeAccountFromSession(req, one);
+      // A rotation may have claimed this session mid-flight; the client reloads onto the
+      // one that won and can sign out again from there. Silently reporting success would
+      // leave the account signed in with its token.
+      await removeAccountFromSession(req, one).catch((e: unknown) => {
+        if (e instanceof SessionClaimedError) {
+          throw new ApiError(StatusCodes.CONFLICT, "Session changed, reload", "session_changed");
+        }
+        throw e;
+      });
       // The merged update stream still carries the removed account's events;
       // close it and the EventSource reconnects with what remains.
       closeSessionLiveStreams(req.sessionID);

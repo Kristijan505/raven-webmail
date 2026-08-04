@@ -17,6 +17,7 @@
   import { locale } from "$lib/locale";
   import { clickable } from "$lib/actions";
   import { _message } from "$lib/Notify/notify";
+  import { HttpError } from "$lib/util";
   import AddIcon from "~icons/mdi/account-plus-outline";
   import Check from "~icons/mdi/check";
   import { accounts, setTabAccount, tabAccount } from "$lib/account";
@@ -68,7 +69,18 @@
     // Same reason as the switch above, and more pressing: this account is going away,
     // and with it the token that could still save the draft.
     if (!(await flushDrafts())) throw new Error($locale.errors?.request_failed ?? "Request failed");
-    await _post("/api/logout", { account: $tabAccount });
+    try {
+      await _post("/api/logout", { account: $tabAccount });
+    } catch (e) {
+      // 409 means this tab's session was rotated away — an add-account or a password
+      // change elsewhere won a race with this click — and the sign-out did NOT happen.
+      // Every later request from this tab would 401 anyway, so reload onto the session
+      // that survived: the account is still listed there and one more click finishes it.
+      // Clearing the pin and continuing would make a sign-out that never happened look
+      // like it did, which is the whole reason the server stopped answering 200 here.
+      if (e instanceof HttpError && e.status === 409) { location.assign("/"); return; }
+      throw e;
+    }
     setTabAccount(null);
     location.assign("/");
   });

@@ -437,6 +437,11 @@ const MIRROR_STAGE = {
  * Every account-bag edit goes through here. Creating or rotating a session is the one
  * thing that legitimately writes the whole document — that is establishSession, below.
  */
+/** The session was rotated away underneath an edit — see editAccounts. */
+export class SessionClaimedError extends Error {
+  constructor() { super("session was claimed by a concurrent rotation"); }
+}
+
 const editAccounts = async (
   req: Request,
   update: object | object[],
@@ -451,7 +456,12 @@ const editAccounts = async (
   const { collection, idField } = storeHandle()!;
   if(!req.sessionID) throw new Error("editAccounts requires a session id");
   const key = { [idField]: req.sessionID };
-  await collection.updateOne(key, update, options);
+  const res = await collection.updateOne(key, update, options);
+  // Matched nothing: a rotation (add-account, password change) claimed this session away
+  // while we were on our way here. Reporting success would be a lie with consequences —
+  // the rotation rebuilds its bag from the copy it claimed, which still holds the
+  // account this edit was meant to remove, so a sign-out would silently not happen.
+  if((res?.matchedCount ?? 0) === 0) throw new SessionClaimedError();
   // Separately, because Mongo refuses arrayFilters together with a pipeline. Idempotent
   // and derived from the current array, so concurrent edits still leave it right.
   await collection.updateOne(key, [MIRROR_STAGE]);
