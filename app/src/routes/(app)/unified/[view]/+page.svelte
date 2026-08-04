@@ -4,19 +4,24 @@
 
   import Mailbox from "$lib/Mailbox/Mailbox.svelte";
   import { locale } from "$lib/locale";
-  import { UNIFIED_IDS, unifiedInfo, unifiedListBase } from "$lib/unified";
+  import { UNIFIED_IDS, unifiedListBase } from "$lib/unified";
+  import { accounts } from "$lib/account";
   import { goto } from "$app/navigation";
 
   // A unified view needs at least two accounts to mean anything, and the layout stops
   // sending its live mailbox ids the moment that stops being true — an account signed
-  // out in another tab, or stubbed after its password changed elsewhere. Staying here
-  // would leave a list that looks fine and is deaf: every EXISTS, EXPUNGE and COUNTERS
-  // event for the remaining account is matched against an empty id set and dropped, so
-  // the rows and the total freeze where they were. Leave for the ordinary inbox, which
-  // is where the mail actually is now.
-  let hadUnified = false;
-  $: if ($unifiedInfo) hadUnified = true;
-  $: if (hadUnified && !$unifiedInfo) void goto("/");
+  // out in another tab, stubbed after its password changed elsewhere, or simply never
+  // there because this URL was opened from a bookmark. Staying would leave a list that
+  // looks fine and is deaf: every EXISTS, EXPUNGE and COUNTERS event for the remaining
+  // account is matched against an empty id set and dropped, so the rows and the total
+  // freeze where they were.
+  //
+  // Keyed off the ACCOUNTS, not off unifiedInfo going from set to null: that only ever
+  // caught the transition, and a bookmarked one-account load starts null and so was
+  // never caught at all. The `length &&` is the layout having spoken — the store starts
+  // empty, and an empty list means "not loaded yet", never "no accounts".
+  $: usableAccounts = $accounts.filter(a => !a.needsReauth);
+  $: if (usableAccounts.length && usableAccounts.length < 2) void goto("/");
 
   // Same guard as the mailbox page: re-sync only on a real navigation, never on a
   // child-driven mutation (see the comment there).

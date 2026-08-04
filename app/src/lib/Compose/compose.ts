@@ -247,9 +247,28 @@ export const registerDraftFlush = (fn: () => Promise<unknown>): (() => void) => 
   return () => { flushers.delete(fn); };
 };
 
+/**
+ * Retires still in flight. saveNow deliberately does not await the DELETE that removes
+ * the superseded copy — nothing should wait on a cleanup — but a caller about to
+ * REPLACE THE DOCUMENT must, or the request dies with the page and the old copy stays
+ * in Drafts as a duplicate. Worst after a From migration, where the leftover sits in
+ * the account being switched away from, and worse still when that account is being
+ * signed out: the token goes with it and the delete can never be retried.
+ */
+const pendingRetires = new Set<Promise<unknown>>();
+
+const trackRetire = (work: Promise<unknown>): void => {
+  const done = work.catch(() => {});
+  pendingRetires.add(done);
+  void done.then(() => { pendingRetires.delete(done); });
+};
+
 /** Settle every open draft. Never rejects: a failed save must not block the navigation. */
-export const flushDrafts = (): Promise<unknown> =>
-  Promise.allSettled([...flushers].map(fn => { try { return fn(); } catch { return Promise.resolve(); } }));
+export const flushDrafts = async (): Promise<void> => {
+  await Promise.allSettled([...flushers].map(fn => { try { return fn(); } catch { return Promise.resolve(); } }));
+  // Read AFTER the saves: theirs are the retires that matter here.
+  await Promise.allSettled([...pendingRetires]);
+};
 
 const saveChains = new WeakMap<Draft, Promise<unknown>>();
 
@@ -307,13 +326,13 @@ const saveNow = async (draft: Draft) => {
     draft[kSavedIn] = mailbox;
     return message.id;
   }
-  retire()
+  trackRetire(retire()
     .catch(e => goneAlready(e) ? undefined : retire())
     .then(() => Expunge.dispatch({ command: "EXPUNGE", mailbox: savedIn, uid: id }))
     .catch(e => {
       if(goneAlready(e)) return Expunge.dispatch({ command: "EXPUNGE", mailbox: savedIn, uid: id });
       console.warn(`[raven] superseded draft ${id} could not be deleted; it may linger in Drafts`, e);
-    })
+    }))
 
   // Advance the draft's id INSIDE the serialized section. Callers also assign the
   // returned id, but that happens a microtask or two later — and the next entry in the

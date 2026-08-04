@@ -195,6 +195,38 @@ export const rotateSession = async (req: Request): Promise<void> => {
  * Returns the id the browser held BEFORE, which the caller needs: the rotation orphans
  * any /updates response opened under it, and those close by session id.
  */
+/**
+ * Rotate this session's id, but only if we can CLAIM it first.
+ *
+ * Every privilege boundary rotates — adding an account, changing a password — and two
+ * of them landing at once from the same session is what does the damage: each mints its
+ * own replacement from the same starting point, and then each treats the other's
+ * replacement as a stranger. The add path loses an account that way; the password path
+ * is worse, because the eviction that follows deletes or stubs the sibling session and
+ * can leave the browser signed out of a password change it just made successfully.
+ *
+ * The claim is a delete, so exactly one caller wins. The loser gets false and must do
+ * nothing further — its session is gone, and the winner's Set-Cookie is the one the
+ * browser should keep. Sealing it stops express-session recreating the claimed id from
+ * the copy this request still holds in memory (session_resave writes it back otherwise).
+ */
+export const rotateSessionExclusive = async (req: Request): Promise<boolean> => {
+  const claimed = await claimStoredSession(req.sessionID);
+  if(!claimed) {
+    sealSession(req);
+    return false;
+  }
+  const carriedThrottle = req.session.throttleKey;
+  await new Promise<void>((resolve, reject) => {
+    req.session.regenerate(err => err ? reject(err) : resolve());
+  });
+  // The bag as the store held it at the moment of the claim, not as this request
+  // remembers it: a sign-out that landed in between is already reflected in it.
+  writeAccounts(req.session, claimed);
+  if(carriedThrottle) req.session.throttleKey = carriedThrottle;
+  return true;
+};
+
 export const establishSession = async (
   req: Request,
   mode: "fresh" | "add",
@@ -202,25 +234,7 @@ export const establishSession = async (
 ): Promise<{ previousId: string } | null> => {
   const previousId = req.sessionID;
   if(mode === "add") {
-    // Claim the session before rotating — see claimStoredSession. Only one concurrent
-    // add can win it; the other is told to reload.
-    const claimed = await claimStoredSession(previousId);
-    if(!claimed) {
-      // Someone else won it and deleted the record. This request is still holding a
-      // full in-memory copy — and under session_resave express-session writes it back
-      // at response end, recreating the very id that was just claimed, tokens and all,
-      // for any client still carrying that cookie. Seal it on the way out.
-      sealSession(req);
-      return null;
-    }
-    const carriedThrottle = req.session.throttleKey;
-    await new Promise<void>((resolve, reject) => {
-      req.session.regenerate(err => err ? reject(err) : resolve());
-    });
-    // The bag as the store held it at the moment of the claim, not as this request
-    // remembers it: a sign-out that landed in between is already reflected in it.
-    writeAccounts(req.session, claimed);
-    if(carriedThrottle) req.session.throttleKey = carriedThrottle;
+    if(!(await rotateSessionExclusive(req))) return null;
     // Signing into an account already present (including a re-auth stub) REPLACES its
     // entry: that is how a stubbed shared mailbox comes back after its password changed
     // elsewhere.

@@ -16,7 +16,7 @@ import * as https from "https";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import ipaddr from "ipaddr.js";
-import { accountsOf, establishSession, evictAccountFromOtherSessions, removeAccountFromSession, rotateSession, sessionCookieClearOptions, stubAccountInSession, usableAccount } from "./session";
+import { accountsOf, establishSession, evictAccountFromOtherSessions, removeAccountFromSession, rotateSessionExclusive, sessionCookieClearOptions, stubAccountInSession, usableAccount } from "./session";
 import type { SessionAccount } from "./client";
 import { decodeUnifiedCursor, encodeUnifiedCursor, mergeUnifiedRound, totalOf } from "./unified";
 import type { UnifiedCursor, UnifiedCursorEntry, UnifiedRoundInput } from "./unified";
@@ -1236,8 +1236,16 @@ export const api = (config: Config) => {
       // the password HAS changed by this point, so a 5xx would tell the user the
       // opposite of the truth — but they must also not read "Password updated"
       // and believe devices were signed out when they were not.
-      sessionsEvicted = await rotateSession(req)
-        .then(async () => {
+      sessionsEvicted = await rotateSessionExclusive(req)
+        .then(async (won) => {
+          // Another tab changed the password at the same instant and claimed the
+          // session first. It is doing the rotation and the eviction; this request must
+          // not do them again — two rotations from one session mint two replacements,
+          // and then each eviction treats the OTHER as a stranger device, deleting or
+          // stubbing it. The browser would be signed out of a change that succeeded.
+          // The password itself is already changed, so this is still a success; it just
+          // did not evict anything, and says so.
+          if (!won) return false;
           // ALWAYS, checkbox or not. Rotation destroys the old session record, but an
           // /updates response opened under it holds its own WildDuck watches and keeps
           // delivering mailbox events — arrivals, counters, expunges — to whoever holds
