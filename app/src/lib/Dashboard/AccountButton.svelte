@@ -9,6 +9,7 @@
   import MenuItem from "$lib/Menu/MenuItem.svelte";
   import Ripple from "$lib/Ripple.svelte";
   import { action, _post } from "$lib/util";
+  import { flushDrafts } from "$lib/Compose/compose";
   import SignOut from "~icons/mdi/logout";
   import Account from "~icons/mdi/account-edit-outline";
   import CopyIcon from "~icons/mdi/content-copy";
@@ -30,7 +31,7 @@
   // opening the profile page. The on:mousedown preventDefault on the row keeps
   // the click from being eaten by the popup's focus handling, so this actually
   // fires (HTTPS gives us the Clipboard API).
-  const switchTo = (acc: { id: string; username: string; needsReauth: boolean }) => {
+  const switchTo = async (acc: { id: string; username: string; needsReauth: boolean }) => {
     open = false;
     if (acc.needsReauth) {
       // The stub surgical eviction leaves behind — same flow as adding the
@@ -45,7 +46,10 @@
     // alone, so a reload would drop it, the layout would pick the first account back,
     // and switching accounts would be impossible in that environment. Invalidate in
     // place instead: same fresh data, and the pin stays.
-    if (setTabAccount(acc.id)) location.assign("/");
+    // Unsaved compose edits first: the autosave is debounced, and a document load does
+    // not wait for it. A client-side navigation keeps the components alive, so only the
+    // full-load branch has to.
+    if (setTabAccount(acc.id)) { await flushDrafts(); location.assign("/"); }
     else void goto("/").then(() => invalidateAll());
   };
 
@@ -56,6 +60,8 @@
 
   const signOutThis = action(async () => {
     open = false;
+    // Same reason as the switch above, and more pressing: this account is going away.
+    await flushDrafts();
     await _post("/api/logout", { account: $tabAccount });
     setTabAccount(null);
     location.assign("/");

@@ -12,7 +12,7 @@
   $: showCc = current?.[kShowCc] || current?.cc?.length;
   $: showBcc = current?.[kShowBcc] || current?.bcc?.length;
 
-  import { kSent, save } from "./compose";
+  import { kSent, registerDraftFlush, save } from "./compose";
   import { crossin, crossout } from "./compose";
   import type { Draft } from "./compose";
   
@@ -168,6 +168,8 @@
 
     const off = [
       add(document, "keydown", keydown, { capture: true }),
+      // Anything that replaces the document waits for this — see flushDrafts.
+      registerDraftFlush(() => saved ? Promise.resolve() : dosave(lastDraft, ++token).catch(reportSaveFailure)),
     ]
 
     if(iframe && iframe.contentDocument) {

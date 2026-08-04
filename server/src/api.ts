@@ -290,6 +290,11 @@ const WATCH_OPEN_TIMEOUT_MS = 10_000;
 // slow is already a failure, and failing it just means asking the next account.
 const OWNER_PROBE_TIMEOUT_MS = 5_000;
 
+// Longer than an ownership probe: this one is fetching a page of mail, not a folder
+// list, and a slow-but-working account should still make it into the merge rather than
+// be dropped as partial.
+const UNIFIED_FETCH_TIMEOUT_MS = 15_000;
+
 /**
  * Run `work` with a deadline, and ABORT it when the deadline passes.
  *
@@ -1486,7 +1491,11 @@ export const api = (config: Config) => {
     const settled = await Promise.allSettled(accounts.map(async account => {
       const entry: UnifiedCursorEntry = incoming[account.id] ?? { cursor: null, skip: 0 };
       if (entry.done) return { entry, round: null as UnifiedRoundInput | null };
-      const boxes = await mailboxesFor(account);
+      // Bounded and cancellable, like every other per-account fan-out: one upstream
+      // that accepts the connection and never answers would otherwise leave this
+      // allSettled pending forever, so opening or paging a unified view hangs for
+      // EVERY account instead of serving the ones that are healthy as a partial page.
+      const boxes = await withDeadline(signal => mailboxesFor(account, false, signal), UNIFIED_FETCH_TIMEOUT_MS);
       const box = view === "inbox"
         ? boxes.find(b => b.path === "INBOX")
         : boxes.find(b => b.specialUse === "\\Sent");
@@ -1494,7 +1503,10 @@ export const api = (config: Config) => {
       if (!box) return { entry: { cursor: null, skip: 0, done: true as const }, round: null };
       const params: Record<string, string> = { limit: String(limit) };
       if (entry.cursor) params.next = entry.cursor;
-      const json = await get(`/users/${account.id}/mailboxes/${box.id}/messages?${qs.stringify(params)}`, account.token);
+      const json = await withDeadline(
+        signal => get(`/users/${account.id}/mailboxes/${box.id}/messages?${qs.stringify(params)}`, account.token, undefined, signal),
+        UNIFIED_FETCH_TIMEOUT_MS,
+      );
       const round: UnifiedRoundInput = {
         account: account.id,
         username: account.username,

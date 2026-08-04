@@ -232,6 +232,25 @@ export const destroyComposer = () => {
 // even submit one copy while orphaning the other. The chain lives HERE because this is
 // the one point every caller goes through. Keyed weakly by the draft object, so a
 // closed compose tab takes its chain with it.
+/**
+ * How to flush each OPEN compose window, registered by the window itself.
+ *
+ * Autosave is debounced by 1.5s, and a full document load — switching accounts, signing
+ * one out — throws the page away without waiting for it. The teardown save in Window
+ * cannot help: it runs as the document is being replaced, and an in-flight request dies
+ * with it. So whoever is about to replace the document asks first.
+ */
+const flushers = new Set<() => Promise<unknown>>();
+
+export const registerDraftFlush = (fn: () => Promise<unknown>): (() => void) => {
+  flushers.add(fn);
+  return () => { flushers.delete(fn); };
+};
+
+/** Settle every open draft. Never rejects: a failed save must not block the navigation. */
+export const flushDrafts = (): Promise<unknown> =>
+  Promise.allSettled([...flushers].map(fn => { try { return fn(); } catch { return Promise.resolve(); } }));
+
 const saveChains = new WeakMap<Draft, Promise<unknown>>();
 
 export const save = (draft: Draft): Promise<number> => {

@@ -107,8 +107,10 @@ import { locale } from "$lib/locale";
       selection = batch.filter(m => gone.has(keyed(m)));
       removeSelection();
       if(!res?.success) {
-        // The rest stay selected, so the retry is about them and nothing else.
-        selection = stuck;
+        // What is left of THIS batch, plus every batch never attempted: removeSelection
+        // clears the selection each round, so throwing here would leave those rows on
+        // screen but deselected, and a retry would mean picking them all again by hand.
+        selection = [...stuck, ...all.slice(i + UNIFIED_BULK_BATCH)];
         throw new Error($locale.errors?.request_failed ?? "Request failed");
       }
     }

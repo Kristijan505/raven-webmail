@@ -205,7 +205,14 @@ export const establishSession = async (
     // Claim the session before rotating — see claimStoredSession. Only one concurrent
     // add can win it; the other is told to reload.
     const claimed = await claimStoredSession(previousId);
-    if(!claimed) return null;
+    if(!claimed) {
+      // Someone else won it and deleted the record. This request is still holding a
+      // full in-memory copy — and under session_resave express-session writes it back
+      // at response end, recreating the very id that was just claimed, tokens and all,
+      // for any client still carrying that cookie. Seal it on the way out.
+      sealSession(req);
+      return null;
+    }
     const carriedThrottle = req.session.throttleKey;
     await new Promise<void>((resolve, reject) => {
       req.session.regenerate(err => err ? reject(err) : resolve());
