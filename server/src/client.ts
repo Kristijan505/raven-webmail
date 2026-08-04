@@ -10,9 +10,12 @@ export const url = (u: string) => {
 }
 
 const Requester = <Body>(method: string) => {
-  return async (u: string, accessToken: string, body?: Body) => {
-    
-    const init: RequestInit = { method }
+  // `signal` so a caller's deadline can CANCEL the request rather than merely stop
+  // awaiting it: a backend that accepts the connection and never answers otherwise
+  // leaves one pending per attempt, and the retries stack them.
+  return async (u: string, accessToken: string, body?: Body, signal?: AbortSignal) => {
+
+    const init: RequestInit = { method, signal }
 
     if(body != null) {
       init.headers = {

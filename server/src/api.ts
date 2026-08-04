@@ -290,18 +290,29 @@ const WATCH_OPEN_TIMEOUT_MS = 10_000;
 // slow is already a failure, and failing it just means asking the next account.
 const OWNER_PROBE_TIMEOUT_MS = 5_000;
 
-/** Reject with `error` if `work` has not settled in `ms`. The work itself runs on. */
-const withDeadline = <T>(work: Promise<T>, ms: number): Promise<T> =>
-  new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new ApiError(StatusCodes.GATEWAY_TIMEOUT, "Upstream timeout", "upstream_timeout")),
-      ms,
-    );
-    work.then(
-      value => { clearTimeout(timer); resolve(value); },
-      (e: unknown) => { clearTimeout(timer); reject(e); },
+/**
+ * Run `work` with a deadline, and ABORT it when the deadline passes.
+ *
+ * Not merely stop awaiting it: an upstream that accepts the connection and never
+ * answers would otherwise leave one request pending per attempt — and these run on
+ * ordinary navigation, twice per mailbox page (the cached pass and the fresh one), so
+ * they stack until the process restarts.
+ */
+const withDeadline = <T>(run: (signal: AbortSignal) => Promise<T>, ms: number): Promise<T> => {
+  const ac = new AbortController();
+  let gaveUp = false;
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      gaveUp = true;
+      ac.abort();
+      reject(new ApiError(StatusCodes.GATEWAY_TIMEOUT, "Upstream timeout", "upstream_timeout"));
+    }, ms);
+    run(ac.signal).then(
+      value => { clearTimeout(timer); if (!gaveUp) resolve(value); },
+      (e: unknown) => { clearTimeout(timer); if (!gaveUp) reject(e); },
     );
   });
+};
 
 const destroyStream = (stream: NodeJS.ReadableStream): void =>
   (stream as NodeJS.ReadableStream & { destroy?: () => void }).destroy?.();
@@ -431,7 +442,11 @@ const rememberMailboxIds = (req: Request, boxes: unknown, generation: number): v
 
 // Per-ACCOUNT core, because bindMailboxAccount has to ask this question for every
 // account in the session before any single account is "the" account.
-const ownedMailboxIdsFor = async (account: SessionAccount & { token: string }, fresh: boolean): Promise<Set<string>> => {
+const ownedMailboxIdsFor = async (
+  account: SessionAccount & { token: string },
+  fresh: boolean,
+  signal?: AbortSignal,
+): Promise<Set<string>> => {
   const hit = mailboxIdsCache.get(account.id);
   const age = hit ? Date.now() - hit.at : Infinity;
   // `fresh` asks to bypass the normal TTL, but not the refresh floor — see
@@ -439,7 +454,7 @@ const ownedMailboxIdsFor = async (account: SessionAccount & { token: string }, f
   if (hit && age < (fresh ? MAILBOX_IDS_REFRESH_MIN_MS : MAILBOX_IDS_TTL_MS)) return hit.ids;
 
   const generation = mailboxIdsGeneration;
-  const boxes = await get(`/users/${account.id}/mailboxes`, account.token);
+  const boxes = await get(`/users/${account.id}/mailboxes`, account.token, undefined, signal);
   const ids = new Set<string>(((boxes?.results ?? []) as Array<{ id: unknown }>).map(b => String(b.id)));
 
   if (generation === mailboxIdsGeneration) cacheMailboxIds(account.id, ids);
@@ -470,11 +485,12 @@ const mailboxMetaCache = new Map<string, { boxes: MailboxMeta[]; at: number }>()
 const mailboxesFor = async (
   account: SessionAccount & { token: string },
   fresh = false,
+  signal?: AbortSignal,
 ): Promise<MailboxMeta[]> => {
   const hit = mailboxMetaCache.get(account.id);
   if (!fresh && hit && Date.now() - hit.at < MAILBOX_META_TTL_MS) return hit.boxes;
   const generation = mailboxIdsGeneration;
-  const json = await get(`/users/${account.id}/mailboxes?counters=true`, account.token);
+  const json = await get(`/users/${account.id}/mailboxes?counters=true`, account.token, undefined, signal);
   const boxes: MailboxMeta[] = ((json?.results ?? []) as Array<Record<string, unknown>>).map(b => ({
     id: String(b.id),
     path: String(b.path ?? ""),
@@ -679,7 +695,7 @@ const resolveMailboxOwner = async (
   for (const fresh of [false, true] as const) {
     for (const account of accounts) {
       const owned = await withDeadline(
-        ownedMailboxIdsFor(account, fresh),
+        signal => ownedMailboxIdsFor(account, fresh, signal),
         OWNER_PROBE_TIMEOUT_MS,
       ).catch(e => {
         unreachable = true;
@@ -1577,13 +1593,30 @@ export const api = (config: Config) => {
       plan.push({ owner, mailboxId, ids, target: target.id });
     }
 
+    // Planning removes every refusal we can foresee, but a transport failure partway
+    // through still leaves earlier groups moved — and a bare rejection tells the client
+    // nothing about which. It would then keep every row listed and selected, and a retry
+    // would aim at ids that have already moved. So each group's outcome is reported, and
+    // the client takes off exactly what went.
+    const moved: Array<{ mailbox: string; ids: number[] }> = [];
+    let failed: unknown = null;
     for (const step of plan) {
-      await put(`/users/${step.owner.id}/mailboxes/${seg(step.mailboxId)}/messages`, step.owner.token, {
-        message: step.ids.join(","),
-        moveTo: step.target,
-      });
+      try {
+        await put(`/users/${step.owner.id}/mailboxes/${seg(step.mailboxId)}/messages`, step.owner.token, {
+          message: step.ids.join(","),
+          moveTo: step.target,
+        });
+        moved.push({ mailbox: step.mailboxId, ids: step.ids });
+      } catch (e) {
+        failed = e;
+        break;
+      }
     }
-    res.json({ success: true });
+    // Nothing moved at all: an ordinary failure, and the client's error path is right.
+    if (failed && !moved.length) throw failed;
+    // Deliberately NOT an `error` key — the client has to read `moved` before it decides
+    // to complain, and its helpers throw on sight of one.
+    res.json({ success: !failed, moved });
   }));
 
   api.post("/storage", uploadLimiter, handler(async (req, res) => {
@@ -1765,7 +1798,12 @@ export const api = (config: Config) => {
     // never partial, where a map missing an account read exactly like "yours".
     if (usableAll.length > 1) {
       // Uncached: these counters seed the client's badges — see mailboxesFor.
-      const read = () => Promise.allSettled(usableAll.map(a => mailboxesFor(a, true)));
+      // Bounded, and cancelled on expiry: one account whose mailbox list never settles
+      // would otherwise leave this allSettled pending forever — neither the retry below
+      // nor the all-or-none fallback ever runs, and every dashboard route sits loading
+      // although the active account answered long ago.
+      const read = () => Promise.allSettled(usableAll.map(a =>
+        withDeadline(signal => mailboxesFor(a, true, signal), OWNER_PROBE_TIMEOUT_MS)));
       let metas = await read();
       // One retry, because most of these failures are a blink rather than a state.
       if (metas.some(m => m.status !== "fulfilled")) metas = await read();

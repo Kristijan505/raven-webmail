@@ -119,8 +119,14 @@ const claimStoredSession = async (sessionId: string): Promise<SessionAccount[] |
   // Driver versions differ on whether the document comes back wrapped in `value`.
   const doc = (res && typeof res === "object" && "value" in res) ? (res as any).value : res;
   if(!doc) return null;
+  // Same shim as accountsOf, and for the same reason: a session written by the
+  // pre-multi-account build has only `authentication`. Returning an empty bag here
+  // would have the first "add account" REPLACE that account instead of appending to
+  // it — signing the user out of the mailbox they were already using.
   const accounts = doc?.session?.accounts;
-  return Array.isArray(accounts) ? accounts as SessionAccount[] : [];
+  if(Array.isArray(accounts)) return accounts as SessionAccount[];
+  const legacy = doc?.session?.authentication;
+  return legacy ? [legacy as SessionAccount] : [];
 };
 
 export const readStoredAccounts = async (sessionId: string): Promise<SessionAccount[] | null> => {

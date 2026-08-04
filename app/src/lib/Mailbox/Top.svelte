@@ -75,6 +75,13 @@ import { locale } from "$lib/locale";
     ? unifiedFolders.find(b => b.id === (selection[0]?.mailbox ?? "")) ?? null
     : null;
 
+  // Keyed by (mailbox, id) through rowKey, not by hand: uids collide across accounts in
+  // the unified views, and a plain id filter would take innocent rows down with the
+  // selected ones. Spelling the key out at each site is how a change to its shape gets
+  // missed at one of them and silently removes the wrong rows — it has already been
+  // widened once, from the bare id.
+  const keyed = (item: Message) => rowKey({ id: item.id, mailbox: item.mailbox ?? mailbox.id });
+
   // The endpoint takes at most 1000 items per request, and select-all in a unified
   // view has no such ceiling — past 1000 loaded rows the action failed validation every
   // time, with every item in it perfectly valid. Sent in batches instead, sequentially:
@@ -86,16 +93,24 @@ import { locale } from "$lib/locale";
     const all = [...selection];
     for(let i = 0; i < all.length; i += UNIFIED_BULK_BATCH) {
       const batch = all.slice(i, i + UNIFIED_BULK_BATCH);
-      await _put("/api/unified/messages", {
+      const res = await _put("/api/unified/messages", {
         action: act,
         items: batch.map(m => ({ mailbox: m.mailbox ?? mailbox.id, message: m.id })),
       });
-      // Each batch is its own committed request, so the screen has to follow it batch by
-      // batch. Clearing only at the end meant a later failure left the earlier messages
-      // already moved while every row stayed listed and selected — and a retry then
-      // aimed at ids that had moved out from under it.
-      selection = batch;
+      // What the server says actually moved — per source mailbox, since one request can
+      // succeed for some accounts and fail for another. Taking the whole batch off on
+      // trust would hide messages that are still sitting where they were; leaving it all
+      // on screen would invite a retry against ids that have already moved.
+      const gone = new Set<string>((res?.moved ?? []).flatMap((g: { mailbox: string; ids: number[] }) =>
+        g.ids.map(id => rowKey({ id, mailbox: g.mailbox }))));
+      const stuck = batch.filter(m => !gone.has(keyed(m)));
+      selection = batch.filter(m => gone.has(keyed(m)));
       removeSelection();
+      if(!res?.success) {
+        // The rest stay selected, so the retry is about them and nothing else.
+        selection = stuck;
+        throw new Error($locale.errors?.request_failed ?? "Request failed");
+      }
     }
   });
 
@@ -209,12 +224,6 @@ import { locale } from "$lib/locale";
   }
 
   const removeSelection = () => {
-    // Keyed by (mailbox, id) through rowKey, not by hand: uids collide across accounts
-    // in the unified views, and a plain id filter would take innocent rows down with the
-    // selected ones. Spelling the key out here is how a future change to its shape gets
-    // missed at one site and silently removes the wrong rows — it has already been
-    // widened once, from the bare id.
-    const keyed = (item: Message) => rowKey({ id: item.id, mailbox: item.mailbox ?? mailbox.id });
     const keys = new Set(selection.map(keyed));
 
     // The count follows the rows. Under a direction filter it is the count on display,
