@@ -426,6 +426,17 @@ import { locale } from "$lib/locale";
           <x-label>{$locale["From:"]}</x-label>
           <select class="from-select" disabled={fromLocked} title={fromLocked ? $locale.From_locked : null}
             value={fromId} on:change={(e) => switchFrom(e.currentTarget.value, e.currentTarget)}>
+            <!-- Name the draft's own account when it is no longer a choice. Svelte sets
+                 selectedIndex to -1 when the value matches no option, so without this the
+                 From field simply goes BLANK: the writing cannot be saved or sent, and
+                 nothing on screen says which account is the reason. Switching away does
+                 work from there (-1 to 0 is a real selection change, measured), so this
+                 is about saying what happened, not about restoring a way out. -->
+            {#if fromId && !fromChoices.some(a => a.id === fromId)}
+              <option value={fromId} disabled>
+                {[$accounts.find(a => a.id === fromId)?.username, $locale.Sign_in_again].filter(Boolean).join(" — ")}
+              </option>
+            {/if}
             {#each fromChoices as acc (acc.id)}
               <option value={acc.id}>{acc.username}</option>
             {/each}

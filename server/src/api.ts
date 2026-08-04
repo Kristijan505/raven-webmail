@@ -1622,7 +1622,11 @@ export const api = (config: Config) => {
       // A mailbox no account owns must not pick an arbitrary token to travel with.
       const { owner, unreachable } = await resolveMailboxOwner(accounts, mailboxId);
       if (!owner) throw noOwner(unreachable);
-      const boxes = await mailboxesFor(owner);
+      // Bounded like every other upstream call on this path. Ownership resolving does
+      // not mean the owner is healthy: this second lookup goes to the same account, and
+      // left unbounded one stalled mailbox listing holds the whole bulk action open —
+      // including the groups belonging to accounts that are answering fine.
+      const boxes = await withDeadline(signal => mailboxesFor(owner, false, signal), UNIFIED_FETCH_TIMEOUT_MS);
       const target = action === "trash"
         ? boxes.find(b => b.specialUse === "\\Trash")
         : boxes.find(b => b.specialUse === "\\Junk");

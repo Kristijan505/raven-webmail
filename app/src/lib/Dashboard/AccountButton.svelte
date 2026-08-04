@@ -22,8 +22,25 @@
   import Check from "~icons/mdi/check";
   import { accounts, setTabAccount, tabAccount } from "$lib/account";
 
+  /**
+   * Every way out of here throws the composer away.
+   *
+   * /login sits OUTSIDE the (app) group, so navigating there unmounts its layout, and
+   * Dashboard's teardown calls destroyComposer(). The compose window does fire a save on
+   * its way out, but nobody waits for it and nobody hears it fail — and by then the
+   * component holding the text is gone. Autosave is debounced by 1.5s, so anything typed
+   * in the last second and a half is exactly what is at stake. Flush first, and on
+   * failure stay where we are with the writing still on screen.
+   */
+  const flushOrRefuse = async () => {
+    if (!(await flushDrafts())) throw new Error($locale.errors?.request_failed ?? "Request failed");
+  };
+
   const signOut = action(async () => {
     open = false;
+    // BEFORE the logout, not after: the token that could still save the draft is the one
+    // this call is about to throw away.
+    await flushOrRefuse();
     await _post("/api/logout", {})
     goto("/login");
   })
@@ -32,11 +49,15 @@
   // opening the profile page. The on:mousedown preventDefault on the row keeps
   // the click from being eaten by the popup's focus handling, so this actually
   // fires (HTTPS gives us the Clipboard API).
-  const switchTo = async (acc: { id: string; username: string; needsReauth: boolean }) => {
+  // Wrapped like the sign-out handlers: it can refuse (a flush that failed), and a bare
+  // async handler turns that refusal into an unhandled rejection — the tab correctly
+  // stays put and the user is told nothing about why.
+  const switchTo = action(async (acc: { id: string; username: string; needsReauth: boolean }) => {
     open = false;
     if (acc.needsReauth) {
       // The stub surgical eviction leaves behind — same flow as adding the
-      // account, with the username already filled in.
+      // account, with the username already filled in. This leaves (app) too.
+      await flushOrRefuse();
       goto(`/login?add=1&username=${encodeURIComponent(acc.username)}`);
       return;
     }
@@ -54,21 +75,22 @@
     // failure leaves the tab exactly as it was. Unconditional, too: the branch below
     // depends on whether the pin PERSISTED, which is not known until it is set, and a
     // flush with nothing dirty costs nothing.
-    if (!(await flushDrafts())) throw new Error($locale.errors?.request_failed ?? "Request failed");
+    await flushOrRefuse();
     if (setTabAccount(acc.id)) location.assign("/");
     else void goto("/").then(() => invalidateAll());
-  };
+  });
 
-  const addAccount = () => {
+  const addAccount = action(async () => {
     open = false;
+    await flushOrRefuse();
     goto("/login?add=1");
-  };
+  });
 
   const signOutThis = action(async () => {
     open = false;
     // Same reason as the switch above, and more pressing: this account is going away,
     // and with it the token that could still save the draft.
-    if (!(await flushDrafts())) throw new Error($locale.errors?.request_failed ?? "Request failed");
+    await flushOrRefuse();
     try {
       await _post("/api/logout", { account: $tabAccount });
     } catch (e) {
