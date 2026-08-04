@@ -64,7 +64,7 @@
   
   import { action, isDrafts, messageDate, _put } from "$lib/util";
   import { locale } from "$lib/locale";
-  import { _open } from "$lib/Compose/compose";
+  import { _open, flushDrafts } from "$lib/Compose/compose";
   import { setTabAccount, tabAccount } from "$lib/account";
   import { goto } from "$app/navigation";
   import { get as getStore } from "svelte/store";
@@ -102,6 +102,11 @@
       event.preventDefault();
       event.stopPropagation();
       const to = `/mailbox/${row.mailbox ?? mailbox.id}/message/${row.id}`;
+      // Unsaved compose edits first, and before the pin — same rule as the account
+      // switcher, and this path replaces the document just as thoroughly. The autosave
+      // is debounced by 1.5s and the teardown save cannot be awaited across an unload,
+      // so without this a row click a second after typing loses what was typed.
+      if (!(await flushDrafts())) throw new Error($locale.errors?.request_failed ?? "Request failed");
       // A real document load rebuilds the layout as the owner — but only when the pin
       // survives it. With Web Storage disabled the pin lives in this document alone, so
       // a document load would drop it and land on the wrong account; a client-side

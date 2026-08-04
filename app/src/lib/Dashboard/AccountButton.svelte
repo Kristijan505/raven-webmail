@@ -46,15 +46,15 @@
     // alone, so a reload would drop it, the layout would pick the first account back,
     // and switching accounts would be impossible in that environment. Invalidate in
     // place instead: same fresh data, and the pin stays.
-    // Unsaved compose edits first: the autosave is debounced, and a document load does
-    // not wait for it. A client-side navigation keeps the components alive, so only the
-    // full-load branch has to — and only if the flush actually succeeded. Throwing away
-    // a draft that could not be saved is the thing flushing exists to prevent, so the
-    // switch is abandoned and the user keeps their window and the error.
-    if (setTabAccount(acc.id)) {
-      if (!(await flushDrafts())) throw new Error($locale.errors?.request_failed ?? "Request failed");
-      location.assign("/");
-    }
+    // Unsaved compose edits first — and BEFORE the pin, not after it. setTabAccount
+    // persists immediately, so pinning and then aborting on a failed flush left the page
+    // showing the old account while every unscoped request was already stamped for the
+    // new one: an edit on /me would rename the wrong mailbox. Flushing first means a
+    // failure leaves the tab exactly as it was. Unconditional, too: the branch below
+    // depends on whether the pin PERSISTED, which is not known until it is set, and a
+    // flush with nothing dirty costs nothing.
+    if (!(await flushDrafts())) throw new Error($locale.errors?.request_failed ?? "Request failed");
+    if (setTabAccount(acc.id)) location.assign("/");
     else void goto("/").then(() => invalidateAll());
   };
 
