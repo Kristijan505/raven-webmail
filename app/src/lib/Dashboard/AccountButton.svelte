@@ -48,8 +48,13 @@
     // place instead: same fresh data, and the pin stays.
     // Unsaved compose edits first: the autosave is debounced, and a document load does
     // not wait for it. A client-side navigation keeps the components alive, so only the
-    // full-load branch has to.
-    if (setTabAccount(acc.id)) { await flushDrafts(); location.assign("/"); }
+    // full-load branch has to — and only if the flush actually succeeded. Throwing away
+    // a draft that could not be saved is the thing flushing exists to prevent, so the
+    // switch is abandoned and the user keeps their window and the error.
+    if (setTabAccount(acc.id)) {
+      if (!(await flushDrafts())) throw new Error($locale.errors?.request_failed ?? "Request failed");
+      location.assign("/");
+    }
     else void goto("/").then(() => invalidateAll());
   };
 
@@ -60,8 +65,9 @@
 
   const signOutThis = action(async () => {
     open = false;
-    // Same reason as the switch above, and more pressing: this account is going away.
-    await flushDrafts();
+    // Same reason as the switch above, and more pressing: this account is going away,
+    // and with it the token that could still save the draft.
+    if (!(await flushDrafts())) throw new Error($locale.errors?.request_failed ?? "Request failed");
     await _post("/api/logout", { account: $tabAccount });
     setTabAccount(null);
     location.assign("/");

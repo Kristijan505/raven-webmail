@@ -213,7 +213,14 @@ export const rotateSession = async (req: Request): Promise<void> => {
 export const rotateSessionExclusive = async (req: Request): Promise<boolean> => {
   const claimed = await claimStoredSession(req.sessionID);
   if(!claimed) {
+    // Someone else won it and deleted the record. Sealing stops express-session writing
+    // this copy back — but with session_rolling on it would still emit a Set-Cookie for
+    // the dead id, and landing after the winner that would point the browser at a
+    // session that no longer exists. Unsetting the session suppresses the cookie
+    // entirely (unset: "destroy"), which is what a request holding a claimed-away
+    // session should leave behind: nothing.
     sealSession(req);
+    (req as unknown as { session: unknown }).session = null;
     return false;
   }
   const carriedThrottle = req.session.throttleKey;
@@ -224,6 +231,15 @@ export const rotateSessionExclusive = async (req: Request): Promise<boolean> => 
   // remembers it: a sign-out that landed in between is already reflected in it.
   writeAccounts(req.session, claimed);
   if(carriedThrottle) req.session.throttleKey = carriedThrottle;
+  // Saved HERE, not left to the end of the response. The password-change path evicts
+  // every peer session immediately after this returns, and the old record is already
+  // gone — so a store write that failed or a process that died in between would leave
+  // the browser holding a replacement id with nothing behind it, logged out by the very
+  // change it just made. The old rotateSession awaited this too; the extraction dropped
+  // it, which is the sort of thing an extraction does.
+  await new Promise<void>((resolve, reject) => {
+    req.session.save(err => err ? reject(err) : resolve());
+  });
   return true;
 };
 

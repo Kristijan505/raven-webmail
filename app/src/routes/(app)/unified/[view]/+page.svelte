@@ -4,7 +4,7 @@
 
   import Mailbox from "$lib/Mailbox/Mailbox.svelte";
   import { locale } from "$lib/locale";
-  import { UNIFIED_IDS, unifiedListBase } from "$lib/unified";
+  import { UNIFIED_IDS, unifiedInfo, unifiedListBase } from "$lib/unified";
   import { accounts } from "$lib/account";
   import { goto } from "$app/navigation";
 
@@ -16,12 +16,17 @@
   // account is matched against an empty id set and dropped, so the rows and the total
   // freeze where they were.
   //
-  // Keyed off the ACCOUNTS, not off unifiedInfo going from set to null: that only ever
-  // caught the transition, and a bookmarked one-account load starts null and so was
-  // never caught at all. The `length &&` is the layout having spoken — the store starts
-  // empty, and an empty list means "not loaded yet", never "no accounts".
+  // TWO conditions, because they catch different things and replacing one with the
+  // other left a hole each time. The account count catches a bookmarked one-account
+  // load, which starts with unifiedInfo already null and so never "transitions". The
+  // missing unifiedInfo catches the case the count cannot see: two perfectly usable
+  // accounts whose metadata the layout could not read, where it withholds the entries
+  // on purpose. Either way the live id sets are empty and the view is deaf.
+  //
+  // `length &&` is the layout having spoken — the store starts empty, and an empty list
+  // means "not loaded yet", never "no accounts".
   $: usableAccounts = $accounts.filter(a => !a.needsReauth);
-  $: if (usableAccounts.length && usableAccounts.length < 2) void goto("/");
+  $: if (usableAccounts.length && (usableAccounts.length < 2 || !$unifiedInfo)) void goto("/");
 
   // Same guard as the mailbox page: re-sync only on a real navigation, never on a
   // child-driven mutation (see the comment there).

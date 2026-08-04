@@ -263,11 +263,19 @@ const trackRetire = (work: Promise<unknown>): void => {
   void done.then(() => { pendingRetires.delete(done); });
 };
 
-/** Settle every open draft. Never rejects: a failed save must not block the navigation. */
-export const flushDrafts = async (): Promise<void> => {
-  await Promise.allSettled([...flushers].map(fn => { try { return fn(); } catch { return Promise.resolve(); } }));
+/**
+ * Settle every open draft. Resolves false when one could not be saved.
+ *
+ * The caller is about to replace the document, so a swallowed failure means the edits
+ * are simply gone — the opposite of what flushing is for. Retires are still awaited
+ * either way: whatever DID save should not leave its superseded copy behind.
+ */
+export const flushDrafts = async (): Promise<boolean> => {
+  const results = await Promise.allSettled(
+    [...flushers].map(fn => { try { return fn(); } catch(e) { return Promise.reject(e); } }));
   // Read AFTER the saves: theirs are the retires that matter here.
   await Promise.allSettled([...pendingRetires]);
+  return results.every(r => r.status === "fulfilled");
 };
 
 const saveChains = new WeakMap<Draft, Promise<unknown>>();

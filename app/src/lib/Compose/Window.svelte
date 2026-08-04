@@ -169,7 +169,11 @@
     const off = [
       add(document, "keydown", keydown, { capture: true }),
       // Anything that replaces the document waits for this — see flushDrafts.
-      registerDraftFlush(() => saved ? Promise.resolve() : dosave(lastDraft, ++token).catch(reportSaveFailure)),
+      // NOT caught here: flushDrafts has to learn that this draft did not save, or the
+      // caller replaces the document and the edits are gone. reportSaveFailure still
+      // runs, for the console line and the unsaved-changes dot.
+      registerDraftFlush(() => saved ? Promise.resolve() : dosave(lastDraft, ++token)
+        .catch(e => { reportSaveFailure(e); throw e; })),
     ]
 
     if(iframe && iframe.contentDocument) {
