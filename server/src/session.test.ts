@@ -238,7 +238,7 @@ describe("buildEvictionOps — surgical eviction, pinned end to end", () => {
   it("never touches the session performing the change", () => {
     expect((ops.deleteLegacy.filter as any)._id).toEqual({ $ne: "sid-keep" });
     expect((ops.stubAccounts.filter as any)._id).toEqual({ $ne: "sid-keep" });
-    expect((ops.clearMirror.filter as any)._id).toEqual({ $ne: "sid-keep" });
+    expect((ops.mirrorFilter as any)._id).toEqual({ $ne: "sid-keep" });
   });
 
   it("deletes ONLY legacy sessions — a multi-account doc must never match the delete", () => {
@@ -261,7 +261,6 @@ describe("buildEvictionOps — surgical eviction, pinned end to end", () => {
 
     const del = db.deleteMany(ops.deleteLegacy.filter);
     const stub = db.updateMany(ops.stubAccounts.filter, ops.stubAccounts.update, ops.stubAccounts.options);
-    db.updateMany(ops.clearMirror.filter, ops.clearMirror.update);
 
     expect(del.deletedCount).toBe(1);                       // legacy u1 gone
     expect(stub.modifiedCount).toBe(1);                     // colleague stubbed, once
@@ -270,7 +269,12 @@ describe("buildEvictionOps — surgical eviction, pinned end to end", () => {
     expect(entries[0]).toMatchObject({ id: "u1", username: "shared@x", needsReauth: true });
     expect(entries[0].token).toBeUndefined();               // credential stripped
     expect(entries[1]).toMatchObject({ id: "u2", token: "t2" });  // the other nine survive
-    expect((colleague.session as any).authentication).toBeNull(); // mirror cannot resurrect u1 on rollback
+    // The mirror is no longer written here at all — it is DERIVED, by the same pipeline
+    // stage every other session write uses, and this fake speaks only $set/$unset. What
+    // it must not do is name the stubbed account, which the recompute guarantees and
+    // session.mjs checks against a real Mongo; blanking it, which is what this used to
+    // assert, was wrong whenever the session still held an account of its own.
+    expect((ops.mirrorFilter as any)["session.accounts"]).toEqual({ $elemMatch: { id: "u1" } });
     expect((keep.session.accounts as any[])[0].token).toBe("t-keep"); // keep untouched
   });
 });

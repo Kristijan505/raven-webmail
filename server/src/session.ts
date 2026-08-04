@@ -251,16 +251,16 @@ export const buildEvictionOps = (userId: string, keepSessionId: string, idField:
     },
     options: { arrayFilters: [{ "entry.id": userId }] },
   },
-  // The legacy mirror may point at the very account being evicted; left alone, a
-  // rollback to a single-account build would resurrect its token. New code reads
-  // `accounts` and never misses the mirror.
-  clearMirror: {
-    filter: {
-      "session.accounts": { $exists: true },
-      "session.authentication.id": userId,
-      [idField]: { $ne: keepSessionId },
-    },
-    update: { $set: { "session.authentication": null } },
+  // Sessions whose legacy mirror has to be recomputed after the stub above. The mirror
+  // is only ever the first USABLE account, and the stub may have just taken that away —
+  // so the answer is derived (MIRROR_STAGE), not written here. It used to be set to
+  // null, which is the right answer only when nothing else remains: a colleague holding
+  // the shared box plus their own mail had their mirror blanked, and a rollback to a
+  // single-account build would then sign them out entirely instead of leaving them the
+  // account they never lost.
+  mirrorFilter: {
+    "session.accounts": { $elemMatch: { id: userId } },
+    [idField]: { $ne: keepSessionId },
   },
 });
 
@@ -286,7 +286,9 @@ export const evictAccountFromOtherSessions = async (userId: string, keepSessionI
   const ops = buildEvictionOps(userId, keepSessionId, idField);
   const del = await collection.deleteMany(ops.deleteLegacy.filter);
   const stub = await collection.updateMany(ops.stubAccounts.filter, ops.stubAccounts.update, ops.stubAccounts.options);
-  await collection.updateMany(ops.clearMirror.filter, ops.clearMirror.update);
+  // AFTER the stub, so the account just stubbed is no longer usable and cannot be
+  // chosen. Same derivation every other session write uses — see MIRROR_STAGE.
+  await collection.updateMany(ops.mirrorFilter, [MIRROR_STAGE]);
   return (del?.deletedCount ?? 0) + (stub?.modifiedCount ?? 0);
 }
 
