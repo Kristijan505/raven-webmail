@@ -79,6 +79,29 @@ export type SessionAccount = Omit<Authentication, "token"> & {
   needsReauth?: boolean
 }
 
+/**
+ * Invalidate ONE account's WildDuck token — DELETE /authenticate, which drops exactly
+ * the token presented in the request.
+ *
+ * Signing out dropped the token from our session and left it alive upstream for the rest
+ * of its TTL (14 days by default). Anything that had captured it kept full API access to
+ * a mailbox the user believes they signed out of, and no amount of session surgery on
+ * our side could reach it. Each login mints its own token — generateAuthToken is
+ * crypto.randomBytes per call — so revoking this one cannot touch another device.
+ *
+ * Best effort by design: the sign-out itself must not fail because the upstream was
+ * briefly unreachable. What the caller must NOT do is skip removing the account locally
+ * when this fails.
+ */
+export const revokeToken = async (accessToken: string): Promise<boolean> => {
+  if(!accessToken) return false;
+  const res = await fetch(url("/authenticate"), {
+    method: "DELETE",
+    headers: { "x-access-token": accessToken },
+  }).catch(() => null);
+  return !!res?.ok;
+};
+
 export const authenticate = async (username: string, password: string): Promise<Authentication> => {
   const res = await fetch(url("/authenticate"), {
     method: "POST",

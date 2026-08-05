@@ -1,6 +1,7 @@
 import { Request, RequestHandler, Router } from "express"
 import { validate, handler, ApiError, pageHandler, errMsg } from "./util";
-import { authenticate, del, get, post, put, url, watch } from "./client";
+import { authenticate,
+  revokeToken, del, get, post, put, url, watch } from "./client";
 import { json } from "body-parser";
 import { StatusCodes } from "http-status-codes";
 import { DISPLAY_ERRORS } from "./env";
@@ -994,6 +995,11 @@ export const api = (config: Config) => {
     if (mode === "add" && held.length >= MAX_SESSION_ACCOUNTS && !held.some(a => a.id === v.id)) {
       throw new ApiError(StatusCodes.CONFLICT, "Too many accounts signed in", "too_many_accounts");
     }
+    // A fresh sign-in REPLACES the bag, so whatever it held is being signed out — with
+    // the same consequence as any other sign-out if the credential is left alive
+    // upstream. Captured before establishSession overwrites it; revoked only once the
+    // new session is actually established, so a failed login never kills a working one.
+    const replaced = mode === "fresh" ? held.map(a => a.token).filter((t): t is string => !!t) : [];
     const established = await establishSession(req, mode, v);
     // The session was rotated away by a concurrent add — see establishSession. The
     // account IS signed in upstream; the browser just has to come back on the session
@@ -1005,6 +1011,13 @@ export const api = (config: Config) => {
     // a later per-account logout would look right here and leave that one running. Cut
     // them; the client reconnects onto a stream that includes the new account.
     if (mode === "add") closeSessionLiveStreams(previousId);
+    for (const t of replaced) {
+      // Not the one just minted: that is a different token, even for the same account.
+      if (t === v.token) continue;
+      void revokeToken(t).then(gone => {
+        if (!gone) logger.warn("could not revoke a replaced token on fresh sign-in");
+      });
+    }
     // Name the account so the client tab can point at it immediately.
     res.json({ id: v.id });
   }))
@@ -1032,6 +1045,10 @@ export const api = (config: Config) => {
       return;
     }
     if (one && accounts.some(a => a.id !== one && usableAccount(a))) {
+      // Read the token before the bag loses it. Revoked AFTER the removal below, so a
+      // failed removal never leaves the account listed with a token that is already dead
+      // upstream — that would look signed in and answer 401 to everything.
+      const leaving = accounts.find(a => a.id === one)?.token ?? null;
       // A rotation may have claimed this session mid-flight; the client reloads onto the
       // one that won and can sign out again from there. Silently reporting success would
       // leave the account signed in with its token.
@@ -1048,12 +1065,22 @@ export const api = (config: Config) => {
       // The merged update stream still carries the removed account's events;
       // close it and the EventSource reconnects with what remains.
       closeSessionLiveStreams(req.sessionID);
+      // And kill the credential itself. Dropping it from our session only ever hid it:
+      // the token stayed valid upstream for the rest of its TTL, so anything that had
+      // captured it kept full access to a mailbox the user just signed out of. This is
+      // also what makes the sign-out reach an /updates stream held by ANOTHER instance,
+      // which no amount of local bookkeeping can close.
+      if (leaving) void revokeToken(leaving).then(gone => {
+        if (!gone) logger.warn({ account: one }, "could not revoke the upstream token on sign-out");
+      });
       res.json({});
       return;
     }
     // Destroy the server-side session record and clear the cookie so the session id
     // cannot be reused after logout (and so a fixated id is dropped). Claimed, not
     // destroyed blindly — see destroySessionExclusive.
+    // Captured before the session is torn down — afterwards there is nothing to read.
+    const leavingAll = accounts.map(a => a.token).filter((t): t is string => !!t);
     const presented = presentedSessionCookie(req, config);
     const destroyed = await destroySessionExclusive(req);
     // Whatever happened to the record, this session's merged /updates response is still
@@ -1063,6 +1090,13 @@ export const api = (config: Config) => {
     // upstream watch lives, with no session left to authorize any of it. Closed on the
     // conflict path too: that session is gone either way.
     closeSessionLiveStreams(req.sessionID);
+    // Every account's credential, not just the session record. See the per-account
+    // branch above for why the record alone is not a sign-out.
+    for (const t of leavingAll) {
+      void revokeToken(t).then(gone => {
+        if (!gone) logger.warn("could not revoke an upstream token on full sign-out");
+      });
+    }
     if (!destroyed && presented) {
       // A cookie came in and yet there was nothing to claim: a rotation took this record
       // away mid-flight and the replacement still carries every token, or the session had
