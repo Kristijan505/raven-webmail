@@ -43,8 +43,18 @@
     const generation = listGeneration;
     loadingMore = true;
     try {
-      const json: Messages = await _get(listUrl([`next=${messages.nextCursor}`, "limit=50"]))
+      let json: Messages = await _get(listUrl([`next=${messages.nextCursor}`, "limit=50"]))
       if(generation !== listGeneration) return;
+      // A partial page here is worse than a partial refresh: the refresh replaces and can
+      // be redone, but this ADVANCES THE CURSOR — merge it and the missing account's rows
+      // in this range are skipped for good, with the list looking complete. One retry,
+      // because most of these are a blink, then refuse and leave the cursor where it is
+      // so the reader can try the same page again.
+      if(unified && json.partial) {
+        json = await _get(listUrl([`next=${messages.nextCursor}`, "limit=50"]));
+        if(generation !== listGeneration) return;
+        if(json.partial) throw new Error($locale.errors?.request_failed ?? "Request failed");
+      }
       const grown = dedup([ ...messages.results, ...json.results ]);
       messages = {
         ...messages,

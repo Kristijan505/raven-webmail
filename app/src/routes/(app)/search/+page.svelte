@@ -1,7 +1,16 @@
 <script lang="ts">
   import type { DashContext } from "$lib/Dashboard/Dashboard.svelte";
   import type { Mailbox, Message } from "$lib/types";
-  export let data: { query: string; results: Message[]; nextCursor: string | null; total: number };
+  import { tabAccount } from "$lib/account";
+  import { repinTab } from "$lib/handoff";
+  export let data: { query: string; results: Message[]; nextCursor: string | null; total: number; account?: string };
+
+  // Same owner guard the mailbox, message, profile and signature pages carry, and it was
+  // the one page without it: a deep link like /search?query=x&account=B renders B's hits
+  // while the tab stays pinned to A, so the sidebar, the toolbar and every unscoped
+  // request belong to the wrong account — and a bulk action on those rows aims at A's
+  // Trash for B's messages.
+  $: if (data.account && $tabAccount && data.account !== $tabAccount) void repinTab(data.account);
 
   // Local, mutable copy of the loaded data. `SearchTop` / `SearchResult`
   // mutate `results` and `selection` through `bind:` (delete, move) and

@@ -244,6 +244,11 @@ export const rotateSession = async (req: Request): Promise<void> => {
  * the copy this request still holds in memory (session_resave writes it back otherwise).
  */
 export const rotateSessionExclusive = async (req: Request): Promise<boolean> => {
+  // Read BEFORE the claim: regenerate() replaces it, and it is the throttle identity a
+  // session from before throttle keys existed has been using all along (throttleId falls
+  // back to the session id). Carrying it is what stops the rotation handing such a
+  // session a brand-new password-guess bucket — ten more attempts, free, once.
+  const previousId = req.sessionID;
   const claimed = await claimStoredSession(req.sessionID);
   if(!claimed) {
     // Someone else won it and deleted the record. Sealing stops express-session writing
@@ -256,7 +261,7 @@ export const rotateSessionExclusive = async (req: Request): Promise<boolean> => 
     (req as unknown as { session: unknown }).session = null;
     return false;
   }
-  const carriedThrottle = req.session.throttleKey;
+  const carriedThrottle = req.session.throttleKey ?? previousId;
   await new Promise<void>((resolve, reject) => {
     req.session.regenerate(err => err ? reject(err) : resolve());
   });

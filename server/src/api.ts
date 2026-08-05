@@ -75,6 +75,12 @@ const PROXY_FETCH_TIMEOUT_MS = 8000;
 // Login throttling window/cap and the default message-list page size.
 const LOGIN_RATE_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_RATE_MAX = 10;
+// How many accounts one browser session may hold at once. Nothing bounded this before,
+// and the bag is not just a list: every unified read fans out two upstream calls PER
+// account, and every /updates stream opens one watch per account. An unbounded bag makes
+// a single request arbitrarily expensive for WildDuck. Well above any real use — the
+// feature exists for a handful of shared mailboxes, not for a fleet.
+const MAX_SESSION_ACCOUNTS = 10;
 const PAGE_SIZE_LIMIT = "50";
 
 // Search query params the webmail actually uses. Forwarding req.query verbatim
@@ -739,10 +745,14 @@ const bindMailboxAccount = async (req: Request, rawMailbox: string | string[] | 
   const id = rawMailbox as string;
   const accounts = sessionAccounts(req).filter(usableAccount);
   if (!accounts.length) throw new ApiError(StatusCodes.FORBIDDEN, "Forbidden", "forbidden");
-  if (accounts.length === 1) {
-    (req as any)[kAccount] = accounts[0];
-    return;
-  }
+  // No shortcut for a single account. It used to bind the only account without asking
+  // whether the mailbox is actually one of its own, on the grounds that WildDuck scopes
+  // every URL by /users/{id}/ and answers 404 for a foreign id itself. That makes the
+  // BFF's authorization a restatement of the upstream's, which is the one thing this
+  // layer should not delegate — and it is inconsistent besides, since moveTo and
+  // reference.mailbox ARE checked here. The pre-flight is a cached id-set lookup in the
+  // steady state. The cost is a real one: when that listing cannot be read, a mailbox
+  // route now answers 502 instead of proxying and letting the upstream decide.
   const { owner, unreachable } = await resolveMailboxOwner(accounts, id);
   if (!owner) throw noOwner(unreachable);
   (req as any)[kAccount] = owner;
@@ -949,6 +959,11 @@ const submitLimiter = sessionLimiter("submit", 100);
 // number; it bounds a runaway, it does not pace a typist.
 const draftLimiter = sessionLimiter("messages-create", 1200);
 const bulkLimiter = sessionLimiter("bulk", 300);
+// The unified reads are the one GET worth throttling, because they are the one GET that
+// AMPLIFIES: each request fans out two upstream calls per signed-in account, so a loop
+// here costs WildDuck a multiple of what it costs the caller. The account cap below
+// bounds the multiplier; this bounds the rate.
+const unifiedReadLimiter = sessionLimiter("unified-read", 600);
 
 export const api = (config: Config) => {
   const api = Router();
@@ -972,7 +987,13 @@ export const api = (config: Config) => {
     const v = await authenticate(username, password);
     // Both branches go through establishSession — rotation, account bag, legacy mirror
     // and throttle identity are its business, not this route's.
-    const mode = add && sessionAccounts(req).length ? "add" : "fresh";
+    const held = sessionAccounts(req);
+    const mode = add && held.length ? "add" : "fresh";
+    // Re-signing into an account already in the bag REPLACES its entry (that is how a
+    // re-auth stub is cleared), so it does not grow anything and must not be refused.
+    if (mode === "add" && held.length >= MAX_SESSION_ACCOUNTS && !held.some(a => a.id === v.id)) {
+      throw new ApiError(StatusCodes.CONFLICT, "Too many accounts signed in", "too_many_accounts");
+    }
     const established = await establishSession(req, mode, v);
     // The session was rotated away by a concurrent add — see establishSession. The
     // account IS signed in upstream; the browser just has to come back on the session
@@ -1016,6 +1037,10 @@ export const api = (config: Config) => {
       // leave the account signed in with its token.
       await removeAccountFromSession(req, one).catch((e: unknown) => {
         if (e instanceof SessionClaimedError) {
+          // Rotated away mid-flight. The account is NOT signed out, but this session id
+          // is dead, and its stream would otherwise keep delivering events under a
+          // record that no longer exists.
+          closeSessionLiveStreams(req.sessionID);
           throw new ApiError(StatusCodes.CONFLICT, "Session changed, reload", "session_changed");
         }
         throw e;
@@ -1031,6 +1056,13 @@ export const api = (config: Config) => {
     // destroyed blindly — see destroySessionExclusive.
     const presented = presentedSessionCookie(req, config);
     const destroyed = await destroySessionExclusive(req);
+    // Whatever happened to the record, this session's merged /updates response is still
+    // open and still holds its WildDuck watches — destroying the session does not touch
+    // the stream map. Without this a browser that keeps its EventSource open after
+    // signing out keeps receiving arrivals, counters and expunges for as long as the
+    // upstream watch lives, with no session left to authorize any of it. Closed on the
+    // conflict path too: that session is gone either way.
+    closeSessionLiveStreams(req.sessionID);
     if (!destroyed && presented) {
       // A cookie came in and yet there was nothing to claim: a rotation took this record
       // away mid-flight and the replacement still carries every token, or the session had
@@ -1263,13 +1295,20 @@ export const api = (config: Config) => {
       // and believe devices were signed out when they were not.
       sessionsEvicted = await rotateSessionExclusive(req)
         .then(async (won) => {
-          // Another tab changed the password at the same instant and claimed the
-          // session first. It is doing the rotation and the eviction; this request must
-          // not do them again — two rotations from one session mint two replacements,
-          // and then each eviction treats the OTHER as a stranger device, deleting or
-          // stubbing it. The browser would be signed out of a change that succeeded.
-          // The password itself is already changed, so this is still a success; it just
-          // did not evict anything, and says so.
+          // Something else claimed this session first, and this request must not rotate
+          // again — two rotations from one session mint two replacements, and then each
+          // eviction treats the OTHER as a stranger device, deleting or stubbing it. The
+          // browser would be signed out of a change that succeeded.
+          //
+          // What the winner does NOT necessarily do is the eviction. If it was another
+          // password change, it evicts. If it was an add-account — the likelier race,
+          // since adding is a click away — it does not, and then nobody does: the
+          // password is already changed upstream while other devices keep their tokens.
+          // Reported as sessionsEvicted: false rather than fixed here, because the only
+          // way to evict from a session that no longer exists is to evict from ALL of
+          // them, which would sign this browser out of the account it just re-secured.
+          // A retry from the surviving session is the honest remedy, and the flag is
+          // what tells the client to offer it.
           if (!won) return false;
           // ALWAYS, checkbox or not. Rotation destroys the old session record, but an
           // /updates response opened under it holds its own WildDuck watches and keeps
@@ -1594,8 +1633,8 @@ export const api = (config: Config) => {
     });
   });
 
-  api.get("/unified/inbox/messages", unifiedMessages("inbox"));
-  api.get("/unified/sent/messages", unifiedMessages("sent"));
+  api.get("/unified/inbox/messages", unifiedReadLimiter, unifiedMessages("inbox"));
+  api.get("/unified/sent/messages", unifiedReadLimiter, unifiedMessages("sent"));
 
   // Bulk actions over a unified selection. Trash and spam need each message's OWN
   // account's folder — the client cannot know another account's Trash id — so the
@@ -1918,7 +1957,11 @@ export const api = (config: Config) => {
   
   pages.get("/search", pageHandler(async (req, res) => {
     const props = await get(`/users/${userId(req)}/search?${searchQueryString(req.query)}`, token(req));
-    res.json({ props })
+    // The bound account, stated like the mailbox and message pages state it. Without it
+    // the page had nothing to compare the tab pin against, so a deep link carrying
+    // ?account=B rendered B's results under A's sidebar and toolbar — and a bulk action
+    // on those rows then aimed at A's Trash.
+    res.json({ props: { ...props, account: userId(req) } })
   }))
 
   pages.get("/mailbox/:mailbox", pageHandler(async (req, res) => {
