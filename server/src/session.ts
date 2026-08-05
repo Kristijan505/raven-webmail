@@ -129,6 +129,39 @@ const claimStoredSession = async (sessionId: string): Promise<SessionAccount[] |
   return legacy ? [legacy as SessionAccount] : [];
 };
 
+/**
+ * End THIS session, claiming the record instead of firing a blind destroy.
+ *
+ * express-session's destroy deletes by id and reports success whether or not anything
+ * was there. That is exactly wrong while a rotation is in flight: an add-account or a
+ * password change may have CLAIMED this record microseconds earlier and minted a
+ * replacement carrying every token, and the destroy then deletes nothing while the user
+ * is told they are signed out. Measured on the repro, 40 races produced 26 sign-outs
+ * that reported success with the session still fully authenticated.
+ *
+ * The claim is the same atomic delete a rotation uses, so exactly one of the two wins.
+ * Returns false when there was nothing to claim — this browser is not holding the record
+ * that is live, and the caller must say so rather than answer done.
+ */
+export const destroySessionExclusive = async (req: Request): Promise<boolean> => {
+  const claimed = req.sessionID ? await claimStoredSession(req.sessionID) : null;
+  // Tear the in-memory copy down either way: whatever happened in the store, this
+  // response must not end by writing a session back.
+  await new Promise<void>((resolve) => {
+    req.session.destroy((err) => {
+      if(err) console.error("Failed to destroy session on logout:", err);
+      resolve();
+    });
+  });
+  return claimed !== null;
+};
+
+/** Did the browser actually present a session cookie? */
+export const presentedSessionCookie = (req: Request, config: Config): boolean => {
+  const name = config.session_name || "raven.sid";
+  return (req.headers.cookie ?? "").split(";").some(p => p.trim().startsWith(name + "="));
+};
+
 export const readStoredAccounts = async (sessionId: string): Promise<SessionAccount[] | null> => {
   const handle = sessionId ? storeHandle(false) : null;
   if(!handle) return null;
@@ -375,7 +408,7 @@ export const evictAccountFromOtherSessions = async (userId: string, keepSessionI
   const stub = await collection.updateMany(ops.stubAccounts.filter, ops.stubAccounts.update, ops.stubAccounts.options);
   // AFTER the stub, so the account just stubbed is no longer usable and cannot be
   // chosen. Same derivation every other session write uses — see MIRROR_STAGE.
-  await collection.updateMany(ops.mirrorFilter, [MIRROR_STAGE]);
+  await collection.updateMany(ops.mirrorFilter, [MIRROR_STAGE, REV_STAGE]);
   return (del?.deletedCount ?? 0) + (stub?.modifiedCount ?? 0);
 }
 
@@ -566,7 +599,13 @@ const editAccounts = async (
   if((res?.matchedCount ?? 0) === 0) throw new SessionClaimedError();
   // Separately, because Mongo refuses arrayFilters together with a pipeline. Idempotent
   // and derived from the current array, so concurrent edits still leave it right.
-  await collection.updateOne(key, [MIRROR_STAGE]);
+  //
+  // Versioned as well, and that is not decoration: a request loading BETWEEN the two
+  // updates sees the new bag under the new version but the OLD mirror, and its
+  // end-of-response save then passes the compare-and-swap and puts that mirror back —
+  // naming, after an eviction, the account whose token was just stripped. Bumping here
+  // makes the pair behave as one change to anyone reading in the middle.
+  await collection.updateOne(key, [MIRROR_STAGE, REV_STAGE]);
   const stored = await readStoredAccounts(req.sessionID);
   if(stored) writeAccounts(req.session, stored);
 };

@@ -16,7 +16,9 @@ import * as https from "https";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import ipaddr from "ipaddr.js";
-import { accountsOf, establishSession, evictAccountFromOtherSessions, removeAccountFromSession, rotateSessionExclusive, SessionClaimedError, sessionCookieClearOptions, stubAccountInSession, usableAccount } from "./session";
+import { accountsOf, establishSession, evictAccountFromOtherSessions, removeAccountFromSession, rotateSessionExclusive, SessionClaimedError, sessionCookieClearOptions,
+  destroySessionExclusive,
+  presentedSessionCookie, stubAccountInSession, usableAccount } from "./session";
 import type { SessionAccount } from "./client";
 import { decodeUnifiedCursor, encodeUnifiedCursor, mergeUnifiedRound, totalOf } from "./unified";
 import type { UnifiedCursor, UnifiedCursorEntry, UnifiedRoundInput } from "./unified";
@@ -1024,14 +1026,20 @@ export const api = (config: Config) => {
       res.json({});
       return;
     }
-    // Destroy the server-side session record and clear the cookie so the
-    // session id cannot be reused after logout (and so a fixated id is dropped).
-    await new Promise<void>((resolve) => {
-      req.session.destroy((err) => {
-        if(err) console.error("Failed to destroy session on logout:", err);
-        resolve();
-      });
-    });
+    // Destroy the server-side session record and clear the cookie so the session id
+    // cannot be reused after logout (and so a fixated id is dropped). Claimed, not
+    // destroyed blindly — see destroySessionExclusive.
+    const presented = presentedSessionCookie(req, config);
+    const destroyed = await destroySessionExclusive(req);
+    if (!destroyed && presented) {
+      // A cookie came in and yet there was nothing to claim: a rotation took this record
+      // away mid-flight and the replacement still carries every token, or the session had
+      // already expired. Either way this browser is not holding the record that is live,
+      // so answering done would be the lie the claim exists to prevent. Deliberately NOT
+      // clearing the cookie here — the browser may already hold the rotated one, and
+      // wiping it would strand the very session the retry is meant to end.
+      throw new ApiError(StatusCodes.CONFLICT, "Session changed, reload", "session_changed");
+    }
     // Mirror the attributes the cookie was issued with, not just path/domain — a
     // Set-Cookie that does not match them may not overwrite what the browser stored.
     res.clearCookie(config.session_name || "raven.sid", sessionCookieClearOptions(config, req.secure));

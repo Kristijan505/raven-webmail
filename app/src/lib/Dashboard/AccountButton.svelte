@@ -41,7 +41,19 @@
     // BEFORE the logout, not after: the token that could still save the draft is the one
     // this call is about to throw away.
     await flushOrRefuse();
-    await _post("/api/logout", {})
+    // 409 means there was nothing to claim under the cookie we sent — a rotation in
+    // another tab took the record away mid-click, and the sign-out did not happen. The
+    // browser has since been handed that tab's replacement cookie, so one retry signs
+    // out the session that is actually live. If the retry finds nothing either, this
+    // browser genuinely holds no live session and /login is the truthful place to land.
+    try {
+      await _post("/api/logout", {})
+    } catch (e) {
+      if (!(e instanceof HttpError && e.status === 409)) throw e;
+      await _post("/api/logout", {}).catch(retry => {
+        if (!(retry instanceof HttpError && retry.status === 409)) throw retry;
+      });
+    }
     goto("/login");
   })
 
