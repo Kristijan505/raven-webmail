@@ -162,6 +162,42 @@ export const presentedSessionCookie = (req: Request, config: Config): boolean =>
   return (req.headers.cookie ?? "").split(";").some(p => p.trim().startsWith(name + "="));
 };
 
+/**
+ * The stored bags for SEVERAL sessions at once, as the store holds them right now.
+ *
+ * One query for every open stream on this instance, rather than one per stream: the
+ * caller runs on a timer and the point is to be cheap enough to run often. Sessions with
+ * no record are simply absent from the map — which is the answer the caller needs, since
+ * "your session is gone" is exactly what it is looking for.
+ *
+ * Returns null when the store could not be read at all. A caller must not confuse that
+ * with "none of these exist" and start closing things.
+ */
+export const readStoredAccountsFor = async (
+  sessionIds: string[],
+): Promise<Map<string, SessionAccount[]> | null> => {
+  if(!sessionIds.length) return new Map();
+  const handle = storeHandle(false);
+  if(!handle) return null;
+  const { collection, idField } = handle;
+  const docs = await collection
+    .find({ [idField]: { $in: sessionIds } })
+    .project({ [idField]: 1, "session.accounts": 1, "session.authentication": 1 })
+    .toArray()
+    .catch(() => null);
+  if(!docs) return null;
+  const out = new Map<string, SessionAccount[]>();
+  for(const doc of docs as any[]) {
+    const accounts = doc?.session?.accounts;
+    if(Array.isArray(accounts)) { out.set(String(doc[idField]), accounts as SessionAccount[]); continue; }
+    // Same legacy shim as accountsOf: a pre-multi-account session speaks only through
+    // the mirror, and reading it as an empty bag would look like an eviction.
+    const legacy = doc?.session?.authentication;
+    out.set(String(doc[idField]), legacy ? [legacy as SessionAccount] : []);
+  }
+  return out;
+};
+
 export const readStoredAccounts = async (sessionId: string): Promise<SessionAccount[] | null> => {
   const handle = sessionId ? storeHandle(false) : null;
   if(!handle) return null;

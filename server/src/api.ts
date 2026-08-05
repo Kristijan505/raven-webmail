@@ -19,7 +19,7 @@ import { z } from "zod";
 import ipaddr from "ipaddr.js";
 import { accountsOf, establishSession, evictAccountFromOtherSessions, removeAccountFromSession, rotateSessionExclusive, SessionClaimedError, sessionCookieClearOptions,
   destroySessionExclusive,
-  presentedSessionCookie, stubAccountInSession, usableAccount } from "./session";
+  presentedSessionCookie, readStoredAccountsFor, stubAccountInSession, usableAccount } from "./session";
 import type { SessionAccount } from "./client";
 import { decodeUnifiedCursor, encodeUnifiedCursor, mergeUnifiedRound, totalOf } from "./unified";
 import type { UnifiedCursor, UnifiedCursorEntry, UnifiedRoundInput } from "./unified";
@@ -277,6 +277,63 @@ export const sseEventSplitter = (onEvent: (event: string) => void) => {
   };
 };
 const liveStreams = new Set<LiveStream>();
+
+/**
+ * ═══ Re-check every open stream against the session store. ═══
+ *
+ * closeSessionLiveStreams only reaches streams held by THIS process. Sessions are in
+ * Mongo and shared, so with more than one instance a sign-out, a rotation or a password
+ * eviction handled by instance A leaves instance B piping arrivals, counters and
+ * expunges into a response whose session no longer exists. Revoking the upstream token
+ * on sign-out kills what such a stream can still FETCH, but not the connection already
+ * open — so the connection has to be checked against the truth, and the truth is the
+ * store.
+ *
+ * One query per interval for every local stream, projecting only the bag, keyed by _id.
+ * Cheap enough to run often; the exposure is the interval, not forever.
+ *
+ * The failure mode is the one that matters: a store that cannot be read returns null,
+ * and null must never be read as "none of these sessions exist" — that would close every
+ * stream on the box over a blink. A round that cannot see is a round that does nothing.
+ */
+const STREAM_AUDIT_MS = 15_000;
+let streamAudit: ReturnType<typeof setInterval> | null = null;
+
+const stopStreamAudit = (): void => {
+  if (!streamAudit) return;
+  clearInterval(streamAudit);
+  streamAudit = null;
+};
+
+const auditLiveStreams = async (): Promise<void> => {
+  const entries = [...liveStreams];
+  if (!entries.length) return;
+  const stored = await readStoredAccountsFor([...new Set(entries.map(e => e.session))]);
+  if (!stored) return;
+  for (const entry of entries) {
+    const bag = stored.get(entry.session);
+    // Absent: signed out, rotated away, or expired — on whichever instance did it.
+    const usable = bag ? new Set(bag.filter(usableAccount).map(a => a.id)) : null;
+    const stale = !usable || [...entry.users].some(id => !usable.has(id));
+    if (!stale) continue;
+    liveStreams.delete(entry);
+    logger.info({ session: entry.session }, "closing a stream whose session no longer backs it");
+    // Closed, not errored: EventSource reconnects on its own and comes back with
+    // whatever the session still holds — nothing at all, if it is gone.
+    try { entry.close(); } catch { /* already gone */ }
+  }
+};
+
+// Only while there is something to audit: an idle instance should not poll Mongo.
+const startStreamAudit = (): void => {
+  if (streamAudit) return;
+  streamAudit = setInterval(() => {
+    if (!liveStreams.size) { stopStreamAudit(); return; }
+    void auditLiveStreams().catch((e: any) => logger.warn({ detail: String(e?.message) }, "stream audit failed"));
+  }, STREAM_AUDIT_MS);
+  // Never a reason to hold the process open.
+  streamAudit.unref?.();
+};
 
 // How long a partially-opened /updates response is served before it is closed so the
 // browser reconnects and retries the accounts that failed. Long enough that a flapping
@@ -1255,6 +1312,7 @@ export const api = (config: Config) => {
       item.stream.on("error", gone);
     }
     liveStreams.add(entry);
+    startStreamAudit();
     const retry = degraded
       ? setTimeout(() => { if (!res.writableEnded) res.end(); }, PARTIAL_STREAM_RETRY_MS)
       : null;
@@ -1267,6 +1325,7 @@ export const api = (config: Config) => {
     const drop = () => {
       if (retry) clearTimeout(retry);
       liveStreams.delete(entry);
+      if (!liveStreams.size) stopStreamAudit();
       for (const { stream } of live) destroy(stream);
     };
     res.on("close", drop);
