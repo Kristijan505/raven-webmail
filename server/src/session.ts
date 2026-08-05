@@ -99,6 +99,26 @@ const storeHandle = (required = true): { collection: any; idField: string } | nu
 };
 
 /**
+ * Another collection in the SAME database, on the session store's existing connection.
+ *
+ * For state that has to be shared across instances for the same reason sessions are:
+ * one browser, several processes. Reusing the pool rather than opening a second one —
+ * and going through here rather than reaching into the driver from three places.
+ *
+ * Null when the session store is not up yet, which callers must handle: module-scope
+ * construction can easily run before session(config) does.
+ */
+export const sharedCollection = (name: string): any | null => {
+  const handle = storeHandle(false);
+  if(!handle) return null;
+  const collection: any = handle.collection;
+  const client = collection.client ?? collection.s?.db?.client;
+  const dbName = collection.dbName ?? collection.s?.db?.databaseName;
+  if(!client || !dbName) return null;
+  return client.db(dbName).collection(name);
+};
+
+/**
  * Take this session out of the store and return the bag it held — atomically, so that
  * exactly ONE caller can succeed.
  *

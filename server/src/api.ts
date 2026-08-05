@@ -17,6 +17,7 @@ import * as https from "https";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import ipaddr from "ipaddr.js";
+import { SharedRateLimitStore } from "./ratelimit";
 import { accountsOf, establishSession, evictAccountFromOtherSessions, removeAccountFromSession, rotateSessionExclusive, SessionClaimedError, sessionCookieClearOptions,
   destroySessionExclusive,
   presentedSessionCookie, readStoredAccountsFor, stubAccountInSession, usableAccount } from "./session";
@@ -958,6 +959,7 @@ const throttleId = (req: Request): string =>
 // failed attempts count (skipSuccessfulRequests), so legitimate users are never
 // locked out; keyed by client IP (honors trust proxy).
 const loginLimiter = rateLimit({
+  store: new SharedRateLimitStore("login"),
   windowMs: LOGIN_RATE_WINDOW_MS,
   limit: LOGIN_RATE_MAX,
   skipSuccessfulRequests: true,
@@ -976,6 +978,7 @@ const loginLimiter = rateLimit({
 // actually change the password are throttled (skip) so a plain name change is never
 // limited.
 const passwordChangeLimiter = rateLimit({
+  store: new SharedRateLimitStore("password"),
   windowMs: LOGIN_RATE_WINDOW_MS,
   limit: LOGIN_RATE_MAX,
   skipSuccessfulRequests: true,
@@ -997,6 +1000,9 @@ const passwordChangeLimiter = rateLimit({
 // addresses does not reset the budget. These ceilings sit far above real interactive
 // use: they are here to stop a runaway script, not to pace a person.
 const sessionLimiter = (name: string, limit: number) => rateLimit({
+  // Shared across instances, like the two above: a budget that multiplies by however
+  // many processes happen to be running is not a budget.
+  store: new SharedRateLimitStore(name),
   windowMs: LOGIN_RATE_WINDOW_MS,
   limit,
   // Same rotation-proof identity as the password throttle: a budget one can refill by
