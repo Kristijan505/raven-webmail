@@ -12,7 +12,7 @@
   $: showCc = current?.[kShowCc] || current?.cc?.length;
   $: showBcc = current?.[kShowBcc] || current?.bcc?.length;
 
-  import { kSent, registerDraftFlush, save } from "./compose";
+  import { kSent, registerDraftFlush, save, trackTeardownSave } from "./compose";
   import { crossin, crossout } from "./compose";
   import type { Draft } from "./compose";
   
@@ -181,7 +181,10 @@
     }
 
     return () => {
-      if(!saved) void dosave(lastDraft, ++token).catch(reportSaveFailure);
+      // Tracked, not fired and forgotten: this component is going away and takes its
+      // flusher with it, so without this the next thing to replace the document waits
+      // for nothing and kills the save mid-flight.
+      if(!saved) trackTeardownSave(dosave(lastDraft, ++token).catch(e => { reportSaveFailure(e); throw e; }));
       clearTimeout(timer);
       runAll(off);
     }

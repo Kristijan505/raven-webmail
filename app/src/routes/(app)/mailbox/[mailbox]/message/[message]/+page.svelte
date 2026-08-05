@@ -7,8 +7,8 @@
   $: ({ mailbox, message } = data);
   
   import { action, isDrafts, isInbox, isJunk, isSent, isTrash, mailboxName, _delete, _put } from "$lib/util";
-  import { setTabAccount, tabAccount } from "$lib/account";
-  import { invalidateAll } from "$app/navigation";
+  import { tabAccount } from "$lib/account";
+  import { repinTab } from "$lib/handoff";
 
   // Same re-pin as the mailbox list page. Without it a bookmark or middle-click into
   // another account's message renders under the wrong sidebar, and reply/forward then
@@ -19,7 +19,7 @@
   // there was indistinguishable from "this mailbox is yours", so the tab kept the
   // wrong sidebar with no way to tell.
   $: owner = data.account;
-  $: if (owner && $tabAccount && owner !== $tabAccount) repin(owner);
+  $: if (owner && $tabAccount && owner !== $tabAccount) void repinTab(owner);
 
   // A full reload rebuilds the layout as the owner — but only if the pin survives it.
   // With Web Storage disabled or throwing (a case account.ts supports on purpose) the
@@ -27,10 +27,6 @@
   // to the first account, and this very guard fires again: a reload loop on a deep link
   // into somebody else's folder. Invalidating instead re-runs the loads in place, which
   // is exactly what was wanted and keeps the in-memory pin.
-  const repin = (id: string) => {
-    if (setTabAccount(id)) location.reload();
-    else void invalidateAll();
-  };
   
   import { messageHTML, tooltip, clickable } from "$lib/actions";
   import TabTop from "$lib/Tab/TabTop.svelte";

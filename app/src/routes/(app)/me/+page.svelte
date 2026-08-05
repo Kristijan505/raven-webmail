@@ -14,18 +14,12 @@
   // with the tab's pin, so editing the displayed name would silently rename A. Re-pin to
   // whoever is being shown, the same way the mailbox pages do.
   $: owner = user?.id;
-  $: if (owner && $tabAccount && owner !== $tabAccount) repin(owner);
+  $: if (owner && $tabAccount && owner !== $tabAccount) void repinTab(owner);
 
-  const repin = (id: string) => {
-    // A pin that could not be stored would be discarded by the reload, and the guard
-    // would fire again on the way back — see the mailbox page.
-    if (setTabAccount(id)) location.reload();
-    else void invalidateAll();
-  };
 
   import { getContext } from "svelte";
-  import { setTabAccount, tabAccount } from "$lib/account";
-  import { invalidateAll } from "$app/navigation";
+  import { tabAccount } from "$lib/account";
+  import { repinTab } from "$lib/handoff";
   import type { DashContext } from "$lib/Dashboard/Dashboard.svelte";
   // The navbar account menu reads from the shared layout user (a separate fetch),
   // so a name edit here must also update that store, not just local data.user.

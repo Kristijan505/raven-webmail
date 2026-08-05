@@ -1,5 +1,5 @@
 <script>
-  import { watchAuth } from "$lib/util";
+  import { watchAuth } from "$lib/handoff";
   import { onMount } from "svelte";
   import { fly } from "svelte/transition";
   import Brand from "$lib/Brand/Brand.svelte";

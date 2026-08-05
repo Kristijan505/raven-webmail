@@ -10,18 +10,12 @@
   // selector, is stamped with the tab's pin and overwrites A's signature instead. Same
   // guard the profile page has; this one was missed when that was added.
   $: owner = user?.id;
-  $: if (owner && $tabAccount && owner !== $tabAccount) repin(owner);
+  $: if (owner && $tabAccount && owner !== $tabAccount) void repinTab(owner);
 
-  const repin = (id: string) => {
-    // A pin that could not be stored would be discarded by the reload, and the guard
-    // would fire again on the way back — see the mailbox page.
-    if (setTabAccount(id)) location.reload();
-    else void invalidateAll();
-  };
 
   import { signature } from "$lib/signature";
-  import { setTabAccount, tabAccount } from "$lib/account";
-  import { invalidateAll } from "$app/navigation";
+  import { tabAccount } from "$lib/account";
+  import { repinTab } from "$lib/handoff";
   import GoBack from "~icons/mdi/arrow-left";
   import { tooltip } from "$lib/actions";
   import { onMount } from "svelte";

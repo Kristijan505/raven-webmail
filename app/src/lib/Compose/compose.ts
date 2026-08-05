@@ -257,6 +257,23 @@ export const registerDraftFlush = (fn: () => Promise<unknown>): (() => void) => 
  */
 const pendingRetires = new Set<Promise<unknown>>();
 
+/**
+ * Saves started by a window on its way out.
+ *
+ * Minimizing UNMOUNTS the compose window: its teardown fires one last save and then
+ * unregisters its flusher. So a switch or a sign-out moments later finds no flusher for
+ * that draft, waits for nothing, and replaces the document — aborting a save that was
+ * still in flight while flushDrafts() reports success. Registering the save itself is
+ * what keeps it visible after the component that started it is gone.
+ */
+const pendingSaves = new Set<Promise<boolean>>();
+
+export const trackTeardownSave = (work: Promise<unknown>): void => {
+  const done = work.then(() => true, () => false);
+  pendingSaves.add(done);
+  void done.then(() => { pendingSaves.delete(done); });
+};
+
 const trackRetire = (work: Promise<unknown>): void => {
   const done = work.catch(() => {});
   pendingRetires.add(done);
@@ -273,9 +290,13 @@ const trackRetire = (work: Promise<unknown>): void => {
 export const flushDrafts = async (): Promise<boolean> => {
   const results = await Promise.allSettled(
     [...flushers].map(fn => { try { return fn(); } catch(e) { return Promise.reject(e); } }));
+  // Windows that are already gone — minimized, closed — left their last save behind with
+  // no flusher to speak for it. Read after the flushers so anything they start is caught
+  // too; these resolve to a boolean and never reject.
+  const teardowns = await Promise.all([...pendingSaves]);
   // Read AFTER the saves: theirs are the retires that matter here.
   await Promise.allSettled([...pendingRetires]);
-  return results.every(r => r.status === "fulfilled");
+  return results.every(r => r.status === "fulfilled") && teardowns.every(Boolean);
 };
 
 const saveChains = new WeakMap<Draft, Promise<unknown>>();

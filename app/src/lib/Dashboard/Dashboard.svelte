@@ -58,7 +58,8 @@
   import Navigating from "$lib/Navigating.svelte";
   import Drawer from "./Drawer.svelte";
   import Top from "./Top.svelte";
-  import { isNarrow, sortMailboxes, watchAuth, _get } from "$lib/util";
+  import { isNarrow, sortMailboxes, _get } from "$lib/util";
+  import { watchAuth } from "$lib/handoff";
   import { accounts as accountList, accountsSignature } from "$lib/account";
   import { applyCounters } from "$lib/unified";
   import { invalidateAll } from "$app/navigation";

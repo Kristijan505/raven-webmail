@@ -477,6 +477,20 @@ const withCas = (store: any): any => {
   const expiresKey: string = store.options?.expiresKey ?? "expires";
   const defaultExpires: number = store.options?.expires ?? 0;
 
+  // A session written before versions existed has no `rev`, which would otherwise be
+  // indistinguishable from one that has never been stored — and the write below is
+  // allowed to UPSERT in that case, recreating a record a logout or rotation just
+  // claimed. Measured on the repro, 6 of 6 signed-out legacy sessions came back with
+  // both accounts and their tokens. Normalising a missing version to 0 on the way in
+  // makes "no base version" mean exactly one thing: never loaded from the store.
+  const readSession = store.get.bind(store);
+  store.get = function(id: string, callback: (e?: unknown, sess?: any) => void) {
+    readSession(id, (err: unknown, sess: any) => {
+      if(sess && typeof sess.rev !== "number") sess.rev = 0;
+      callback(err, sess);
+    });
+  };
+
   store.set = function(id: string, session: any, callback?: (e?: unknown) => void) {
     const sess: Record<string, unknown> = {};
     for(const key in session) {
@@ -493,10 +507,14 @@ const withCas = (store: any): any => {
       ? new Date(session.cookie.expires)
       : new Date(Date.now() + defaultExpires);
     const filter = base === null
-      // Never stored — or stored by a build from before versions existed, which is what
-      // makes this an upgrade rather than a migration: the first write adds the field.
+      // Never stored: this is the one case allowed to create the document.
       ? { [idField]: id, "session.rev": { $exists: false } }
-      : { [idField]: id, "session.rev": base };
+      : base === 0
+        // Loaded from a pre-versions document, whose field is absent rather than 0. It
+        // still has to MATCH — an upgrade, not a licence to insert — so the write lands
+        // only while that document is still there. The first write adds the field.
+        ? { [idField]: id, $or: [{ "session.rev": 0 }, { "session.rev": { $exists: false } }] }
+        : { [idField]: id, "session.rev": base };
     Promise.resolve(store.collection.updateOne(
       filter,
       { $set: { session: sess, [expiresKey]: expires } },
