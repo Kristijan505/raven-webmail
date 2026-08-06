@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Mailbox as MBox, Messages } from "$lib/types";
-  export let data: { mailbox: MBox; messages: Messages };
+  export let data: { mailbox: MBox; messages: Messages; account?: string };
 
   // Local, mutable copy of the loaded data. Child components (Top / Message)
   // mutate `messages` and `mailbox` through `bind:` for optimistic updates
@@ -24,6 +24,28 @@
   import { mailboxName } from "$lib/util";
   import { locale } from "$lib/locale";
   import Mailbox from "$lib/Mailbox/Mailbox.svelte";
+  import { tabAccount } from "$lib/account";
+  import { repinTab } from "$lib/handoff";
+
+  // A deep link into ANOTHER account's folder — a bookmark, or a link followed from a
+  // unified row. The server already resolved the mail correctly (the path mailbox
+  // binds the owning account), but the chrome around it still belongs to whoever the
+  // tab points at. Re-pin and reload so the sidebar, folder list and compose all
+  // belong to the owner. Guarded on the map being populated, which only happens with
+  // more than one account signed in.
+  // Stated by the server for THIS request — see the page route. The owner map it
+  // replaced could be missing an account whose metadata failed to load, and absence
+  // there was indistinguishable from "this mailbox is yours", so the tab kept the
+  // wrong sidebar with no way to tell.
+  $: owner = data.account;
+  $: if (owner && $tabAccount && owner !== $tabAccount) void repinTab(owner);
+
+  // A full reload rebuilds the layout as the owner — but only if the pin survives it.
+  // With Web Storage disabled or throwing (a case account.ts supports on purpose) the
+  // pin lives in this document alone, the reload throws it away, the layout falls back
+  // to the first account, and this very guard fires again: a reload loop on a deep link
+  // into somebody else's folder. Invalidating instead re-runs the loads in place, which
+  // is exactly what was wanted and keeps the in-memory pin.
 </script>
 
 <svelte:head>

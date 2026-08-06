@@ -58,7 +58,11 @@
   import Navigating from "$lib/Navigating.svelte";
   import Drawer from "./Drawer.svelte";
   import Top from "./Top.svelte";
-  import { isNarrow, sortMailboxes, watchAuth, _get } from "$lib/util";
+  import { isNarrow, sortMailboxes, _get } from "$lib/util";
+  import { watchAuth } from "$lib/handoff";
+  import { accounts as accountList, accountsSignature } from "$lib/account";
+  import { applyCounters } from "$lib/unified";
+  import { invalidateAll } from "$app/navigation";
   import { goto } from "$app/navigation";
   import { Counters, Exists, Expunge } from "$lib/events";
   import { fly } from "svelte/transition";
@@ -77,6 +81,25 @@
     }
 
     const stream = new EventSource("/api/updates");
+    // The server closes this stream when an account of ours is evicted elsewhere, so
+    // a drop is the one signal that our account list may have changed under us.
+    // Re-read the layout on reconnect and the switcher shows the re-auth stub at
+    // once, instead of keeping a dead account on screen until the next navigation.
+    // Debounced because EventSource also errors on ordinary network blips.
+    // Once per OUTAGE, not once per failed reconnect. EventSource re-errors on every
+    // retry while the backend is down, and re-arming the timer each time had every open
+    // tab reloading its layout — and fanning out fresh user and mailbox calls — on a
+    // loop, against a backend that is already failing. The flag clears when the stream
+    // actually speaks again, so the next genuine drop still resyncs.
+    let resync: any;
+    let resynced = false;
+    stream.onerror = () => {
+      if(resynced) return;
+      resynced = true;
+      clearTimeout(resync);
+      resync = setTimeout(() => { void invalidateAll().catch(() => {}); }, 1500);
+    };
+    stream.onopen = () => { resynced = false; };
     stream.onmessage = (event) => {
       const data = JSON.parse(event.data);
       if(data.command === "COUNTERS") {
@@ -90,6 +113,9 @@
 
     const off = [
       Counters.on(data => {
+        // Keep the unified badges live too — the event may name ANOTHER account's
+        // inbox, which this account's $mailboxes knows nothing about.
+        applyCounters(data);
         const mbox = $mailboxes.find(item => item.id === data.mailbox);
         if(mbox) {
           mbox.total = data.total;
@@ -97,8 +123,11 @@
           $mailboxes = $mailboxes;
         }
       }),
-      watchAuth(user?.id ?? null),
-      () => stream.close(),
+      // Broadcast the SET of signed-in accounts, not the active one: switching
+      // accounts in another tab must not bounce this one, while login/logout/
+      // eviction changes the set and resyncs every tab.
+      watchAuth($accountList.length ? accountsSignature($accountList) : (user?.id ?? null)),
+      () => { clearTimeout(resync); stream.close(); },
       () => destroyComposer(),
     ]
 

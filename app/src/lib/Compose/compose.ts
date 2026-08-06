@@ -23,6 +23,11 @@ export type Draft = {
   // send an empty list. Keeping them distinct is what stops a failed lookup from
   // quietly dropping the attachments off a forward.
   carried?: Attachment[] | null
+  // The account this draft belongs to (storage uploads follow it). Set when the
+  // compose opens; a From switch retargets it together with `mailbox`.
+  accountId?: string
+  // Where the last-saved copy actually lives — see saveNow.
+  [kSavedIn]?: string
   reference?: Reference
   [kShowBcc]: boolean,
   [kShowCc]: boolean
@@ -183,6 +188,7 @@ export const createMessageBody = (target: Partial<typeof baseDraft>) => {
 
 
 export const kShowBcc = Symbol("draft-show-bcc");
+export const kSavedIn = Symbol("draft-saved-in");
 export const kShowCc = Symbol("draft-show-cc");
 export const kSent = Symbol("draft-sent");
 
@@ -226,6 +232,73 @@ export const destroyComposer = () => {
 // even submit one copy while orphaning the other. The chain lives HERE because this is
 // the one point every caller goes through. Keyed weakly by the draft object, so a
 // closed compose tab takes its chain with it.
+/**
+ * How to flush each OPEN compose window, registered by the window itself.
+ *
+ * Autosave is debounced by 1.5s, and a full document load — switching accounts, signing
+ * one out — throws the page away without waiting for it. The teardown save in Window
+ * cannot help: it runs as the document is being replaced, and an in-flight request dies
+ * with it. So whoever is about to replace the document asks first.
+ */
+const flushers = new Set<() => Promise<unknown>>();
+
+export const registerDraftFlush = (fn: () => Promise<unknown>): (() => void) => {
+  flushers.add(fn);
+  return () => { flushers.delete(fn); };
+};
+
+/**
+ * Retires still in flight. saveNow deliberately does not await the DELETE that removes
+ * the superseded copy — nothing should wait on a cleanup — but a caller about to
+ * REPLACE THE DOCUMENT must, or the request dies with the page and the old copy stays
+ * in Drafts as a duplicate. Worst after a From migration, where the leftover sits in
+ * the account being switched away from, and worse still when that account is being
+ * signed out: the token goes with it and the delete can never be retried.
+ */
+const pendingRetires = new Set<Promise<unknown>>();
+
+/**
+ * Saves started by a window on its way out.
+ *
+ * Minimizing UNMOUNTS the compose window: its teardown fires one last save and then
+ * unregisters its flusher. So a switch or a sign-out moments later finds no flusher for
+ * that draft, waits for nothing, and replaces the document — aborting a save that was
+ * still in flight while flushDrafts() reports success. Registering the save itself is
+ * what keeps it visible after the component that started it is gone.
+ */
+const pendingSaves = new Set<Promise<boolean>>();
+
+export const trackTeardownSave = (work: Promise<unknown>): void => {
+  const done = work.then(() => true, () => false);
+  pendingSaves.add(done);
+  void done.then(() => { pendingSaves.delete(done); });
+};
+
+const trackRetire = (work: Promise<unknown>): void => {
+  const done = work.catch(() => {});
+  pendingRetires.add(done);
+  void done.then(() => { pendingRetires.delete(done); });
+};
+
+/**
+ * Settle every open draft. Resolves false when one could not be saved.
+ *
+ * The caller is about to replace the document, so a swallowed failure means the edits
+ * are simply gone — the opposite of what flushing is for. Retires are still awaited
+ * either way: whatever DID save should not leave its superseded copy behind.
+ */
+export const flushDrafts = async (): Promise<boolean> => {
+  const results = await Promise.allSettled(
+    [...flushers].map(fn => { try { return fn(); } catch(e) { return Promise.reject(e); } }));
+  // Windows that are already gone — minimized, closed — left their last save behind with
+  // no flusher to speak for it. Read after the flushers so anything they start is caught
+  // too; these resolve to a boolean and never reject.
+  const teardowns = await Promise.all([...pendingSaves]);
+  // Read AFTER the saves: theirs are the retires that matter here.
+  await Promise.allSettled([...pendingRetires]);
+  return results.every(r => r.status === "fulfilled") && teardowns.every(Boolean);
+};
+
 const saveChains = new WeakMap<Draft, Promise<unknown>>();
 
 export const save = (draft: Draft): Promise<number> => {
@@ -240,7 +313,21 @@ export const save = (draft: Draft): Promise<number> => {
 
 const saveNow = async (draft: Draft) => {
 
-  const { id, mailbox, key, files, carried, ...json } = draft;
+  const { id, mailbox, key, files, carried, accountId, ...json } = draft;
+
+  // Where the superseded copy actually LIVES. After a From switch draft.mailbox
+  // already points at ANOTHER account's Drafts; the create goes there, but the
+  // delete must follow the old copy home — this is what migrates a draft across
+  // accounts with the ordinary create-new + delete-old machinery.
+  //
+  // Deliberately NOT `?? mailbox`. `mailbox` is the destination, so falling back to
+  // it aims the delete at the NEW account's Drafts carrying the OLD account's uid —
+  // and uids are mailbox-local, so that erases whatever unrelated draft happens to
+  // hold that uid there while the real original survives untouched in the account
+  // the reader just switched away from. Undefined means "no saved copy to retire"
+  // (a draft opened from a folder records its home at open; a never-yet-saved one
+  // has nothing behind it), and the retire below is skipped rather than guessed.
+  const savedIn = draft[kSavedIn];
 
   const { message } = await _post(`/api/mailboxes/${draft.mailbox}/messages`, createMessageBody({
     ...json,
@@ -261,15 +348,20 @@ const saveNow = async (draft: Draft) => {
   // orphan, which is precisely the duplicate the save chain exists to prevent. Retry
   // once for a transient blip, treat "already gone" as done, and report the rest to
   // the console instead of pretending it worked.
-  const retire = () => _delete(`/api/mailboxes/${mailbox}/messages/${id}`);
+  const retire = () => _delete(`/api/mailboxes/${savedIn}/messages/${id}`);
   const goneAlready = (e: any) => e instanceof HttpError && e.status === 404;
-  retire()
+  if (!savedIn) {
+    draft.id = message.id;
+    draft[kSavedIn] = mailbox;
+    return message.id;
+  }
+  trackRetire(retire()
     .catch(e => goneAlready(e) ? undefined : retire())
-    .then(() => Expunge.dispatch({ command: "EXPUNGE", mailbox, uid: id }))
+    .then(() => Expunge.dispatch({ command: "EXPUNGE", mailbox: savedIn, uid: id }))
     .catch(e => {
-      if(goneAlready(e)) return Expunge.dispatch({ command: "EXPUNGE", mailbox, uid: id });
+      if(goneAlready(e)) return Expunge.dispatch({ command: "EXPUNGE", mailbox: savedIn, uid: id });
       console.warn(`[raven] superseded draft ${id} could not be deleted; it may linger in Drafts`, e);
-    })
+    }))
 
   // Advance the draft's id INSIDE the serialized section. Callers also assign the
   // returned id, but that happens a microtask or two later — and the next entry in the
@@ -277,6 +369,7 @@ const saveNow = async (draft: Draft) => {
   // and reads draft.id straight away. Writing it here means the handoff never depends
   // on which of those two lands first.
   draft.id = message.id;
+  draft[kSavedIn] = mailbox;
 
   return message.id;
 }

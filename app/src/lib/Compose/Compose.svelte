@@ -1,7 +1,7 @@
 <svelte:options accessors />
 
 <script lang="ts">
-  import { claimCarried, createMessageBody, crossin, crossout, kSent, kShowBcc, kShowCc } from "./compose";
+  import { claimCarried, createMessageBody, crossin, crossout, kSavedIn, kSent, kShowBcc, kShowCc } from "./compose";
   import type { Draft } from "./compose";
   import s from "html-escape";
 
@@ -51,30 +51,16 @@
   import { action, _get, _post } from "$lib/util";
   import type { Attachment, FullMessage, Mailbox, User } from "$lib/types";
   import DOMPurify from "dompurify";
-  import { EDITOR_URI_REGEXP, FETCHABLE_ATTRS, stripSelfProxyRefs } from "$lib/actions";
+  import { FETCHABLE_ATTRS, stripSelfProxyRefs } from "$lib/actions";
+  // sanitize/PURIFY_OPTS live in their own module because the From selector needs
+  // them too, to swap a draft's signature when the sending account changes.
+  import { PURIFY_OPTS, SIGNATURE_MARK, sanitize, signatureBlock } from "./sanitize";
+  import { tabAccount } from "$lib/account";
   import { onMount } from "svelte";
   import { add } from "$lib/actions";
   import { locale } from "$lib/locale";
 	import { signature } from "$lib/signature";
 	import { get } from "svelte/store";
-
-  const sanitize = (src: string | string[] | null) => {
-    if(src instanceof Array) src = src.join("");
-    const div = DOMPurify.sanitize(src || "", PURIFY_OPTS) as HTMLElement;
-    const toRemove = div.querySelectorAll("style, link, script, meta, object, head, title");
-    for(let i = 0; i < toRemove.length; i++) {
-      const el = toRemove[i];
-      el.parentNode?.removeChild(el);
-    }
-    // NB: remote images are NOT stripped here. sanitize() also runs over the
-    // user's OWN signature (blank(), and the signature half of createBody), which
-    // may legitimately use a remote logo — stripping it would silently drop the
-    // saved signature image. Untrusted QUOTED content is stripped separately via
-    // stripRemote() before it's appended in createBody.
-    const html = div.innerHTML;
-    const text = div.textContent;
-    return { html, text }
-  }
 
   // Refs that cannot cause a network fetch, so quoting them leaks nothing.
   //
@@ -88,26 +74,16 @@
   // terms, which is the only thing stripRemote is defending.
   const isInlineRef = (u: string): boolean => /^(data:|cid:|attachment:)/i.test(u);
 
-  // Shared DOMPurify options for every pass over compose content.
-  //
-  // The scheme list matters: DOMPurify's DEFAULT allow-list (http(s), ftp, mailto, tel,
-  // callto, sms, cid, xmpp, matrix) has no `attachment:`, so it drops those srcs itself
-  // — before any of our own logic gets to look at them. That is why merely teaching
-  // stripRemote to keep attachment: was not enough; the sanitise call INSIDE it was
-  // already throwing them away. Mirror the list messageHTML uses on the read side.
-  const PURIFY_OPTS = {
-    RETURN_DOM: true as const,
-    FORBID_ATTR: ["data-raven-src"],
-    ALLOWED_URI_REGEXP: EDITOR_URI_REGEXP,
-    ADD_DATA_URI_TAGS: ["img"],
-  };
-
   // Strip fetch-capable refs from untrusted quoted reply/forward content: the
   // compose iframe is same-origin + authenticated and has no "load images" opt-in,
   // so a remote <img>/srcset/CSS url() would fetch (tracking) on open. Inline refs
   // stay. Applied to quoted HTML only — never to the user's signature.
   const stripRemote = (html: string): string => {
-    const div = DOMPurify.sanitize(html || "", PURIFY_OPTS) as HTMLElement;
+    // The signature marker goes too. Quoted content is a message WE may have sent, so
+    // it can carry a marked signature block of its own — and the From selector's swap
+    // looks for that attribute. With the composer's own signature deleted, the swap
+    // would find the quoted sender's and rewrite part of the quote.
+    const div = DOMPurify.sanitize(html || "", { ...PURIFY_OPTS, FORBID_ATTR: [...PURIFY_OPTS.FORBID_ATTR, SIGNATURE_MARK] }) as HTMLElement;
     // Our own proxy first: a same-origin /api/proxy-image URL is allowed by the CSP the
     // compose iframe inherits (img-src 'self'), so naming it turns an authenticated
     // endpoint into the attacker's fetcher — no opt-in, no click. Mail never points at
@@ -153,7 +129,7 @@
     const l = get(locale);
     return [
       "<br />".repeat(6),
-      get(signature),
+      signatureBlock(get(signature)),
       "<br/>".repeat(2),
         "-".repeat(10) + " " + (action === "re" ? l.compose.reply_divider : l.compose.forward_divider) + " " + "-".repeat(10),
         ref.from && (`${l["From:"]} <b>${s(ref.from.name) || ""}</b> ${s("<" + ref.from.address + ">")}`),
@@ -165,7 +141,7 @@
   }
 
   export const blank = async (drafts: Mailbox) => {
-    const content = `${"<br />".repeat(6)}${get(signature)}`;
+    const content = `${"<br />".repeat(6)}${signatureBlock(get(signature))}`;
     const subject = "";
     const { html, text } = sanitize(content);
 
@@ -299,7 +275,11 @@
   }
 
   export const open = async (mailbox: Mailbox, id: number) => {
-    const tab = tabs.find(tab => tab.id === id);
+    // (mailbox, uid), not uid alone. Uids are mailbox-local, so once drafts from two
+    // accounts can be open at once — switch one draft's From, then start another in the
+    // account the tab still points at — the two can share a uid, and matching on it
+    // focused the wrong window while the draft just created was never opened at all.
+    const tab = tabs.find(tab => tab.id === id && tab.mailbox === mailbox.id);
     if(tab) {
       current = tab
     } else {
@@ -320,6 +300,15 @@
         reference: message.reference,
         carried: await carriedAttachments(message),
         files: message.files || [],
+        // Where this draft LIVES right now. Set at open, not left to the first
+        // save: switching From before any save would otherwise leave saveNow
+        // believing the superseded copy sits in the NEW account's Drafts, and
+        // uids are mailbox-local — it would delete whatever happens to carry
+        // that uid there while the real original stayed behind.
+        [kSavedIn]: message.mailbox,
+        // Pinned at open: uploads go to THIS account's storage even if the tab
+        // switches accounts while the window stays open.
+        accountId: get(tabAccount) ?? undefined,
         [kShowBcc]: false,
         [kShowCc]: false,
         [kSent]: false

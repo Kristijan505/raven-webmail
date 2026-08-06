@@ -22,8 +22,10 @@
   import Ripple from "$lib/Ripple.svelte";
   import { tooltip, clickable } from "$lib/actions";
   import { fade } from "svelte/transition";
-  import { action, isDrafts, isInbox, isJunk, isSent, isTrash, mailboxName, plural, _delete, _put } from "$lib/util";
+  import { action, isDrafts, isInbox, isJunk, isSent, isTrash, mailboxName, plural, _delete, _get, _put } from "$lib/util";
   import { activeDirection, direction, mixesDirections, toggleDirection } from "$lib/direction";
+  import { UNIFIED_IDS, isUnifiedMailbox, unifiedTotals } from "$lib/unified";
+  import { rowKey } from "./reconcile";
   import Down from "~icons/mdi/tray-arrow-down";
   import Up from "~icons/mdi/tray-arrow-up";
 
@@ -44,6 +46,87 @@ import { locale } from "$lib/locale";
   const { mailboxes } = getContext("dash") as DashContext;
   const { prev, next } = getContext("mailbox") as MailboxContext;
 
+  $: unified = isUnifiedMailbox(mailbox);
+
+  // A unified selection can span accounts. Trash/spam go through the unified bulk
+  // endpoint (each message's OWN account's folder is resolved server-side). MoveTo
+  // appears only when the whole selection lives in one account — Kristijan's call —
+  // with that account's folders fetched on demand.
+  $: selAccountId = unified && selection.length && selection.every(m => m.account?.id && m.account.id === selection[0].account?.id)
+    ? selection[0].account?.id ?? null
+    : null;
+
+  let unifiedFolders: Mailbox[] | null = null;
+  let unifiedFoldersFor: string | null = null;
+  $: if (unified) syncUnifiedFolders(selAccountId);
+  const syncUnifiedFolders = async (acc: string | null) => {
+    if (!acc) { unifiedFolders = null; unifiedFoldersFor = null; return; }
+    if (unifiedFoldersFor === acc) return;
+    unifiedFoldersFor = acc;
+    const json = await _get(`/api/mailboxes?account=${encodeURIComponent(acc)}`).catch(() => null);
+    if (unifiedFoldersFor !== acc) return; // superseded by a newer selection
+    unifiedFolders = json?.results ?? null;
+  };
+
+  // The REAL source folder of the selection: a single-account selection in a unified
+  // view shares one mailbox (that account's INBOX or Sent), and handing that to the
+  // move menu is what lets the ordinary moveDestinations rules apply unchanged.
+  $: unifiedSource = unified && selAccountId && unifiedFolders
+    ? unifiedFolders.find(b => b.id === (selection[0]?.mailbox ?? "")) ?? null
+    : null;
+
+  // Keyed by (mailbox, id) through rowKey, not by hand: uids collide across accounts in
+  // the unified views, and a plain id filter would take innocent rows down with the
+  // selected ones. Spelling the key out at each site is how a change to its shape gets
+  // missed at one of them and silently removes the wrong rows — it has already been
+  // widened once, from the bare id.
+  const keyed = (item: Message) => rowKey({ id: item.id, mailbox: item.mailbox ?? mailbox.id });
+
+  // The endpoint takes at most 1000 items per request, and select-all in a unified
+  // view has no such ceiling — past 1000 loaded rows the action failed validation every
+  // time, with every item in it perfectly valid. Sent in batches instead, sequentially:
+  // each request is planned and validated whole on the server, and stopping at the
+  // first refusal beats firing the rest at a server that has already refused one.
+  const UNIFIED_BULK_BATCH = 500;
+
+  const unifiedBulk = action(async (act: "trash" | "spam") => {
+    const all = [...selection];
+    for(let i = 0; i < all.length; i += UNIFIED_BULK_BATCH) {
+      const batch = all.slice(i, i + UNIFIED_BULK_BATCH);
+      const res = await _put("/api/unified/messages", {
+        action: act,
+        items: batch.map(m => ({ mailbox: m.mailbox ?? mailbox.id, message: m.id })),
+      });
+      // What the server says actually moved — per source mailbox, since one request can
+      // succeed for some accounts and fail for another. Taking the whole batch off on
+      // trust would hide messages that are still sitting where they were; leaving it all
+      // on screen would invite a retry against ids that have already moved.
+      const gone = new Set<string>((res?.moved ?? []).flatMap((g: { mailbox: string; ids: number[] }) =>
+        g.ids.map(id => rowKey({ id, mailbox: g.mailbox }))));
+      const stuck = batch.filter(m => !gone.has(keyed(m)));
+      selection = batch.filter(m => gone.has(keyed(m)));
+      removeSelection();
+      if(!res?.success) {
+        // What is left of THIS batch, plus every batch never attempted: removeSelection
+        // clears the selection each round, so throwing here would leave those rows on
+        // screen but deselected, and a retry would mean picking them all again by hand.
+        selection = [...stuck, ...all.slice(i + UNIFIED_BULK_BATCH)];
+        throw new Error($locale.errors?.request_failed ?? "Request failed");
+      }
+    }
+  });
+
+  const moveUnified = action(async (to: Mailbox) => {
+    if (selection.length === 0) return;
+    // One source mailbox (see unifiedSource), one bulk PUT; the server checks the
+    // destination belongs to the same account as the source.
+    await _put(`/api/mailboxes/${selection[0].mailbox}/messages`, {
+      message: selection.map(m => m.id).join(","),
+      moveTo: to.id,
+    });
+    removeSelection();
+  });
+
   let reloadTimes = 0;
   const reload = () => {
     reloadTimes++;
@@ -51,19 +134,34 @@ import { locale } from "$lib/locale";
   }
 
   const markAsSeen = action(async (v: boolean) => {
-    const ids = selection.map(s => s.id);
+    // Grouped by SOURCE mailbox: in the unified views the selection spans
+    // accounts, and each per-mailbox bulk PUT binds to that mailbox's own account
+    // on the server. A single-mailbox list degenerates to exactly the old request.
+    const groups = new Map<string, number[]>();
+    for (const item of selection) {
+      const box = item.mailbox ?? mailbox.id;
+      groups.set(box, [...(groups.get(box) ?? []), item.id]);
+    }
+    // Settled per group, not all-or-nothing. These run concurrently, so one account
+    // failing after another had already succeeded used to skip EVERY optimistic
+    // update — the rows that DID change upstream stayed looking unread, and nothing
+    // corrects them, because a seen flag rides no COUNTERS event of its own.
+    const settled = await Promise.allSettled([...groups].map(async ([box, ids]) => {
+      await _put(`/api/mailboxes/${box}/messages`, { message: ids.join(","), seen: v });
+      return box;
+    }));
+    const changed = new Set(settled.flatMap(r => r.status === "fulfilled" ? [r.value] : []));
 
-    await _put(`/api/mailboxes/${mailbox.id}/messages`, {
-      message: ids.join(","),
-      seen: v
-    })
-  
     for(const item of selection) {
-      item.seen = v;
+      if(changed.has(item.mailbox ?? mailbox.id)) item.seen = v;
     }
 
     messages = {...messages};
-    selection = [...selection]; 
+    selection = [...selection];
+
+    // Whatever went through is on screen; now say that the rest did not.
+    const failed = settled.find(r => r.status === "rejected");
+    if(failed) throw (failed as PromiseRejectedResult).reason; 
   })
 
   // These lookups used to assert non-null. They are the ONLY route to spam and delete
@@ -128,11 +226,11 @@ import { locale } from "$lib/locale";
   }
 
   const removeSelection = () => {
-    const ids = selection.map(item => item.id);
-    
+    const keys = new Set(selection.map(keyed));
+
     // The count follows the rows. Under a direction filter it is the count on display,
     // and the SSE counters only ever refresh the folder's own total.
-    const results = messages.results.filter(item => !ids.includes(item.id));
+    const results = messages.results.filter(item => !keys.has(keyed(item)));
     messages = {
       ...messages,
       results,
@@ -151,7 +249,13 @@ import { locale } from "$lib/locale";
   // being shown — a folder of 100 with 10 outgoing would read "100 messages" above a
   // list of 10. The filtered listing reports its own total, so use that one; unfiltered,
   // mailbox.total is the live figure the SSE counters keep up to date.
-  $: shownTotal = activeDirection(mailbox, $direction) ? messages.total : mailbox.total;
+  // A unified view has no direction filter, and its synthetic mailbox.total was a
+  // snapshot from page load — stale after load-more, after new mail, and after an
+  // EXPUNGE of a row that was never on screen (nothing on the list matches, so nothing
+  // refetches). The live per-mailbox counters know all three.
+  $: shownTotal = activeDirection(mailbox, $direction) ? messages.total
+    : isUnifiedMailbox(mailbox) ? ($unifiedTotals[mailbox.id] ?? mailbox.total)
+    : mailbox.total;
 
   const move = action(async (to: Mailbox) => {
     if(mailbox.id === to.id) return;
@@ -303,19 +407,21 @@ import { locale } from "$lib/locale";
 
   {#if selection.length === 0 && messages.results.length !== 0}
     <div class="action-group" in:fade|local={{ duration: 200 }}>
-      <div class="clear-btn-wrap">
-        <div class="action btn-dark" use:clickable class:hover={clearMenuOpen} on:click={() => clearMenuOpen = true}>
-          <DotsVertical />
-          <Ripple />
+      {#if !unified}
+        <div class="clear-btn-wrap">
+          <div class="action btn-dark" use:clickable class:hover={clearMenuOpen} on:click={() => clearMenuOpen = true}>
+            <DotsVertical />
+            <Ripple />
+          </div>
+          <div class="clear-anchor">
+            <PortalPopup anchor="top-left" bind:open={clearMenuOpen}>
+              <Menu>
+                <MenuItem icon={Delete} on:click={() => clearOpen = true}>{$locale.Delete_all_messages}</MenuItem>
+              </Menu>
+            </PortalPopup>
+          </div>
         </div>
-        <div class="clear-anchor">
-          <PortalPopup anchor="top-left" bind:open={clearMenuOpen}>
-            <Menu>
-              <MenuItem icon={Delete} on:click={() => clearOpen = true}>{$locale.Delete_all_messages}</MenuItem>
-            </Menu>
-          </PortalPopup>
-        </div>
-      </div> 
+      {/if} 
     </div>
 
     <div class="total">
@@ -341,22 +447,40 @@ import { locale } from "$lib/locale";
             <UnMarkSpam />
             <Ripple />
           </div>
-        {:else if !isDrafts(mailbox) && !isSent(mailbox) && !isTrash(mailbox)}
+        {:else if unified && mailbox.id === UNIFIED_IDS.inbox}
+          <div class="action btn-dark" use:clickable use:tooltip={$locale.Mark_as_spam} on:click={() => unifiedBulk("spam")}>
+            <MarkSpam />
+            <Ripple />
+          </div>
+        {:else if !unified && !isDrafts(mailbox) && !isSent(mailbox) && !isTrash(mailbox)}
           <div class="action btn-dark" use:clickable use:tooltip={$locale.Mark_as_spam} on:click={spam}> 
             <MarkSpam />
             <Ripple />
           </div>
         {/if}
 
-        <div class="action btn-dark" use:clickable use:tooltip={isTrash(mailbox) ? $locale.Delete_permanently : isDrafts(mailbox) ? $locale.Discard_drafts : $locale.Delete} on:click={del}>
-          <Delete />
-          <Ripple />
-        </div>
+        {#if unified}
+          <div class="action btn-dark" use:clickable use:tooltip={$locale.Delete} on:click={() => unifiedBulk("trash")}>
+            <Delete />
+            <Ripple />
+          </div>
+        {:else}
+          <div class="action btn-dark" use:clickable use:tooltip={isTrash(mailbox) ? $locale.Delete_permanently : isDrafts(mailbox) ? $locale.Discard_drafts : $locale.Delete} on:click={del}>
+            <Delete />
+            <Ripple />
+          </div>
+        {/if}
       </div>
 
-      <div class="action-group">
-        <MoveTo {mailbox} messages={selection} onMove={move} />
-      </div>
+      {#if !unified}
+        <div class="action-group">
+          <MoveTo {mailbox} messages={selection} onMove={move} />
+        </div>
+      {:else if unifiedSource && unifiedFolders}
+        <div class="action-group">
+          <MoveTo mailbox={unifiedSource} mailboxesOverride={unifiedFolders} messages={selection} onMove={moveUnified} />
+        </div>
+      {/if}
 
       <div class="selection-info">
         <Check />

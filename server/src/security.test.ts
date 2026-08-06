@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { seg, isPrivateIp, assertPublicHttpUrl, CreateMessageSchema, MeSchema, directionQuery } from "./api";
+import { seg, isPrivateIp, assertPublicHttpUrl, CreateMessageSchema, MeSchema, directionQuery, sseEventSplitter } from "./api";
 
 describe("seg() — path param hardening (cross-user IDOR / query injection)", () => {
   it("passes legitimate WildDuck ids through unchanged", () => {
@@ -203,5 +203,54 @@ describe("directionQuery() — direction filter built server-side", () => {
     expect(directionQuery(MB, ['bad addr@x.com', "ok@x.com"], "out"))
       .toBe(`in:${MB} from:ok@x.com`);
     expect(() => directionQuery(MB, ['bad addr@x.com'], "out")).toThrow();
+  });
+});
+
+describe("sseEventSplitter — merged /updates framing", () => {
+  it("buffers a partial chunk until the event completes", () => {
+    const out: string[] = [];
+    const push = sseEventSplitter(e => out.push(e));
+    push('data: {"command":"EXI');
+    expect(out).toEqual([]);
+    push('STS"}\n\n');
+    expect(out).toEqual(['data: {"command":"EXISTS"}\n\n']);
+  });
+
+  it("splits several events arriving in one chunk", () => {
+    const out: string[] = [];
+    sseEventSplitter(e => out.push(e))("data: a\n\ndata: b\n\ndata: c");
+    expect(out).toEqual(["data: a\n\n", "data: b\n\n"]);
+  });
+
+  it("keeps two upstreams' frames atomic when their chunks interleave", () => {
+    // The reason this exists: with several accounts, one response carries several
+    // WildDuck streams. Raw piping interleaves at TCP-chunk boundaries, which can be
+    // mid-line — the client would then parse a spliced, corrupt event.
+    const out: string[] = [];
+    const a = sseEventSplitter(e => out.push(e));
+    const b = sseEventSplitter(e => out.push(e));
+    a('data: {"x":1');
+    b('data: {"y"');
+    a('}\n\n');
+    b(':2}\n\n');
+    expect(out).toEqual(['data: {"x":1}\n\n', 'data: {"y":2}\n\n']);
+  });
+});
+
+describe("MeSchema — the eviction checkbox", () => {
+  const base = { existingPassword: "old-pass", password: "new-pass" };
+
+  it("accepts the checkbox in either state and when absent", () => {
+    expect(MeSchema.parse({ ...base, evictOtherSessions: false }).evictOtherSessions).toBe(false);
+    expect(MeSchema.parse({ ...base, evictOtherSessions: true }).evictOtherSessions).toBe(true);
+    expect(MeSchema.parse(base).evictOtherSessions).toBeUndefined();
+  });
+
+  it("route semantics: absent means ON — `!== false` is the governing check", () => {
+    // Default-on is the design decision (a break-in reflex must work without reading
+    // fine print); this pins the expression the route uses.
+    const parsed = MeSchema.parse(base);
+    expect(parsed.evictOtherSessions !== false).toBe(true);
+    expect(MeSchema.parse({ ...base, evictOtherSessions: false }).evictOtherSessions !== false).toBe(false);
   });
 });

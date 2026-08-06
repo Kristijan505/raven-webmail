@@ -10,9 +10,12 @@ export const url = (u: string) => {
 }
 
 const Requester = <Body>(method: string) => {
-  return async (u: string, accessToken: string, body?: Body) => {
-    
-    const init: RequestInit = { method }
+  // `signal` so a caller's deadline can CANCEL the request rather than merely stop
+  // awaiting it: a backend that accepts the connection and never answers otherwise
+  // leaves one pending per attempt, and the retries stack them.
+  return async (u: string, accessToken: string, body?: Body, signal?: AbortSignal) => {
+
+    const init: RequestInit = { method, signal }
 
     if(body != null) {
       init.headers = {
@@ -64,6 +67,41 @@ export type Authentication = {
   token: string
 }
 
+/**
+ * One signed-in account inside a session. A live entry is a full Authentication; a
+ * STUB — token stripped, `needsReauth: true` — is what surgical eviction leaves behind
+ * when this account's password was changed elsewhere with "sign out other devices"
+ * checked. The stub keeps id+username so the client can say "sign in again as X"
+ * instead of the account silently vanishing from the switcher.
+ */
+export type SessionAccount = Omit<Authentication, "token"> & {
+  token?: string | null
+  needsReauth?: boolean
+}
+
+/**
+ * Invalidate ONE account's WildDuck token — DELETE /authenticate, which drops exactly
+ * the token presented in the request.
+ *
+ * Signing out dropped the token from our session and left it alive upstream for the rest
+ * of its TTL (14 days by default). Anything that had captured it kept full API access to
+ * a mailbox the user believes they signed out of, and no amount of session surgery on
+ * our side could reach it. Each login mints its own token — generateAuthToken is
+ * crypto.randomBytes per call — so revoking this one cannot touch another device.
+ *
+ * Best effort by design: the sign-out itself must not fail because the upstream was
+ * briefly unreachable. What the caller must NOT do is skip removing the account locally
+ * when this fails.
+ */
+export const revokeToken = async (accessToken: string): Promise<boolean> => {
+  if(!accessToken) return false;
+  const res = await fetch(url("/authenticate"), {
+    method: "DELETE",
+    headers: { "x-access-token": accessToken },
+  }).catch(() => null);
+  return !!res?.ok;
+};
+
 export const authenticate = async (username: string, password: string): Promise<Authentication> => {
   const res = await fetch(url("/authenticate"), {
     method: "POST",
@@ -96,9 +134,17 @@ export const authenticate = async (username: string, password: string): Promise<
   return json;
 }
 
-export const watch = async (userId: string, accessToken: string): Promise<NodeJS.ReadableStream> => {
+export const watch = async (
+  userId: string,
+  accessToken: string,
+  signal?: AbortSignal,
+): Promise<NodeJS.ReadableStream> => {
+  // The caller's deadline needs a way to CANCEL this, not merely to stop awaiting it:
+  // an upstream that never sends headers otherwise leaves the request pending forever,
+  // and the merged stream reconnects every 30 seconds, stacking one more each time.
   const res = await fetch(url(`/users/${userId}/updates`), {
     headers: { "x-access-token": accessToken },
+    signal,
   }).catch(e => {
     throw new ApiError(502, DISPLAY_ERRORS ? String(e?.message) : "Bad Gateway", "bad_gateway");
   })

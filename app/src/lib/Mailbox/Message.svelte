@@ -3,12 +3,23 @@
   // back without it — and this runs for every row in Drafts/Sent. Indexing it directly
   // threw there, and a throw in a row render freezes the whole list.
   const from = (mailbox: Mailbox, message: Message, l: any): string => {
-    if(mailbox.specialUse === "\\Drafts" || mailbox.specialUse === "\\Sent") {
+    // The unified sent view is a SYNTHETIC mailbox with no specialUse, so it needs
+    // naming here or every row shows the account that sent it — which in "all sent"
+    // is the one thing the reader already knows.
+    if(mailbox.specialUse === "\\Drafts" || mailbox.specialUse === "\\Sent" || isUnifiedSent(mailbox)) {
       return `${l["To:"]} ${message.to?.[0]?.name || message.to?.[0]?.address || ""}`;
     }
 
     return message.from?.name || message.from?.address || "";
   }
+
+  // Account badge for unified rows: an initial plus a stable hue from the username.
+  const acctInitial = (u: string): string => (u || "?").trim().charAt(0).toUpperCase() || "?";
+  const acctColor = (u: string): string => {
+    let h = 0;
+    for (const ch of u) h = (h * 31 + ch.charCodeAt(0)) % 360;
+    return `hsl(${h}, 45%, 42%)`;
+  };
 </script>
 
 <script lang="ts">
@@ -25,7 +36,8 @@
   $: if (message) lastRow = message;
   $: row = message || lastRow;
 
-  $: selected = row ? selection.some(m => m.id === row.id) : false
+  // Compared by (mailbox, id): uids collide across accounts in unified views.
+  $: selected = row ? selection.some(m => m.id === row.id && m.mailbox === row.mailbox) : false
 
   // Handlers read `row`, not `message`, for the same reason the template does: during
   // a keyed-each outro `message` can be undefined while the row is still on screen and
@@ -34,7 +46,7 @@
   // (dead toolbar, broken select-all) until a reload.
   const toggleSelection = () => {
     if(!row) return;
-    const v = selection.filter(m => m.id !== row.id);
+    const v = selection.filter(m => !(m.id === row.id && m.mailbox === row.mailbox));
     if(selected) selection = v;
     else selection = [...v, row];
   }
@@ -42,6 +54,7 @@
   import Ripple from "$lib/Ripple.svelte";
   import { clickable } from "$lib/actions";
   import type { Message, Mailbox } from "$lib/types";
+  import { isUnifiedSent } from "$lib/unified";
 
   import NotSelected from "~icons/mdi/checkbox-blank-outline";
   import Selected from "~icons/mdi/checkbox-marked";
@@ -51,12 +64,16 @@
   
   import { action, isDrafts, messageDate, _put } from "$lib/util";
   import { locale } from "$lib/locale";
-  import { _open } from "$lib/Compose/compose";
+  import { _open, flushDrafts } from "$lib/Compose/compose";
+  import { setTabAccount, tabAccount } from "$lib/account";
+  import { goto, invalidateAll } from "$app/navigation";
+  import { get as getStore } from "svelte/store";
+  const getTabAccount = () => getStore(tabAccount);
   const flag = action(async () => {
     if(!row) return;
     const value = !row.flagged;
     row.flagged = value;
-    await _put(`/api/mailboxes/${mailbox.id}/messages/${row.id}/flag`, {
+    await _put(`/api/mailboxes/${row.mailbox ?? mailbox.id}/messages/${row.id}/flag`, {
       value
     }).catch(e => {
       row.flagged = !value;
@@ -66,6 +83,43 @@
 
   const click = action(async (event: MouseEvent) => {
     if(!row) return;
+    // A unified row can belong to ANOTHER account. Pinning the tab and letting
+    // SvelteKit navigate client-side is not enough: the (app) layout load does not
+    // depend on the route, so it stays mounted with the previous account's user and
+    // mailboxes — and the destination's own owner guard then sees the tab ALREADY
+    // pointing at the owner and skips its reload. The message would open under the
+    // wrong sidebar, and reply/forward would aim at the previous account's Drafts
+    // with a reference in this one, which the server refuses.
+    if (row.account?.id && row.account.id !== getTabAccount()) {
+      // Only a PLAIN left click is ours to take over. A modified click
+      // (cmd/ctrl/shift/middle) opens the href in its own tab and leaves THIS one
+      // standing — so re-pinning here would leave this tab rendering the old
+      // account's sidebar while stamping every later ?account= with the new one, and
+      // a visit to /me would then load and edit the OTHER account's profile under
+      // the wrong chrome. The new tab is a full document load, and the message
+      // page's own owner guard re-pins it there, exactly as it does for a bookmark.
+      if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const to = `/mailbox/${row.mailbox ?? mailbox.id}/message/${row.id}`;
+      // Unsaved compose edits first, and before the pin — same rule as the account
+      // switcher, and this path replaces the document just as thoroughly. The autosave
+      // is debounced by 1.5s and the teardown save cannot be awaited across an unload,
+      // so without this a row click a second after typing loses what was typed.
+      if (!(await flushDrafts())) throw new Error($locale.errors?.request_failed ?? "Request failed");
+      // A real document load rebuilds the layout as the owner — but only when the pin
+      // survives it. With Web Storage disabled the pin lives in this document alone, so
+      // a document load would drop it and land on the wrong account; a client-side
+      // navigation keeps it, and the destination's own guard invalidates from there.
+      if (setTabAccount(row.account.id)) location.assign(to);
+      // Storage disabled: the pin lives in this document, so a client-side navigation is
+      // the only way to keep it — but the (app) layout does not rerun on its own, and the
+      // destination's guard sees the tab ALREADY pointing at the owner and stays quiet.
+      // The message would open under the previous account's sidebar, folders and
+      // signature. Invalidating is what rebuilds them.
+      else void goto(to).then(() => invalidateAll());
+      return;
+    }
     if(isDrafts(mailbox)) {
       event.preventDefault();
       event.stopPropagation();
@@ -220,9 +274,24 @@
     align-items: center;
     flex: 7;
   }
+
+  .acct {
+    flex: none;
+    width: 1.35rem;
+    height: 1.35rem;
+    border-radius: var(--radius-full);
+    color: #fff;
+    font-size: 0.7rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-inline-end: var(--space-3);
+    align-self: center;
+  }
 </style>
 
-<a href="/mailbox/{mailbox.id}/message/{row.id}"
+<a href="/mailbox/{row.mailbox ?? mailbox.id}/message/{row.id}"
   class="na message"
   class:seen={row.seen}
   class:selected
@@ -246,6 +315,10 @@
     {/if}
     <Ripple />
   </div>
+
+  {#if row.account}
+    <span class="acct" style="background: {acctColor(row.account.username)}" title={row.account.username}>{acctInitial(row.account.username)}</span>
+  {/if}
 
   <div class="flex">
     <div class="from">

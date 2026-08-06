@@ -15,6 +15,9 @@
   // it work for a message already filed into a custom folder or sitting in Trash,
   // where the folder itself gives nothing away.
   export let messages: Directional[] = [];
+  // Unified views pass the owning account's folder list explicitly — the dash
+  // context only ever knows the ACTIVE account's folders.
+  export let mailboxesOverride: Mailbox[] | null = null;
 
   import type { Mailbox } from "./types";
   import type { Directional } from "./moveTargets";
@@ -26,7 +29,7 @@
   // Destination rules live in moveTargets.ts so they can be unit-tested on their own —
   // this is product semantics (what may be filed where), not view code, and it is the
   // kind of rule a later refactor silently loosens.
-  $: folders = moveDestinations(mailbox, $mailboxes, messages, $addresses);
+  $: folders = moveDestinations(mailbox, mailboxesOverride ?? $mailboxes, messages, $addresses);
 
 
   import MoveTo from "~icons/mdi/folder-move-outline";

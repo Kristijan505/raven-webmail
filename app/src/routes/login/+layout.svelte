@@ -1,11 +1,19 @@
 <script>
-  import { watchAuth } from "$lib/util";
+  import { watchAuth } from "$lib/handoff";
   import { onMount } from "svelte";
   import { fly } from "svelte/transition";
   import Brand from "$lib/Brand/Brand.svelte";
   import ThemeSwitcher from "$lib/Dashboard/ThemeSwitcher.svelte";
   import LanguageSwitcher from "$lib/Dashboard/LanguageSwitcher.svelte";
-  onMount(() => watchAuth(null));
+  // Adding an account is NOT a signed-out state, and this layout must not claim it is.
+  // watchAuth publishes its argument to every other tab, so merely opening the add form
+  // announced a full logout: every other dashboard tab left for /login and dropped the
+  // account it was pinned to, while the session stayed perfectly authenticated. A tab
+  // on this form has nothing to watch for anyway — it is about to reload either way.
+  onMount(() => {
+    const isAdd = new URLSearchParams(location.search).get("add") === "1";
+    if(!isAdd) return watchAuth(null);
+  });
 </script>
 
 <style>

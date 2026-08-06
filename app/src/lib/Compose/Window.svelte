@@ -12,15 +12,87 @@
   $: showCc = current?.[kShowCc] || current?.cc?.length;
   $: showBcc = current?.[kShowBcc] || current?.bcc?.length;
 
-  import { kSent, save } from "./compose";
+  import { kSent, registerDraftFlush, save, trackTeardownSave } from "./compose";
   import { crossin, crossout } from "./compose";
   import type { Draft } from "./compose";
   
   import { onMount } from "svelte";
-  import { add } from "$lib/actions";
+  import { add, proxyRemoteImages } from "$lib/actions";
   import Editor from "$lib/Editor/Editor.svelte";
   import AddrInput from "./AddrInput.svelte";
+  import { accounts, tabAccount } from "$lib/account";
+  import { _get } from "$lib/util";
+  import { RAVEN_SIGNATURE_META_KEY } from "$lib/signature";
+  import { swapSignature } from "./sanitize";
  
+  // From = the account whose Drafts this draft lives in. Switching retargets
+  // draft.mailbox to the chosen account's Drafts and lets the immutable-save
+  // machinery migrate it (create in the new home, retire from the old — kSavedIn).
+  // Locked once a reference exists (replies cannot cross accounts: WildDuck
+  // resolves the reference within one user) or once files were uploaded (they live
+  // in the first account's storage).
+  $: fromLocked = !!current?.reference || (current?.files?.length ?? 0) > 0;
+  $: fromId = current?.accountId ?? $tabAccount;
+  $: fromChoices = $accounts.filter(a => !a.needsReauth);
+
+  // Which switch is the live one. Every selection takes a new number, including one
+  // that picks the account the draft already has — that is the user cancelling, and it
+  // has to supersede a lookup still in flight just as any other choice would.
+  let fromToken = 0;
+
+  /**
+    * May this switch still be committed?
+    *
+    * One predicate rather than a condition that grows a term per review round, because
+    * that is exactly how it has gone: newest choice, same draft, still editable, and
+    * NOT already claimed for sending. That last one is the rule compose.ts already
+    * lives by — dosave() refuses a draft carrying kSent — and it belongs here for a
+    * sharper reason. send() saves and then reads draft.mailbox AGAIN to submit; a
+    * switch landing between those two would hand it the uid save() just wrote in the
+    * old account together with the NEW account's Drafts. Uids are mailbox-local, so
+    * that submits nothing, or somebody else's draft.
+    */
+  const mayCommit = (token: number, draft: Draft): boolean =>
+    token === fromToken && current === draft && !fromLocked && !draft[kSent];
+
+  const switchFrom = async (accId: string, el?: HTMLSelectElement) => {
+    const token = ++fromToken;
+    // The <select> shows what was clicked, not what was committed. Put it back when a
+    // switch does not happen — but only from the newest attempt, or a stale one would
+    // undo the choice the user has since made.
+    const revert = () => { if(el && token === fromToken) el.value = fromId ?? ""; };
+    if (!current || fromLocked || current[kSent] || accId === fromId) return revert();
+    const draft = current;
+
+    // The signature comes along in the same breath as the Drafts folder: a body still
+    // carrying the previous account's signature would otherwise go out under this one,
+    // showing the recipient a name and title belonging to a different mailbox. Nothing
+    // else reloads it — this draft never remounts, and the layout is still the old
+    // account's.
+    const [boxes, me] = await Promise.all([
+      _get(`/api/mailboxes?account=${encodeURIComponent(accId)}`).catch(() => null),
+      _get(`/api/pages/me?account=${encodeURIComponent(accId)}`).catch(() => null),
+    ]);
+    const drafts = boxes?.results?.find((b: { specialUse?: string }) => b.specialUse === "\\Drafts");
+    // Both halves or neither. The identity is checked rather than assumed — the page
+    // route falls back to another account rather than 403 when the one asked for is
+    // unusable — and a switch that moved the draft while the profile lookup merely
+    // blinked would send account B's mail over account A's signature, which is the one
+    // thing this whole path exists to prevent.
+    const user = me?.props?.user;
+    if (!drafts || user?.id !== accId) return revert();
+
+    // An upload started while those lookups were in flight locks From — the file went
+    // to storage under the OLD account — and committing anyway would leave the draft
+    // naming a storage id belonging to someone else. Send does worse; see mayCommit.
+    if (!mayCommit(token, draft)) return;
+
+    current.accountId = accId;
+    current.mailbox = drafts.id;
+    swapSignature(iframe?.contentDocument, proxyRemoteImages(user?.metaData?.[RAVEN_SIGNATURE_META_KEY] || ""));
+    current = current; // the autosave sees the change and migrates the draft
+  };
+
   let prev = clone(current);
   let timer: any;
   let token = 1;
@@ -96,6 +168,12 @@
 
     const off = [
       add(document, "keydown", keydown, { capture: true }),
+      // Anything that replaces the document waits for this — see flushDrafts.
+      // NOT caught here: flushDrafts has to learn that this draft did not save, or the
+      // caller replaces the document and the edits are gone. reportSaveFailure still
+      // runs, for the console line and the unsaved-changes dot.
+      registerDraftFlush(() => saved ? Promise.resolve() : dosave(lastDraft, ++token)
+        .catch(e => { reportSaveFailure(e); throw e; })),
     ]
 
     if(iframe && iframe.contentDocument) {
@@ -103,7 +181,10 @@
     }
 
     return () => {
-      if(!saved) void dosave(lastDraft, ++token).catch(reportSaveFailure);
+      // Tracked, not fired and forgotten: this component is going away and takes its
+      // flusher with it, so without this the next thing to replace the document waits
+      // for nothing and kills the save mid-flight.
+      if(!saved) trackTeardownSave(dosave(lastDraft, ++token).catch(e => { reportSaveFailure(e); throw e; }));
       clearTimeout(timer);
       runAll(off);
     }
@@ -248,6 +329,26 @@ import { locale } from "$lib/locale";
     user-select: none;
   }
 
+  .from-select {
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font: inherit;
+    padding: 0;
+    outline: none;
+    cursor: pointer;
+  }
+
+  .from-select:disabled {
+    color: var(--text-muted);
+    cursor: default;
+  }
+
+  .from-select option {
+    background: var(--surface);
+    color: var(--text);
+  }
+
   .subject {
     font-size: 0.9rem;
     padding: 0 0.5em;
@@ -319,6 +420,33 @@ import { locale } from "$lib/locale";
   </div>
   <div class="window-contents">
     <x-metadata>
+      <!-- Also shown when the draft's own account is no longer among the choices: it
+           was stubbed while this window stayed open, so every save and Send now fails,
+           and hiding the control would leave the writing stranded with no way to move
+           it. One remaining account is exactly when that matters most. -->
+      {#if fromChoices.length > 1 || (fromId && !fromChoices.some(a => a.id === fromId))}
+        <label class="label-input from-row">
+          <x-label>{$locale["From:"]}</x-label>
+          <select class="from-select" disabled={fromLocked} title={fromLocked ? $locale.From_locked : null}
+            value={fromId} on:change={(e) => switchFrom(e.currentTarget.value, e.currentTarget)}>
+            <!-- Name the draft's own account when it is no longer a choice. Svelte sets
+                 selectedIndex to -1 when the value matches no option, so without this the
+                 From field simply goes BLANK: the writing cannot be saved or sent, and
+                 nothing on screen says which account is the reason. Switching away does
+                 work from there (-1 to 0 is a real selection change, measured), so this
+                 is about saying what happened, not about restoring a way out. -->
+            {#if fromId && !fromChoices.some(a => a.id === fromId)}
+              <option value={fromId} disabled>
+                {[$accounts.find(a => a.id === fromId)?.username, $locale.Sign_in_again].filter(Boolean).join(" — ")}
+              </option>
+            {/if}
+            {#each fromChoices as acc (acc.id)}
+              <option value={acc.id}>{acc.username}</option>
+            {/each}
+          </select>
+        </label>
+      {/if}
+
       <label class="label-input" for="compose-to">
         <x-label>{$locale["To:"]}</x-label>
         <AddrInput id="compose-to" name="to" bind:addrs={current.to} />

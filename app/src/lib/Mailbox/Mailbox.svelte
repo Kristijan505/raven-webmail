@@ -9,6 +9,8 @@
   export let mailbox: Mailbox;
   export let messages: Messages;
   export let selection: TMessage[] = [];
+  // Unified views point this at /api/unified/...; real mailboxes leave it null.
+  export let listBase: string | null = null;
   let scrolled = false;
 
   import type { Mailbox, Messages, Message as TMessage } from "$lib/types";
@@ -25,7 +27,8 @@
   // come back describing the filtered set rather than being trimmed afterwards.
   const listUrl = (params: string[] = []) => {
     const all = [...params, directionParam(active)].filter(Boolean);
-    return `/api/mailboxes/${mailbox.id}/messages${all.length ? "?" + all.join("&") : ""}`;
+    const base = listBase ?? `/api/mailboxes/${mailbox.id}/messages`;
+    return `${base}${all.length ? "?" + all.join("&") : ""}`;
   }
 
   // Every listing request belongs to a generation, and changing the filter supersedes
@@ -40,11 +43,24 @@
     const generation = listGeneration;
     loadingMore = true;
     try {
-      const json: Messages = await _get(listUrl([`next=${messages.nextCursor}`, "limit=50"]))
+      let json: Messages = await _get(listUrl([`next=${messages.nextCursor}`, "limit=50"]))
       if(generation !== listGeneration) return;
+      // A partial page here is worse than a partial refresh: the refresh replaces and can
+      // be redone, but this ADVANCES THE CURSOR — merge it and the missing account's rows
+      // in this range are skipped for good, with the list looking complete. One retry,
+      // because most of these are a blink, then refuse and leave the cursor where it is
+      // so the reader can try the same page again.
+      if(unified && json.partial) {
+        json = await _get(listUrl([`next=${messages.nextCursor}`, "limit=50"]));
+        if(generation !== listGeneration) return;
+        if(json.partial) throw new Error($locale.errors?.request_failed ?? "Request failed");
+      }
+      const grown = dedup([ ...messages.results, ...json.results ]);
       messages = {
         ...messages,
-        results: dedup([ ...messages.results, ...json.results ]),
+        // Unified pages re-sort on append: the server serves what answered when one
+        // account's upstream fails, so a newer row can arrive a round late.
+        results: unified ? sortUnified(grown) : grown,
         nextCursor: json.nextCursor,
         total: json.total ?? messages.total,
       }
@@ -57,6 +73,12 @@
   // it replaces rather than reconciles. reconcileFirstPage exists to decide what to keep
   // from what is already on screen; here the answer is nothing, and running it would
   // hold on to rows the new filter excludes.
+  // Unified views: many source mailboxes behind one synthetic one. Rows carry
+  // their real mailbox; SSE events match against the id SET, and refetches
+  // replace rather than reconcile (uid-window reasoning is single-mailbox).
+  $: unified = isUnifiedMailbox(mailbox);
+  $: liveSet = mailbox.id === UNIFIED_IDS.inbox ? $inboxIds : mailbox.id === UNIFIED_IDS.sent ? $sentIds : null;
+
   $: active = activeDirection(mailbox, $direction);
   // Starts as null, not as the stored value: the page was loaded unfiltered, so a
   // filter carried over from an earlier session has to be applied once on arrival too,
@@ -108,6 +130,11 @@
     const requested = active;
     const json: Messages = await _get(listUrl(["limit=50"]));
     if(generation !== listGeneration) return;
+    // A unified page missing an account is not a shorter list, and installing it as one
+    // erases every row that account had on screen — plus every older page already
+    // loaded, since this path REPLACES rather than reconciles. Keep what is there and
+    // say so: an explicit refresh must not look like a silent no-op.
+    if(unified && json.partial) throw new Error($locale.errors?.request_failed ?? "Request failed");
     selection = [];
     messages = json;
     renderedDirection = requested;
@@ -117,6 +144,23 @@
     const generation = listGeneration;
     const json: Messages = await _get(listUrl());
     if(generation !== listGeneration) return;
+    if (unified) {
+      // A page missing an account would blank every row it had; silent here, unlike
+      // reloadNow, because this runs off an SSE event and nobody asked for it.
+      if(json.partial) return;
+      // reconcileFirstPage reasons in ONE mailbox's uid space and rows here come from
+      // many, so the unified variant does the same job in the merge order instead.
+      // Replacing outright — which is what this did — threw away every page the reader
+      // had loaded below the first, on any new message in any of the mailboxes.
+      const merged = reconcileUnifiedFirstPage(messages, json);
+      // Keyed by (mailbox, uid): uids collide across accounts. Same reasoning as the
+      // single-mailbox path below — rebuild FROM the fresh objects, or the toolbar's
+      // optimistic writes land on rows nobody renders.
+      const selectedKeys = new Set(selection.map(rowKey));
+      selection = merged.results.filter(m => selectedKeys.has(rowKey(m)));
+      messages = { ...messages, results: merged.results, nextCursor: merged.nextCursor, total: json.total ?? messages.total };
+      return;
+    }
     // See reconcile.ts for why the next cursor decides the fate of rows below the
     // refetched page — that is what finally retires an orphaned autosaved draft.
     const { results, nextCursor } = reconcileFirstPage(messages, json);
@@ -160,8 +204,9 @@
   import Ripple from "$lib/Ripple.svelte";
   import { action, _get } from "$lib/util";
   import CircularProgress from "$lib/CircularProgress.svelte";
-  import { dedupById, reconcileFirstPage } from "./reconcile";
+  import { dedupById, reconcileFirstPage, reconcileUnifiedFirstPage, rowKey } from "./reconcile";
   import { activeDirection, direction, directionParam } from "$lib/direction";
+  import { UNIFIED_IDS, inboxIds, isUnifiedMailbox, sentIds, sortUnified } from "$lib/unified";
   import { _error } from "$lib/Notify/notify";
 
   const dedup = dedupById;
@@ -171,18 +216,18 @@
     let timer: any;
     let timer2: any;
     let timer3: any;
-    let rids: number[] = []
+    let rids: string[] = []
     
     const removeIds = () => {
-      if(messages.results.some(item => rids.includes(item.id))) {
-        const results = messages.results.filter(item => !rids.includes(item.id));
+      if(messages.results.some(item => rids.includes(rowKey(item)))) {
+        const results = messages.results.filter(item => !rids.includes(rowKey(item)));
         messages = {
           ...messages,
           results,
           total: Math.max(0, messages.total - (messages.results.length - results.length)),
         };
 
-        selection = selection.filter(item => !rids.includes(item.id))
+        selection = selection.filter(item => !rids.includes(rowKey(item)))
       } else if(active) {
         // The expunged message was not among the loaded rows, so nothing local can
         // account for it — and while a filter is on, the folder counter the SSE event
@@ -202,15 +247,15 @@
     const off = [
       
       Exists.on(event => {
-        if(event.mailbox === mailbox.id) {
+        if(event.mailbox === mailbox.id || liveSet?.has(event.mailbox)) {
           clearTimeout(timer);
           timer = setTimeout(prev, 500);
         } 
       }),
 
       Expunge.on(event => {
-        if(event.mailbox === mailbox.id && event.uid != null) {
-          rids.push(event.uid);
+        if((event.mailbox === mailbox.id || liveSet?.has(event.mailbox)) && event.uid != null) {
+          rids.push(`${event.mailbox}:${event.uid}`);
           clearTimeout(timer2);
           timer2 = setTimeout(removeIds, 250)
         }
@@ -308,7 +353,7 @@ import { locale } from "$lib/locale";
   <div class="content" use:scroll in:fly={{ duration: 150, y: -15 }}>
     {#if messages.results.length || loadingMore}
       <div class="messages" transition:customSlide|local={{ duration: 250 }}>
-        {#each messages.results as message (message.id)}
+        {#each messages.results as message (rowKey(message))}
           <div class="message" transition:customSlide|local={{ duration: 250 }}>
             <!-- `message` is deliberately NOT bound. The each is keyed by
                  `message.id`, i.e. the key is derived from the very value a

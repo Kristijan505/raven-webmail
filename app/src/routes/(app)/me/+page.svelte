@@ -7,7 +7,19 @@
   // `user.name = ...` edit in editName() isn't re-derived away (see mailbox/search).
   $: if (data !== lastData) { lastData = data; user = data?.user ?? null; }
 
+  // Whose profile is on screen, stated by the server for THIS request. It need not be
+  // the account the tab is pinned to: /me?account=B is a plain URL, getPage forwards
+  // that query, and withAccount leaves an explicit selector alone. The page would then
+  // show B while every write from it — _put("/api/me") carries no selector — is stamped
+  // with the tab's pin, so editing the displayed name would silently rename A. Re-pin to
+  // whoever is being shown, the same way the mailbox pages do.
+  $: owner = user?.id;
+  $: if (owner && $tabAccount && owner !== $tabAccount) void repinTab(owner);
+
+
   import { getContext } from "svelte";
+  import { tabAccount } from "$lib/account";
+  import { repinTab } from "$lib/handoff";
   import type { DashContext } from "$lib/Dashboard/Dashboard.svelte";
   // The navbar account menu reads from the shared layout user (a separate fetch),
   // so a name edit here must also update that store, not just local data.user.
@@ -21,6 +33,7 @@
 	import Dialog from '$lib/Dialog.svelte';
   import Ripple from '$lib/Ripple.svelte';
   import { action, plural, _put } from '$lib/util';
+  import Checkbox from "$lib/Checkbox.svelte";
 
   import AccountEdit from "~icons/mdi/account-edit-outline";
   import TextField from "$lib/TextField.svelte";
@@ -32,6 +45,9 @@
 	const gb = (size: number) => (size / 1024 ** 3).toFixed(2);
 
   let passwordDialogOpen = false;
+  // Default ON — the post-break-in reflex must work without reading fine print;
+  // routine rotation of a shared mailbox is where the user unchecks it.
+  let evictOtherSessions = true;
 	let currentPassword = '';
 	let newPassword = '';
 	let confirmPassword = '';
@@ -43,6 +59,7 @@
     const res = await _put(`/api/me`, {
       existingPassword: currentPassword,
       password: newPassword,
+      evictOtherSessions,
     });
 
     currentPassword = '';
@@ -148,6 +165,16 @@
 		color: var(--text-muted);
 	}
 
+	.evict-row {
+		display: flex;
+		align-items: center;
+		gap: var(--space-3);
+		margin-top: var(--space-5);
+		cursor: pointer;
+		color: var(--text-muted);
+		font-size: 0.9rem;
+	}
+
 	.password-dialog > .field {
 		margin-bottom: var(--space-6);
 	}
@@ -181,7 +208,7 @@
         <MenuItem icon={DrawPen} href="/signature">
           {$locale.Edit_your_signature}
         </MenuItem>
-        <MenuItem icon={LockReset} on:click={() => passwordDialogOpen = true}>
+        <MenuItem icon={LockReset} on:click={() => { passwordDialogOpen = true; evictOtherSessions = true; }}>
           {$locale.Update_your_password}
         </MenuItem>
       </div>
@@ -370,6 +397,11 @@
 			<div class="field">
 				<Password label={$locale.Confirm_password} bind:value={confirmPassword} />
 			</div>
+
+			<label class="evict-row">
+				<Checkbox bind:checked={evictOtherSessions} />
+				<span>{$locale.Sign_out_other_devices}</span>
+			</label>
 
 			<div class="send">
 				<button class="btn-light btn-primary elev2">

@@ -1,3 +1,6 @@
 /node_modules/
 config.toml
 locales/
+
+# oh-my-claudecode tooling state
+.omc/

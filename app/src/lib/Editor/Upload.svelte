@@ -188,7 +188,10 @@ import { locale } from "$lib/locale";
 
   const upload = async (file: File, onProgress: (event: AxiosProgressEvent) => void) => {
     const axios = (await import("axios")).default;
-    const json = await axios.post(`/api/storage?filename=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type)}`, file, {
+    // The DRAFT's account, not the tab's: after a From switch the file has to land
+    // in the storage of the account the message will be sent from.
+    const acct = draft.accountId ? `&account=${encodeURIComponent(draft.accountId)}` : "";
+    const json = await axios.post(`/api/storage?filename=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type)}${acct}`, file, {
       headers: { "content-type": "application/binary" },
       onUploadProgress: onProgress,
     }).then(res => {

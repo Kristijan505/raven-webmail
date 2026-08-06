@@ -109,7 +109,7 @@ type GetPageOptions = {
 
 export const getPage = async ({ fetch, path, url }: GetPageOptions) => {
   const pathAndQuery = path || (url ? `/api/pages${url.pathname}${url.search}` : "");
-  const res = await fetch(pathAndQuery).catch(() => {
+  const res = await fetch(withAccount(pathAndQuery)).catch(() => {
     throw new HttpError(500, netErr("cannot_connect", "Cannot connect to the server"));
   });
 
@@ -148,12 +148,20 @@ export const action = <A extends any[], T>(fn: (...args: A) => T | Promise<T>) =
   }
 }
 
-export const _get = async (url: string) => {
-  const res = await fetch(url).catch(e => {
+/**
+ * Every /api call goes through here.
+ *
+ * The four verbs below used to be four copies of this body, differing only in method
+ * and payload — so each was its own place to forget a change. The account stamp
+ * (withAccount), the two shapes a fetch can fail in, and the server's several error
+ * envelopes (throwIfError) are each one decision, made once.
+ */
+const request = async (url: string, init?: RequestInit) => {
+  const res = await fetch(withAccount(url), init).catch(() => {
     throw new HttpError(500, netErr("cannot_connect", "Cannot connect to the server"));
   })
 
-  const json = await res.json().catch(e => {
+  const json = await res.json().catch(() => {
     throw new HttpError(res.status, netErr("invalid_response", "Invalid response from the server"));
   })
 
@@ -162,57 +170,16 @@ export const _get = async (url: string) => {
   return json;
 }
 
-export const _delete = async (url: string) => {
-  const res = await fetch(url, {
-    method: "DELETE",
-  }).catch(e => {
-    throw new HttpError(500, netErr("cannot_connect", "Cannot connect to the server"));
-  })
+const jsonBody = (method: "POST" | "PUT", body: any): RequestInit => ({
+  method,
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify(body),
+});
 
-  const json = await res.json().catch(e => {
-    throw new HttpError(res.status, netErr("invalid_response", "Invalid response from the server"));
-  })
-
-  throwIfError(res, json);
-
-  return json;
-}
-
-export const _post = async (url: string, body: any) => {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body)
-  }).catch(e => {
-    throw new HttpError(500, netErr("cannot_connect", "Cannot connect to the server"));
-  })
-
-  const json = await res.json().catch(e => {
-    throw new HttpError(res.status, netErr("invalid_response", "Invalid response from the server"));
-  })
-
-  throwIfError(res, json);
-
-  return json;
-}
-
-export const _put = async (url: string, body: any) => {
-  const res = await fetch(url, {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body)
-  }).catch(e => {
-    throw new HttpError(500, netErr("cannot_connect", "Cannot connect to the server"));
-  })
-
-  const json = await res.json().catch(e => {
-    throw new HttpError(res.status, netErr("invalid_response", "Invalid response from the server"));
-  })
-
-  throwIfError(res, json);
-
-  return json;
-}
+export const _get = (url: string) => request(url);
+export const _delete = (url: string) => request(url, { method: "DELETE" });
+export const _post = (url: string, body: any) => request(url, jsonBody("POST", body));
+export const _put = (url: string, body: any) => request(url, jsonBody("PUT", body));
 
 export const isMail = (str: string): boolean => /^(?:[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*|"(?:[\x01-\x08\x0b\x0c\x0e-\x1f\x21\x23-\x5b\x5d-\x7f]|\\[\x01-\x09\x0b\x0c\x0e-\x7f])*")@(?:(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?|\[(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?|[a-z0-9-]*[a-z0-9]:(?:[\x01-\x08\x0b\x0c\x0e-\x1f\x21-\x5a\x53-\x7f]|\\[\x01-\x09\x0b\x0c\x0e-\x7f])+)\])$/i.test(str);
 
@@ -274,7 +241,9 @@ export const plural = (count: number, forms: { one: string; few: string; other: 
   }
   return (forms as Record<string, string | undefined>)[category] ?? forms.other;
 };
-import { intertab } from "./intertab";
+// Every /api request carries the tab's account (see account.ts) — the one funnel
+// that keeps multi-account tabs honest without touching call sites.
+import { withAccount } from "./account";
 
 /*
 export const watchAuth = (username: string | null) => {
@@ -294,20 +263,6 @@ export const watchAuth = (username: string | null) => {
   return () => stream.close();
 }
 */
-
-export const watchAuth = (userId: string | null) => {
-  const watcher = intertab<string | null>("intertab.auth.watch");
-  watcher.set(userId);
-  const unwatch = watcher.watch(value => {
-    if(value === userId) return;
-    if(value == null) {
-      goto("/login")
-    } else {
-      goto("/")
-    }
-  });
-  return unwatch;
-}
 
 const p = (n: number) => n.toString().padStart(2, "0");
 

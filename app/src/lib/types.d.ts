@@ -85,6 +85,8 @@ export type Messages = {
   previousCursor: false | string
   nextCursor: false | string
   specialUse: string | null
+  /** Unified listings only: an account is missing from these rows. See api.ts. */
+  partial?: boolean
   results: Message[] 
 }
 
@@ -117,6 +119,9 @@ export type Message = {
     params: Record<string, string>
   }
   metadata?: any  
+  // Present only on unified-view rows: the owning account, for the badge and the
+  // tab hand-off when the row is opened.
+  account?: { id: string; username: string }
 
   html: string[]
   text: string

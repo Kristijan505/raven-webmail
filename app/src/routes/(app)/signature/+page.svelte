@@ -4,7 +4,18 @@
   let user: User;
   $: ({ user } = data);
 
+  // Whose signature is on screen, stated by the server for THIS request. /signature
+  // ?account=B is a plain URL, getPage forwards that query, and withAccount leaves an
+  // explicit selector alone — so the page would read B while the save, which carries no
+  // selector, is stamped with the tab's pin and overwrites A's signature instead. Same
+  // guard the profile page has; this one was missed when that was added.
+  $: owner = user?.id;
+  $: if (owner && $tabAccount && owner !== $tabAccount) void repinTab(owner);
+
+
   import { signature } from "$lib/signature";
+  import { tabAccount } from "$lib/account";
+  import { repinTab } from "$lib/handoff";
   import GoBack from "~icons/mdi/arrow-left";
   import { tooltip } from "$lib/actions";
   import { onMount } from "svelte";
